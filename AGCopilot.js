@@ -94,7 +94,6 @@
                 risk: { "Max Bundled %": 5, "Min Buy Ratio %": 70, "Max Drained Count": 10, "Description": "Don't care", "Fresh Deployer": "Don't care" },
                 advanced: { "Max Liquidity %": 80, "Min Win Pred %": 30 }
             },
-            //After adding this, you need to also update the UIController to handle these presets
 
             // This is for Multiple Starting Points optimization
             oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
