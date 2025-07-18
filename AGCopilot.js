@@ -95,7 +95,7 @@
                 risk: { "Min Bundled %": 0.5 },
                 advanced: { "Min Win Pred %": 20 }
             },
-
+           
             // This is for Multiple Starting Points optimization
             oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
             conservative: {
@@ -154,6 +154,8 @@
         // Experimental RUNNERS % optimization
         USE_RUNNERS_OPTIMIZATION: false,
         RUNNERS_TARGET_PERCENTAGE: 30, // Target percentage of 10x+ runners
+        RUNNERS_PNL_HYBRID_MODE: true, // After finding best runners %, optimize PnL % for that target
+        RUNNERS_PERCENTAGE_TOLERANCE: 2.0, // Allow ±2% variance from target runners % during PnL optimization
         
     };
 
@@ -870,7 +872,7 @@
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <div style="color: #4a9eff; font-size: 16px; font-weight: bold; margin-right: 10px;">🤖</div>
                 <div style="color: #4a9eff; font-size: 14px; font-weight: bold;">
-                    ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS % Optimizer' : 'Advanced Optimizer'}
+                    ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS % → PnL % Hybrid Optimizer' : 'Advanced Optimizer'}
                 </div>
                 ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 
                     '<div style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px;">EXPERIMENTAL</div>' : ''}
@@ -880,6 +882,18 @@
                     ⏹️ Stop
                 </button>
             </div>
+            
+            ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+            '<div style="margin-bottom: 12px; padding: 8px; background: rgba(74, 158, 255, 0.1); border-radius: 6px;">' +
+                '<label style="display: flex; align-items: center; cursor: pointer; font-size: 12px; color: #ccc;">' +
+                    '<input type="checkbox" id="hybridModeToggle" ' + (CONFIG.RUNNERS_PNL_HYBRID_MODE ? 'checked' : '') + 
+                           ' style="margin-right: 8px; accent-color: #4a9eff;">' +
+                    '<span style="flex: 1;">Enable Hybrid Mode (RUNNERS % → PnL % optimization)</span>' +
+                '</label>' +
+                '<div style="font-size: 10px; color: #888; margin-top: 4px; margin-left: 20px;">' +
+                    'Phase 1: Find optimal runners %, Phase 2: Maximize PnL % at that runners level' +
+                '</div>' +
+            '</div>' : ''}
             
             <div id="currentStatus" style="color: #ccc; margin-bottom: 10px; font-size: 12px;">
                 Initializing...
@@ -915,6 +929,24 @@
             STOPPED = true;
             updateProgress('🛑 Stopping...', 100, '--', 0, '--');
         };
+
+        // Add hybrid mode toggle functionality (only if runners optimization is enabled)
+        if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
+            const hybridToggle = document.getElementById('hybridModeToggle');
+            if (hybridToggle) {
+                hybridToggle.onchange = (e) => {
+                    CONFIG.RUNNERS_PNL_HYBRID_MODE = e.target.checked;
+                    console.log(`🔄 Hybrid Mode ${CONFIG.RUNNERS_PNL_HYBRID_MODE ? 'ENABLED' : 'DISABLED'}: ${CONFIG.RUNNERS_PNL_HYBRID_MODE ? 'Will transition to PnL optimization after finding optimal runners %' : 'Will only optimize runners %'}`);
+                    
+                    // Update the title to reflect the current mode
+                    const titleElements = progressContainer.querySelectorAll('div[style*="color: #4a9eff"]');
+                    const titleElement = Array.from(titleElements).find(el => el.textContent.includes('Optimizer'));
+                    if (titleElement) {
+                        titleElement.textContent = CONFIG.RUNNERS_PNL_HYBRID_MODE ? 'RUNNERS % → PnL % Hybrid Optimizer' : 'RUNNERS % Optimizer';
+                    }
+                };
+            }
+        }
 
         return progressContainer;
     }
@@ -1014,16 +1046,16 @@
         }
         
         async analyzeParameterImpacts() {
-            updateProgress('🔍 Analyzing parameter impacts...', 20, this.optimizer.bestScore.toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics.tokensMatched, this.optimizer.startTime);
+            updateProgress('🔍 Analyzing parameter impacts...', 20, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
             
-            const baselineScore = this.optimizer.bestScore;
+            const baselineScore = this.optimizer.getCurrentBestScore();
             const impactResults = [];
             
             for (const paramTest of this.optimizer.parameterTests) {
                 if (STOPPED || this.optimizer.getRemainingTime() <= 0.7) break;
                 
                 const { param, section } = paramTest;
-                const variations = this.optimizer.generateVariation(this.optimizer.bestConfig, param, section);
+                const variations = this.optimizer.generateVariation(this.optimizer.getCurrentBestConfig(), param, section);
                 if (!variations || variations.length === 0) continue;
                 
                 let maxImpact = 0;
@@ -1037,7 +1069,14 @@
                     const result = await this.optimizer.testConfig(variation.config, `Impact test: ${variation.name}`);
                     
                     if (result.success && result.metrics) {
-                        const impact = Math.abs(result.metrics.tpPnlPercent - baselineScore);
+                        // Calculate impact based on optimization phase
+                        let currentMetric;
+                        if (this.optimizer.optimizationPhase === 'RUNNERS') {
+                            currentMetric = result.metrics.runnersPercentage || 0;
+                        } else {
+                            currentMetric = result.metrics.tpPnlPercent;
+                        }
+                        const impact = Math.abs(currentMetric - baselineScore);
                         maxImpact = Math.max(maxImpact, impact);
                         testCount++;
                     }
@@ -1049,7 +1088,7 @@
                 }
                 
                 // Restore best config after each test
-                await this.optimizer.ui.applyConfig(this.optimizer.bestConfig, true);
+                await this.optimizer.ui.applyConfig(this.optimizer.getCurrentBestConfig(), true);
             }
             
             // Sort by impact (highest first)
@@ -1089,7 +1128,7 @@
     }
         
         async runGeneticOptimization() {
-            updateProgress('🧬 Genetic Algorithm Phase', 50, this.optimizer.bestScore.toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics.tokensMatched, this.optimizer.startTime);
+            updateProgress('🧬 Genetic Algorithm Phase', 50, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
             
             // Initialize population with current best + variations
             let population = await this.initializePopulation();
@@ -1101,9 +1140,9 @@
                 
                 updateProgress(`🧬 Generation ${generation + 1}/${generations}`, 
                     50 + (generation / generations) * 30, 
-                    this.optimizer.bestScore.toFixed(1), 
+                    this.optimizer.getCurrentBestScore().toFixed(1), 
                     this.optimizer.testCount, 
-                    this.optimizer.bestMetrics.tokensMatched, 
+                    this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', 
                     this.optimizer.startTime);
                 
                 // Evaluate population
@@ -1112,8 +1151,8 @@
                 // Selection, crossover, and mutation
                 population = await this.evolvePopulation(evaluatedPopulation);
                 
-                // Early termination if target achieved
-                if (this.optimizer.bestScore >= CONFIG.TARGET_PNL) {
+                // Early termination if target achieved (only check for PnL modes)
+                if (this.optimizer.optimizationPhase !== 'RUNNERS' && this.optimizer.getCurrentBestScore() >= CONFIG.TARGET_PNL) {
                     break;
                 }
             }
@@ -1123,11 +1162,11 @@
             const population = [];
             
             // Add current best config
-            population.push(JSON.parse(JSON.stringify(this.optimizer.bestConfig)));
+            population.push(JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig())));
             
             // Add variations of best config
             for (let i = 1; i < this.populationSize; i++) {
-                const config = JSON.parse(JSON.stringify(this.optimizer.bestConfig));
+                const config = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
                 this.mutateConfig(config, 0.5); // Higher mutation rate for initialization
                 population.push(config);
             }
@@ -1142,7 +1181,15 @@
                 if (STOPPED || this.optimizer.getRemainingTime() <= 0.2) break;
                 
                 const result = await this.optimizer.testConfig(config, 'Genetic eval');
-                const fitness = result.success ? result.metrics.tpPnlPercent : -Infinity;
+                let fitness = -Infinity;
+                if (result.success) {
+                    // Use appropriate metric based on optimization phase
+                    if (this.optimizer.optimizationPhase === 'RUNNERS') {
+                        fitness = result.metrics.runnersPercentage || 0;
+                    } else {
+                        fitness = result.metrics.tpPnlPercent;
+                    }
+                }
                 
                 evaluatedPop.push({ config, fitness });
             }
@@ -1242,10 +1289,10 @@
         }
         
         async runSimulatedAnnealing() {
-            updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.bestScore.toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics.tokensMatched, this.optimizer.startTime);
+            updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
             
-            let currentConfig = JSON.parse(JSON.stringify(this.optimizer.bestConfig));
-            let currentScore = this.optimizer.bestScore;
+            let currentConfig = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
+            let currentScore = this.optimizer.getCurrentBestScore();
             let temperature = this.initialTemperature;
             
             while (temperature > this.finalTemperature && this.optimizer.getRemainingTime() > 0.05 && !STOPPED) {
@@ -1254,7 +1301,13 @@
                 const result = await this.optimizer.testConfig(neighbor, 'Simulated annealing');
                 
                 if (result.success && result.metrics) {
-                    const neighborScore = result.metrics.tpPnlPercent;
+                    // Use appropriate metric based on optimization phase
+                    let neighborScore;
+                    if (this.optimizer.optimizationPhase === 'RUNNERS') {
+                        neighborScore = result.metrics.runnersPercentage || 0;
+                    } else {
+                        neighborScore = result.metrics.tpPnlPercent;
+                    }
                     const deltaE = neighborScore - currentScore;
                     
                     // Accept if better, or with probability if worse
@@ -1264,17 +1317,17 @@
                         
                         updateProgress(`🔥 Annealing T=${temperature.toFixed(1)}`, 
                             80 + (1 - temperature / this.initialTemperature) * 15, 
-                            this.optimizer.bestScore.toFixed(1), 
+                            this.optimizer.getCurrentBestScore().toFixed(1), 
                             this.optimizer.testCount, 
-                            this.optimizer.bestMetrics.tokensMatched, 
+                            this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', 
                             this.optimizer.startTime);
                     }
                 }
                 
                 temperature *= this.coolingRate;
                 
-                // Early termination if target achieved
-                if (this.optimizer.bestScore >= CONFIG.TARGET_PNL) {
+                // Early termination if target achieved (only check for PnL modes)
+                if (this.optimizer.optimizationPhase !== 'RUNNERS' && this.optimizer.getCurrentBestScore() >= CONFIG.TARGET_PNL) {
                     break;
                 }
             }
@@ -1407,6 +1460,16 @@
             this.testCount = 0;
             this.history = [];
             
+            // Hybrid optimization state
+            this.optimizationPhase = CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS' : 'PNL';
+            this.targetRunnersPercentage = null; // Set after phase 1 completes
+            
+            // Separate tracking for different optimization modes
+            this.bestRunnersPercentage = 0;  // Best runners % found
+            this.bestPnlPercentage = 0;      // Best PnL % found
+            this.bestRunnersConfig = null;   // Config that achieved best runners %
+            this.bestPnlConfig = null;       // Config that achieved best PnL %
+            
             // Advanced optimization components
             this.configCache = new ConfigCache();
             this.impactAnalyzer = new ParameterImpactAnalyzer(this);
@@ -1466,14 +1529,21 @@
             }
 
             this.bestConfig = completeBaseline;
+            this.bestMetrics = metrics;
+            
+            // Set baseline values for both tracking systems
+            this.bestRunnersPercentage = metrics.runnersPercentage || 0;
+            this.bestPnlPercentage = metrics.tpPnlPercent;
+            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeBaseline));
+            this.bestPnlConfig = JSON.parse(JSON.stringify(completeBaseline));
             
             if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
                 // RUNNERS % optimization mode - HIGHER percentage is BETTER
-                this.bestScore = metrics.runnersPercentage || 0;
+                this.bestScore = this.bestRunnersPercentage;
                 console.log(`🎯 Baseline RUNNERS %: ${this.bestScore.toFixed(1)}% (${metrics.runnersCount}/${metrics.tokensMatched} runners)`);
             } else {
                 // Traditional PnL % optimization mode
-                this.bestScore = metrics.tpPnlPercent;
+                this.bestScore = this.bestPnlPercentage;
             }
             
             this.bestMetrics = metrics;
@@ -1481,6 +1551,30 @@
 
             updateProgress('✅ Baseline established', 15, this.bestScore.toFixed(1), 1, metrics.tokensMatched, this.startTime);
             return true;
+        }
+
+        // Helper method to get the appropriate best score for current optimization phase
+        getCurrentBestScore() {
+            switch (this.optimizationPhase) {
+                case 'RUNNERS':
+                    return this.bestRunnersPercentage || 0;
+                case 'PNL_HYBRID':
+                    return this.bestPnlPercentage || 0;
+                default:
+                    return this.bestPnlPercentage || 0; // Traditional PnL mode
+            }
+        }
+
+        // Helper method to get the appropriate best config for current optimization phase
+        getCurrentBestConfig() {
+            switch (this.optimizationPhase) {
+                case 'RUNNERS':
+                    return this.bestRunnersConfig || this.bestConfig;
+                case 'PNL_HYBRID':
+                    return this.bestPnlConfig || this.bestConfig;
+                default:
+                    return this.bestPnlConfig || this.bestConfig; // Traditional PnL mode
+            }
         }
 
         async testConfig(config, testName) {
@@ -1523,13 +1617,13 @@
                     return result;
                 }
 
-                // Calculate improvement based on optimization mode
+                // Calculate improvement based on optimization mode and phase
                 let improvement, currentScore, optimizationMetric;
                 
-                if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
-                    // RUNNERS % optimization mode with selectivity penalty
+                if (this.optimizationPhase === 'RUNNERS') {
+                    // Phase 1: RUNNERS % optimization mode with selectivity penalty
                     currentScore = metrics.runnersPercentage || 0;
-                    improvement = currentScore - this.bestScore; // Normal: higher current = positive improvement
+                    improvement = currentScore - this.bestRunnersPercentage; // Use dedicated runners tracking
                     optimizationMetric = 'RUNNERS %';
                     
                     // Apply selectivity penalty for having too many tokens
@@ -1552,37 +1646,93 @@
                     // Apply penalty to improvement calculation
                     improvement -= selectivityPenalty;
                     
-                    console.log(`🎯 RUNNERS % Mode: ${currentScore.toFixed(1)}% (${metrics.runnersCount}/${metrics.tokensMatched} runners) vs best ${this.bestScore.toFixed(1)}%`);
+                    console.log(`🎯 RUNNERS % Mode: ${currentScore.toFixed(1)}% (${metrics.runnersCount}/${metrics.tokensMatched} runners) vs best ${this.bestRunnersPercentage.toFixed(1)}%`);
                     console.log(`📊 Selectivity-adjusted improvement: ${improvement.toFixed(1)}% (penalty: -${selectivityPenalty.toFixed(1)}%)`);
+                    
+                } else if (this.optimizationPhase === 'PNL_HYBRID') {
+                    // Phase 2: PnL % optimization while maintaining target runners %
+                    const runnersPercentage = metrics.runnersPercentage || 0;
+                    const runnersVariance = Math.abs(runnersPercentage - this.targetRunnersPercentage);
+                    
+                    // Check if runners % is within acceptable tolerance
+                    if (runnersVariance <= CONFIG.RUNNERS_PERCENTAGE_TOLERANCE) {
+                        // Within tolerance - optimize for PnL %
+                        currentScore = metrics.tpPnlPercent;
+                        improvement = currentScore - this.bestPnlPercentage; // Use dedicated PnL tracking
+                        optimizationMetric = 'PnL % (Hybrid)';
+                        
+                        console.log(`🎯 PnL Hybrid Mode: ${currentScore.toFixed(1)}% PnL, ${runnersPercentage.toFixed(1)}% runners (target: ${this.targetRunnersPercentage.toFixed(1)}% ±${CONFIG.RUNNERS_PERCENTAGE_TOLERANCE}%)`);
+                    } else {
+                        // Outside tolerance - reject this config
+                        console.log(`❌ Runners % out of tolerance: ${runnersPercentage.toFixed(1)}% (target: ${this.targetRunnersPercentage.toFixed(1)}% ±${CONFIG.RUNNERS_PERCENTAGE_TOLERANCE}%)`);
+                        
+                        // Restore best config and return failure
+                        await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                        const result = { success: false, outOfTolerance: true };
+                        if (CONFIG.USE_CONFIG_CACHING) {
+                            this.configCache.set(completeConfig, result);
+                            console.log(`💾 Cached out-of-tolerance result for: ${testName}`);
+                        }
+                        return result;
+                    }
                 } else {
                     // Traditional PnL % optimization mode
                     currentScore = metrics.tpPnlPercent;
-                    improvement = currentScore - this.bestScore;
+                    improvement = currentScore - this.bestPnlPercentage; // Use dedicated PnL tracking
                     optimizationMetric = 'PnL %';
                 }
 
                 this.testCount++;
 
-                updateProgress(`Testing: ${testName}`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                updateProgress(`Testing: ${testName}`, this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
-                // Dynamic improvement threshold based on optimization mode
-                const improvementThreshold = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
-                    Math.max(0.1, this.bestScore * 0.01) : // Lower threshold for RUNNERS % but not too low
-                    1; // Standard threshold for PnL %
+                // Dynamic improvement threshold based on optimization mode and phase
+                const improvementThreshold = this.optimizationPhase === 'RUNNERS' ? 
+                    Math.max(0.1, this.bestRunnersPercentage * 0.01) : // Use dedicated runners tracking
+                    (this.optimizationPhase === 'PNL_HYBRID' ? 0.5 : 1); // Moderate threshold for hybrid mode, standard for pure PnL
                     
                 const success = improvement > improvementThreshold;
                 
                 if (success) {
+                    // Always update both tracking systems when we have the data
+                    if (metrics.runnersPercentage !== undefined) {
+                        // Update runners tracking if we have runners data
+                        if (this.optimizationPhase === 'RUNNERS' || metrics.runnersPercentage > this.bestRunnersPercentage) {
+                            this.bestRunnersPercentage = metrics.runnersPercentage;
+                            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeConfig));
+                        }
+                    }
+                    
+                    if (metrics.tpPnlPercent !== undefined) {
+                        // Update PnL tracking if we have PnL data
+                        if (this.optimizationPhase !== 'RUNNERS' || metrics.tpPnlPercent > this.bestPnlPercentage) {
+                            this.bestPnlPercentage = metrics.tpPnlPercent;
+                            this.bestPnlConfig = JSON.parse(JSON.stringify(completeConfig));
+                        }
+                    }
+                    
+                    // Update primary tracking based on optimization phase
+                    if (this.optimizationPhase === 'RUNNERS') {
+                        this.bestScore = currentScore; // Keep bestScore in sync for display
+                    } else if (this.optimizationPhase === 'PNL_HYBRID') {
+                        this.bestScore = currentScore; // Keep bestScore in sync for display
+                    } else {
+                        // Traditional PnL mode
+                        this.bestScore = currentScore; // Keep bestScore in sync for display
+                    }
+                    
+                    // Always update general tracking
                     this.bestConfig = completeConfig;
-                    this.bestScore = currentScore;
                     this.bestMetrics = metrics;
                     this.history.push({ testName, score: currentScore, improvement });
                     
-                    const displayMetric = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                    const displayMetric = this.optimizationPhase === 'RUNNERS' ? 
                         `${currentScore.toFixed(1)}% runners (${metrics.tokensMatched} tokens)` : 
-                        `${currentScore.toFixed(1)}%`;
+                        (this.optimizationPhase === 'PNL_HYBRID' ? 
+                            `${currentScore.toFixed(1)}% PnL (${metrics.runnersPercentage.toFixed(1)}% runners)` :
+                            `${currentScore.toFixed(1)}%`);
                     
-                    const improvementDisplay = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                    const improvementDisplay = this.optimizationPhase === 'RUNNERS' ? 
                         `+${improvement.toFixed(1)}% (selectivity-adjusted)` :
                         `+${improvement.toFixed(1)}%`;
                     
@@ -1590,8 +1740,8 @@
                     console.log(`🏆 New best ${optimizationMetric}: ${displayMetric} (improvement: ${improvementDisplay})`);
                 } else {
                     // Restore best config if no improvement
-                    await this.ui.applyConfig(this.bestConfig, true);
-                    updateProgress(`↩️ Restored best config`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                    updateProgress(`↩️ Restored best config`, this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                 }
 
                 const result = { success: true, metrics, improvement };
@@ -1602,7 +1752,7 @@
                 return result;
             } catch (error) {
                 // Restore best config on error
-                await this.ui.applyConfig(this.bestConfig, true);
+                await this.ui.applyConfig(this.getCurrentBestConfig(), true);
                 const result = { success: false };
                 if (CONFIG.USE_CONFIG_CACHING) {
                     this.configCache.set(completeConfig, result);
@@ -1773,6 +1923,11 @@
                 // 3. Execute phased optimization strategy
                 await this.runParameterPhase();
 
+                // 3.5. Transition to PnL hybrid optimization if runners optimization was used
+                if (this.optimizationPhase === 'RUNNERS' && CONFIG.RUNNERS_PNL_HYBRID_MODE && this.getRemainingTime() > 0.3) {
+                    await this.transitionToPnLHybridMode();
+                }
+
                 // 4. Advanced optimization phases
                 if (this.getRemainingTime() > 0.4 && !STOPPED && CONFIG.USE_LATIN_HYPERCUBE_SAMPLING && (this.bestScore < CONFIG.TARGET_PNL)) {
                     await this.runLatinHypercubePhase();
@@ -1813,6 +1968,28 @@
             }
         }
 
+        async transitionToPnLHybridMode() {
+            console.log('🔄 Transitioning from RUNNERS % optimization to PnL % hybrid optimization...');
+            updateProgress('🔄 Phase Transition: RUNNERS % → PnL % Hybrid', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
+            
+            // Set target runners percentage from current best runners %
+            this.targetRunnersPercentage = this.bestRunnersPercentage;
+            
+            // Change optimization phase to PnL hybrid mode
+            this.optimizationPhase = 'PNL_HYBRID';
+            
+            // Update bestScore to track PnL % for display purposes during hybrid mode
+            this.bestScore = this.bestPnlPercentage;
+            
+            console.log(`🎯 Target runners %: ${this.targetRunnersPercentage.toFixed(1)}% (±${CONFIG.RUNNERS_PERCENTAGE_TOLERANCE}%)`);
+            console.log(`📊 Starting PnL % optimization from: ${this.bestPnlPercentage.toFixed(1)}%`);
+            
+            updateProgress('🎯 PnL % Hybrid Optimization Started', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
+            
+            // Run another parameter phase with PnL optimization
+            await this.runParameterPhase();
+        }
+
         getSection(param) {
             const sectionMap = {
                 'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
@@ -1827,7 +2004,7 @@
         }
 
         async runParameterPhase() {
-            updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+            updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             const timePerParam = this.getRemainingTime() * 0.6 / this.parameterTests.length; // 60% of remaining time
 
@@ -1837,7 +2014,7 @@
                 const phaseStartTime = Date.now();
                 const phaseMaxTime = timePerParam * CONFIG.MAX_RUNTIME_MIN * 60 * 1000;
 
-                updateProgress(`🔄 Testing ${param}...`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                updateProgress(`🔄 Testing ${param}...`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
                 const variations = this.generateVariation(this.bestConfig, param, section);
                 if (!variations) continue;
@@ -1857,7 +2034,7 @@
 
                     // Early termination if target achieved 
                     if (this.bestScore >= CONFIG.TARGET_PNL) {
-                        updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                        updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                         return;
                     }
                 }
@@ -1865,7 +2042,7 @@
         }
 
         async runLatinHypercubePhase() {
-            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             // Focus on top parameters for LHS
             const topParams = this.parameterTests.slice(0, 6).map(p => p.param);
@@ -1886,7 +2063,7 @@
         }
 
         async runCorrelatedParameterPhase() {
-            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             const correlatedVariations = this.generateCorrelatedVariations(this.bestConfig);
 
@@ -1898,14 +2075,14 @@
 
                 // Early termination if target achieved
                 if (this.bestScore >= CONFIG.TARGET_PNL) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                     return;
                 }
             }
         }
 
         async runMultipleStartingPoints() {
-            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             const startingPoints = [
                 CONFIG.PRESETS.conservative,
@@ -1932,14 +2109,14 @@
 
                 // Early termination if target achieved
                 if (this.bestScore >= CONFIG.TARGET_PNL) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                     return;
                 }
             }
         }
 
         async runDeepDive() {
-            updateProgress('🎯 Phase 2: Deep Dive', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+            updateProgress('🎯 Phase 2: Deep Dive', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             // Focus on top 3 parameters for extended testing
             const topParams = this.parameterTests.slice(0, 3);
@@ -1951,7 +2128,7 @@
                 const phaseStartTime = Date.now();
                 const phaseMaxTime = timePerParam * CONFIG.MAX_RUNTIME_MIN * 60 * 1000;
 
-                updateProgress(`🔍 Deep dive: ${param}...`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                updateProgress(`🔍 Deep dive: ${param}...`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
                 const extendedVariations = this.generateExtendedVariations(this.bestConfig, param, section);
                 if (!extendedVariations) continue;
@@ -1965,7 +2142,7 @@
 
                     // Early termination if target achieved
                     if (this.bestScore >= CONFIG.TARGET_PNL) {
-                        updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                        updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                         return;
                     }
                 }
