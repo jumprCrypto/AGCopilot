@@ -88,11 +88,12 @@
         PRESETS: {
             // You can add your presets here
             // For example:
-            ai30: {
-                tokenDetails: { "Min AG Score": "1" },
-                wallets: { "Min KYC Wallets": 2, "Max KYC Wallets": 5, "Max Unique Wallets": 2 },
-                risk: { "Max Bundled %": 5, "Min Buy Ratio %": 70, "Max Drained Count": 10, "Description": "Don't care", "Fresh Deployer": "Don't care" },
-                advanced: { "Max Liquidity %": 80, "Min Win Pred %": 30 }
+            ai20: {
+                basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 40000 },
+                tokenDetails: { "Min AG Score": "5", "Min Deployer Age (min)": 800 },
+                wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 3, "Min KYC Wallets": 3, "Max KYC Wallets": 5 },
+                risk: { "Min Bundled %": 0.5 },
+                advanced: { "Min Win Pred %": 20 }
             },
 
             // This is for Multiple Starting Points optimization
@@ -148,7 +149,12 @@
         USE_SIMULATED_ANNEALING: true,
         USE_ADAPTIVE_STEP_SIZES: true,
         USE_LATIN_HYPERCUBE_SAMPLING: true,
-        USE_MULTIPLE_STARTING_POINTS: true
+        USE_MULTIPLE_STARTING_POINTS: true,
+        
+        // Experimental RUNNERS % optimization
+        USE_RUNNERS_OPTIMIZATION: false,
+        RUNNERS_TARGET_PERCENTAGE: 30, // Target percentage of 10x+ runners
+        
     };
 
     // ========================================
@@ -340,6 +346,11 @@
                             }
                         } else if (typeof value === 'number') {
                             processedValue = value;
+                        }
+
+                        // Force integer rounding for specific parameters
+                        if (labelText.includes('Wallets') || labelText.includes('Count') || labelText.includes('Age')) {
+                            processedValue = Math.round(processedValue);
                         }
 
                         if ((typeof processedValue === 'number' && !isNaN(processedValue)) ||
@@ -546,6 +557,15 @@
                 }
             }
 
+            // Extract RUNNERS % data for anti-gigamooner optimization
+            if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
+                const runnersData = await extractRunnersData();
+                if (runnersData) {
+                    metrics.runnersCount = runnersData.runnersCount;
+                    metrics.runnersPercentage = runnersData.runnersPercentage;
+                }
+            }
+
             // Validate required metrics
             if (metrics.tpPnlPercent === undefined || metrics.tokensMatched === undefined) {
                 return null;
@@ -554,6 +574,276 @@
             return metrics;
         } catch (error) {
             return null;
+        }
+    }
+
+    // ========================================
+    // 🎯 RUNNERS DATA EXTRACTOR
+    // ========================================
+    async function extractRunnersData() {
+        try {
+            let totalRunnersCount = 0;
+            let totalPagesAnalyzed = 0;
+            let currentPage = 1;
+            let maxPages = 50; // Safety limit
+            
+            console.log('🎯 Starting comprehensive runners analysis across all pages...');
+            
+            // First, sort by TP Gain to get highest gainers at the top
+            console.log('📊 Sorting table by TP Gain for efficient analysis...');
+            await sortByTPGain();
+            
+            // Wait for sorting to complete
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Track original scroll position
+            const originalScrollY = window.scrollY;
+            
+            while (currentPage <= maxPages) {
+                console.log(`📄 Analyzing page ${currentPage}...`);
+                
+                // Wait for page to load
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                // Analyze current page
+                const pageData = await extractRunnersFromCurrentPage();
+                totalRunnersCount += pageData.runnersCount;
+                totalPagesAnalyzed++;
+                
+                console.log(`📊 Page ${currentPage}: ${pageData.runnersCount}/${pageData.tokensOnThisPage} runners`);
+                
+                // Early termination: If this page has fewer runners than tokens, 
+                // and we're sorted by TP Gain, we can stop here since subsequent pages will have even fewer runners
+                if (pageData.runnersCount < pageData.tokensOnThisPage && currentPage > 1) {
+                    break;
+                }
+                
+                // Check if there's a next page
+                const nextButton = Array.from(document.querySelectorAll('button')).find(btn => 
+                    btn.textContent.toLowerCase().includes('next')) || 
+                    document.querySelector('.next-page, [aria-label*="next" i]');
+                const isNextDisabled = nextButton && (nextButton.disabled || nextButton.classList.contains('disabled') || 
+                                                    nextButton.style.opacity === '0.4' || nextButton.getAttribute('aria-disabled') === 'true');
+                
+                // Also check pagination info
+                const paginationInfo = Array.from(document.querySelectorAll('.text-gray-400')).find(el => 
+                    el.textContent.includes('Page'));
+                let isLastPage = false;
+                if (paginationInfo) {
+                    const match = paginationInfo.textContent.match(/Page (\d+) of (\d+)/);
+                    if (match) {
+                        const [, current, total] = match;
+                        maxPages = Math.min(parseInt(total), 50); // Limit to 50 pages for safety
+                        isLastPage = parseInt(current) >= parseInt(total);
+                    }
+                }
+                
+                if (!nextButton || isNextDisabled || isLastPage) {
+                    break;
+                }
+                
+                // Click next page
+                nextButton.click();
+                currentPage++;
+                
+                // Prevent infinite loop
+                if (currentPage > maxPages) {
+                    break;
+                }
+            }
+            
+            // Return to first page
+            if (currentPage > 1) {
+                console.log('🔄 Returning to first page...');
+                // Look for pagination or try refreshing
+                const firstPageButton = Array.from(document.querySelectorAll('button')).find(btn => 
+                    btn.textContent.toLowerCase().includes('previous'));
+                if (firstPageButton) {
+                    // Click previous until disabled
+                    for (let i = 0; i < currentPage; i++) {
+                        const prevBtn = Array.from(document.querySelectorAll('button')).find(btn => 
+                            btn.textContent.toLowerCase().includes('previous'));
+                        if (prevBtn && !prevBtn.disabled) {
+                            prevBtn.click();
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                    }
+                }
+                
+                // Restore scroll position
+                window.scrollTo(0, originalScrollY);
+            }
+
+            // We can't call extractMetrics() here as it would create an infinite loop
+            // Instead, we'll get the tokens matched count from the UI directly
+            const tokensMatchedDiv = Array.from(document.querySelectorAll('div.text-xl.font-bold')).find(div => {
+                const label = div.parentElement.querySelector('div.text-xs.text-gray-400');
+                return label && label.textContent.trim().toLowerCase() === 'tokens matched';
+            });
+            
+            let totalTokensMatched = 0;
+            if (tokensMatchedDiv) {
+                const tokenMatch = tokensMatchedDiv.textContent.match(/(\d{1,3}(?:,\d{3})*)/);
+                if (tokenMatch) {
+                    totalTokensMatched = parseInt(tokenMatch[1].replace(/,/g, ''));
+                }
+            }
+            
+            // Calculate runners percentage based on total tokens matched, not just pages analyzed
+            const runnersPercentage = totalTokensMatched > 0 ? (totalRunnersCount / totalTokensMatched) * 100 : 0;
+            return {
+                runnersCount: totalRunnersCount,
+                totalValidTokens: totalTokensMatched,
+                runnersPercentage
+            };
+        } catch (error) {
+            console.warn('⚠️ Failed to extract runners data:', error);
+            return null;
+        }
+    }
+
+    // Helper function to extract runners from current page
+    async function extractRunnersFromCurrentPage() {
+        try {
+            // Find the TP Gain column index by looking at table headers
+            const headers = Array.from(document.querySelectorAll('thead th'));
+            let tpGainColumnIndex = -1;
+            
+            for (let i = 0; i < headers.length; i++) {
+                const headerText = (headers[i].textContent || '').trim().toLowerCase();
+                if (headerText.includes('tp gain') || headerText.includes('tp') && headerText.includes('gain')) {
+                    tpGainColumnIndex = i;
+                    break;
+                }
+            }
+            
+            if (tpGainColumnIndex === -1) {
+                console.warn('⚠️ Could not find TP Gain column header. Go to the Signals page');
+                return { runnersCount: 0, totalValidTokens: 0 };
+            }
+            
+            // Get all table rows and extract the TP Gain column cells
+            const tableRows = Array.from(document.querySelectorAll('tbody tr'));
+            let runnersCount = 0;
+            
+            // Filter out empty or invalid rows to get actual token count per page
+            const validRows = tableRows.filter(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                return cells.length > tpGainColumnIndex && cells[tpGainColumnIndex].textContent.trim() !== '';
+            });
+            
+            const tokensOnThisPage = validRows.length;
+            
+            for (const row of validRows) {
+                const cells = Array.from(row.querySelectorAll('td'));
+                if (cells.length <= tpGainColumnIndex) {
+                    continue; // Skip rows that don't have enough columns
+                }
+                
+                const tpGainCell = cells[tpGainColumnIndex];
+                const textContent = (tpGainCell.textContent || '').trim();
+                
+                let isRunner = false;
+                
+                // Check for percentage format: +900%, +1000%, etc. (10x = +900%)
+                const percentageMatches = textContent.match(/\+(\d+(?:\.\d+)?)%/gi);
+                if (percentageMatches) {
+                    for (const match of percentageMatches) {
+                        const percentage = parseFloat(match.replace(/\+|%/g, ''));
+                        // 10x gain = 900% gain (since 10x = 1000% of original, so gain is 900%)
+                        if (percentage >= 900) {
+                            isRunner = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Check for multiplier patterns: 10x, 11x, 120x, 10×, etc.
+                if (!isRunner) {
+                    const multiplierMatches = textContent.match(/(\d+(?:\.\d+)?)[x×]/gi);
+                    if (multiplierMatches) {
+                        for (const match of multiplierMatches) {
+                            const multiplier = parseFloat(match.replace(/[x×]/gi, ''));
+                            if (multiplier >= 10) {
+                                isRunner = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (isRunner) {
+                    runnersCount++;
+                }
+            }
+
+            console.log(`📊 Page analysis complete: ${runnersCount}/${tokensOnThisPage} runners found`);
+
+            return {
+                runnersCount,
+                tokensOnThisPage
+            };
+        } catch (error) {
+            console.warn('⚠️ Failed to extract runners from current page:', error);
+            return { runnersCount: 0, totalValidTokens: 0 };
+        }
+    }
+
+    // ========================================
+    // 📊 TABLE SORTING HELPER
+    // ========================================
+    async function sortByTPGain() {
+        try {
+            // Find the TP Gain column header
+            const headers = Array.from(document.querySelectorAll('thead th'));
+            let tpGainHeader = null;
+            
+            for (const header of headers) {
+                const headerText = (header.textContent || '').trim().toLowerCase();
+                if (headerText.includes('tp gain') || (headerText.includes('tp') && headerText.includes('gain'))) {
+                    tpGainHeader = header;
+                    break;
+                }
+            }
+            
+            if (!tpGainHeader) {
+                return;
+            }
+            
+            // Check if header is clickable (has a button or is clickable itself)
+            let clickableElement = tpGainHeader.querySelector('button') || 
+                                 tpGainHeader.querySelector('[role="button"]') ||
+                                 tpGainHeader.querySelector('.cursor-pointer');
+            
+            if (!clickableElement && (tpGainHeader.style.cursor === 'pointer' || 
+                                    tpGainHeader.classList.contains('cursor-pointer') ||
+                                    tpGainHeader.onclick ||
+                                    tpGainHeader.getAttribute('role') === 'button')) {
+                clickableElement = tpGainHeader;
+            }
+            
+            if (clickableElement) {
+                clickableElement.click();
+                
+                // Wait a moment and check if we need to click again for descending order
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Look for sort indicators to see current sort direction
+                const sortIndicator = tpGainHeader.querySelector('.sort-desc, [aria-sort="descending"], .fa-sort-down') ||
+                                    tpGainHeader.textContent.includes('↓') || 
+                                    tpGainHeader.textContent.includes('▼');
+                
+                if (!sortIndicator) {
+                    console.log('📊 Clicking again to ensure descending order (highest gains first)...');
+                    clickableElement.click();
+                }
+                
+                console.log('✅ Table sorted by TP Gain (descending)');
+            } else {
+                console.warn('⚠️ TP Gain header does not appear to be clickable');
+            }
+        } catch (error) {
+            console.warn('⚠️ Failed to sort by TP Gain:', error);
         }
     }
 
@@ -579,7 +869,11 @@
         progressContainer.innerHTML = `
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <div style="color: #4a9eff; font-size: 16px; font-weight: bold; margin-right: 10px;">🤖</div>
-                <div style="color: #4a9eff; font-size: 14px; font-weight: bold;">Advanced Optimizer</div>
+                <div style="color: #4a9eff; font-size: 14px; font-weight: bold;">
+                    ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS % Optimizer' : 'Advanced Optimizer'}
+                </div>
+                ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                    '<div style="background: #e74c3c; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px;">EXPERIMENTAL</div>' : ''}
                 <button id="stopOptimization" style="
                     background: #e74c3c; color: white; border: none; padding: 4px 8px; 
                     border-radius: 4px; margin-left: auto; cursor: pointer; font-size: 11px;">
@@ -780,12 +1074,19 @@
     // Genetic Algorithm Implementation
     class GeneticOptimizer {
         constructor(optimizer) {
+            if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
+                this.populationSize = 10;
+                this.mutationRate = 0.4;
+                this.crossoverRate = 0.8;
+                this.eliteCount = 3;
+            } else {
             this.optimizer = optimizer;
             this.populationSize = 7;
             this.mutationRate = 0.3;
             this.crossoverRate = 0.7;
             this.eliteCount = 2;
         }
+    }
         
         async runGeneticOptimization() {
             updateProgress('🧬 Genetic Algorithm Phase', 50, this.optimizer.bestScore.toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics.tokensMatched, this.optimizer.startTime);
@@ -1165,7 +1466,16 @@
             }
 
             this.bestConfig = completeBaseline;
-            this.bestScore = metrics.tpPnlPercent;
+            
+            if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
+                // RUNNERS % optimization mode - HIGHER percentage is BETTER
+                this.bestScore = metrics.runnersPercentage || 0;
+                console.log(`🎯 Baseline RUNNERS %: ${this.bestScore.toFixed(1)}% (${metrics.runnersCount}/${metrics.tokensMatched} runners)`);
+            } else {
+                // Traditional PnL % optimization mode
+                this.bestScore = metrics.tpPnlPercent;
+            }
+            
             this.bestMetrics = metrics;
             this.testCount = 1;
 
@@ -1213,21 +1523,71 @@
                     return result;
                 }
 
-                const improvement = metrics.tpPnlPercent - this.bestScore;
+                // Calculate improvement based on optimization mode
+                let improvement, currentScore, optimizationMetric;
+                
+                if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
+                    // RUNNERS % optimization mode with selectivity penalty
+                    currentScore = metrics.runnersPercentage || 0;
+                    improvement = currentScore - this.bestScore; // Normal: higher current = positive improvement
+                    optimizationMetric = 'RUNNERS %';
+                    
+                    // Apply selectivity penalty for having too many tokens
+                    const targetTokenCount = 200; // Target: keep configs under 200 tokens for selectivity
+                    const maxTokenCount = 500; // Penalty starts ramping up after this
+                    
+                    let selectivityPenalty = 0;
+                    if (metrics.tokensMatched > targetTokenCount) {
+                        // Calculate penalty based on how far over the target we are
+                        const excessTokens = metrics.tokensMatched - targetTokenCount;
+                        const penaltyRange = maxTokenCount - targetTokenCount;
+                        
+                        // Exponential penalty: starts small but grows rapidly
+                        const penaltyFactor = Math.min(excessTokens / penaltyRange, 2); // Cap at 2x
+                        selectivityPenalty = Math.pow(penaltyFactor, 2) * 10; // Penalty up to 40 percentage points
+                        
+                        console.log(`⚠️ Selectivity penalty: -${selectivityPenalty.toFixed(1)}% for ${metrics.tokensMatched} tokens (target: ${targetTokenCount})`);
+                    }
+                    
+                    // Apply penalty to improvement calculation
+                    improvement -= selectivityPenalty;
+                    
+                    console.log(`🎯 RUNNERS % Mode: ${currentScore.toFixed(1)}% (${metrics.runnersCount}/${metrics.tokensMatched} runners) vs best ${this.bestScore.toFixed(1)}%`);
+                    console.log(`📊 Selectivity-adjusted improvement: ${improvement.toFixed(1)}% (penalty: -${selectivityPenalty.toFixed(1)}%)`);
+                } else {
+                    // Traditional PnL % optimization mode
+                    currentScore = metrics.tpPnlPercent;
+                    improvement = currentScore - this.bestScore;
+                    optimizationMetric = 'PnL %';
+                }
+
                 this.testCount++;
 
                 updateProgress(`Testing: ${testName}`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
 
-                const improvementThreshold = 1;
+                // Dynamic improvement threshold based on optimization mode
+                const improvementThreshold = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                    Math.max(0.1, this.bestScore * 0.01) : // Lower threshold for RUNNERS % but not too low
+                    1; // Standard threshold for PnL %
+                    
                 const success = improvement > improvementThreshold;
                 
                 if (success) {
                     this.bestConfig = completeConfig;
-                    this.bestScore = metrics.tpPnlPercent;
+                    this.bestScore = currentScore;
                     this.bestMetrics = metrics;
-                    this.history.push({ testName, score: metrics.tpPnlPercent, improvement });
+                    this.history.push({ testName, score: currentScore, improvement });
                     
-                    updateProgress(`🏆 New best: ${testName}`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, metrics.tokensMatched, this.startTime);
+                    const displayMetric = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                        `${currentScore.toFixed(1)}% runners (${metrics.tokensMatched} tokens)` : 
+                        `${currentScore.toFixed(1)}%`;
+                    
+                    const improvementDisplay = CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                        `+${improvement.toFixed(1)}% (selectivity-adjusted)` :
+                        `+${improvement.toFixed(1)}%`;
+                    
+                    updateProgress(`🏆 New best (${optimizationMetric}): ${testName}`, this.getProgress(), this.bestScore.toFixed(1), this.testCount, metrics.tokensMatched, this.startTime);
+                    console.log(`🏆 New best ${optimizationMetric}: ${displayMetric} (improvement: ${improvementDisplay})`);
                 } else {
                     // Restore best config if no improvement
                     await this.ui.applyConfig(this.bestConfig, true);
@@ -1237,7 +1597,7 @@
                 const result = { success: true, metrics, improvement };
                 if (CONFIG.USE_CONFIG_CACHING) {
                     this.configCache.set(completeConfig, result);
-                    console.log(`💾 Cached result for: ${testName} (success: ${result.success}, score: ${metrics.tpPnlPercent.toFixed(1)}%)`);
+                    console.log(`💾 Cached result for: ${testName} (success: ${result.success}, ${optimizationMetric}: ${currentScore.toFixed(1)})`);
                 }
                 return result;
             } catch (error) {
@@ -1294,11 +1654,10 @@
                     if (i !== current) variations.push(i.toString());
                 }
             } else {
-                // For numeric values with adaptive step sizes
+                // For numeric values
                 const current = currentValue || (rules.min + rules.max) / 2;
                 const range = rules.max - rules.min;
 
-                // Create variations using adaptive step size
                 [
                     Math.max(rules.min, current - adaptiveStep * 2),
                     Math.max(rules.min, current - adaptiveStep),
@@ -1317,6 +1676,11 @@
 
             return variations.slice(0, 4).map(val => {
                 const newConfig = JSON.parse(JSON.stringify(config));
+                // Force integer rounding for specific parameters
+                if (param.includes('Wallets') || param.includes('Count') || param.includes('Age')) {
+                    val = Math.round(val);
+                }
+
                 newConfig[section][param] = val;
                 return { config: newConfig, name: `${param}: ${val}` };
             });
@@ -1884,12 +2248,22 @@
             <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                 <button id="start" style="background: #4a9eff; color: white; border: none; 
                                          padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                    🚀 Start Optimization
+                    🚀 PnL %
                 </button>
-                <button id="cancel" style="background: #e74c3c; color: white; border: none; 
+                <button id="startRunners" style="background: #e74c3c; color: white; border: none; 
+                                               padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                    🎯 Runners % (Experimental)
+                </button>
+                <button id="cancel" style="background: #666; color: white; border: none; 
                                           padding: 10px 20px; border-radius: 5px; cursor: pointer;">
                     ❌ Cancel
                 </button>
+            </div>
+            
+            <div style="margin-top: 15px; padding: 10px; background: rgba(231, 76, 60, 0.1); 
+                        border-radius: 5px; border-left: 3px solid #e74c3c; font-size: 11px; color: #ccc;">
+                <strong style="color: #e74c3c;">🧪 RUNNERS % Mode:</strong> Optimizes for the percentage of 10x+ performers instead of overall PnL. 
+                This experimental mode reduces the influence of "gigamooners" by focusing on consistent runner distribution.
             </div>
         `;
 
@@ -1914,6 +2288,34 @@
             CONFIG.USE_ADAPTIVE_STEP_SIZES = true;
             CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = true;
             CONFIG.USE_MULTIPLE_STARTING_POINTS = popup.querySelector('#multipleStartingPoints').checked;
+            CONFIG.USE_RUNNERS_OPTIMIZATION = false; // Traditional PnL mode
+
+            document.body.removeChild(overlay);
+            resolve(true);
+        };
+
+        popup.querySelector('#startRunners').onclick = () => {
+            const preset = popup.querySelector('#baselinePreset').value;
+            if (preset !== 'current') {
+                CONFIG.BASELINE = { ...CONFIG.BASELINE, ...CONFIG.PRESETS[preset] };
+            }
+
+            CONFIG.TARGET_PNL = parseInt(popup.querySelector('#targetPnl').value);
+            CONFIG.MAX_RUNTIME_MIN = parseInt(popup.querySelector('#maxRuntime').value);
+            CONFIG.MIN_TOKENS = parseInt(popup.querySelector('#minTokens').value)
+
+            // Apply advanced optimization settings
+            CONFIG.USE_CONFIG_CACHING = true;
+            CONFIG.USE_PARAMETER_IMPACT_ANALYSIS = popup.querySelector('#parameterImpactAnalysis').checked;
+            CONFIG.USE_GENETIC_ALGORITHM = true;
+            CONFIG.USE_SIMULATED_ANNEALING = popup.querySelector('#simulatedAnnealing').checked;
+            CONFIG.USE_ADAPTIVE_STEP_SIZES = true;
+            CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = true;
+            CONFIG.USE_MULTIPLE_STARTING_POINTS = popup.querySelector('#multipleStartingPoints').checked;
+            CONFIG.USE_RUNNERS_OPTIMIZATION = true; // Enable RUNNERS % mode
+            
+            console.log('%c🎯 RUNNERS % Mode Activated!', 'color: #e74c3c; font-weight: bold; font-size: 14px;');
+            console.log('%cOptimizing for percentage of 10x+ runners instead of overall PnL', 'color: #e74c3c;');
 
             document.body.removeChild(overlay);
             resolve(true);
@@ -1956,8 +2358,14 @@
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; font-size: 14px;">
                     <div style="background: rgba(39, 174, 96, 0.1); padding: 12px; border-radius: 8px;">
-                        <div style="color: #27ae60; font-weight: bold; font-size: 16px;">${result.bestScore.toFixed(1)}%</div>
-                        <div style="color: #ccc; font-size: 11px;">Final TP PnL</div>
+                        <div style="color: #27ae60; font-weight: bold; font-size: 16px;">
+                            ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 
+                                `${result.bestScore.toFixed(1)}%` : 
+                                `${result.bestScore.toFixed(1)}%`}
+                        </div>
+                        <div style="color: #ccc; font-size: 11px;">
+                            ${CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS %' : 'Final TP PnL'}
+                        </div>
                     </div>
                     <div style="background: rgba(52, 152, 219, 0.1); padding: 12px; border-radius: 8px;">
                         <div style="color: #3498db; font-weight: bold; font-size: 16px;">${result.testCount}</div>
@@ -1971,6 +2379,14 @@
                         <div style="color: #e67e22; font-weight: bold; font-size: 16px;">${Math.floor(result.runtime / 60)}:${(result.runtime % 60).toString().padStart(2, '0')}</div>
                         <div style="color: #ccc; font-size: 11px;">Runtime</div>
                     </div>
+                    ${CONFIG.USE_RUNNERS_OPTIMIZATION ? `
+                    <div style="background: rgba(231, 76, 60, 0.1); padding: 12px; border-radius: 8px; grid-column: span 2;">
+                        <div style="color: #e74c3c; font-weight: bold; font-size: 16px;">
+                            ${result.bestMetrics.runnersCount || 0}/${result.bestMetrics.tokensMatched} 
+                            (PnL: ${result.bestMetrics.tpPnlPercent ? result.bestMetrics.tpPnlPercent.toFixed(1) : '--'}%)
+                        </div>
+                        <div style="color: #ccc; font-size: 11px;">10x+ Runners (Traditional PnL for reference)</div>
+                    </div>` : ''}
                 </div>
 
                 <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 20px; max-height: 200px; overflow-y: auto;">
@@ -2046,8 +2462,15 @@
             updateProgress('🏁 Complete!', 100, result.bestScore.toFixed(1), result.testCount, result.bestMetrics.tokensMatched);
 
             // Log advanced optimization results
-            console.log('🚀 Advanced Optimization Complete!');
-            console.log(`📈 Final Score: ${result.bestScore.toFixed(1)}%`);
+            const optimizationMode = CONFIG.USE_RUNNERS_OPTIMIZATION ? 'RUNNERS %' : 'PnL %';
+            console.log(`🚀 ${optimizationMode} Optimization Complete!`);
+            console.log(`📈 Final ${optimizationMode}: ${result.bestScore.toFixed(1)}${CONFIG.USE_RUNNERS_OPTIMIZATION ? '%' : '%'}`);
+            
+            if (CONFIG.USE_RUNNERS_OPTIMIZATION && result.bestMetrics.runnersCount !== undefined) {
+                console.log(`🎯 Runners: ${result.bestMetrics.runnersCount}/${result.bestMetrics.tokensMatched} tokens are 10x+ performers`);
+                console.log(`📊 Traditional PnL: ${result.bestMetrics.tpPnlPercent ? result.bestMetrics.tpPnlPercent.toFixed(1) : '--'}% (for reference)`);
+            }
+            
             console.log(`🧪 Total Tests: ${result.testCount}`);
             console.log(`💾 Cache Size: ${result.cacheSize} configurations`);
             console.log(`📊 Parameter Impacts:`, result.parameterImpacts.slice(0, 5));
