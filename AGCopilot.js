@@ -88,12 +88,14 @@
         PRESETS: {
             // You can add your presets here
             // For example:
-            ai20: {
-                basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 40000 },
-                tokenDetails: { "Min AG Score": "5", "Min Deployer Age (min)": 800 },
-                wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 3, "Min KYC Wallets": 3, "Max KYC Wallets": 5 },
-                risk: { "Min Bundled %": 0.5 },
-                advanced: { "Min Win Pred %": 20 }
+            WIP: {
+                // basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 40000 },
+                // tokenDetails: { "Min AG Score": "5", "Min Deployer Age (min)": 800 },
+                // wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 3, "Min KYC Wallets": 3, "Max KYC Wallets": 5 },
+                // risk: { "Min Bundled %": 0.5 },
+                // advanced: { "Min Win Pred %": 20 }
+                wallets: {  "Min Unique Wallets": 3, "Min KYC Wallets": 1, "Max KYC Wallets": 1, "Max Unique Wallets": 7 },
+                risk: { "Min Bundled %": 4 }
             },
             ai30: {
                basic: { "Min MCAP (USD)": 7000 },
@@ -261,10 +263,31 @@
     // ========================================
     // 🎛️ OPTIMIZED UI INTERACTION LAYER
     // ========================================
+    
+    // Simple rate limiter to prevent 429 errors
+    class RateLimiter {
+        constructor(minDelay = 100) {
+            this.minDelay = minDelay;
+            this.lastRequest = 0;
+        }
+        
+        async throttle() {
+            const now = Date.now();
+            const elapsed = now - this.lastRequest;
+            
+            if (elapsed < this.minDelay) {
+                await sleep(this.minDelay - elapsed);
+            }
+            
+            this.lastRequest = Date.now();
+        }
+    }
+    
     class UIController {
         constructor() {
             this.fieldHandlers = new Map();
             this.fieldMappings = new Map();
+            this.rateLimiter = new RateLimiter(120); // 120ms minimum between requests
         }
 
         async getCurrentConfig() {
@@ -448,8 +471,10 @@
             return element.placeholder || 'Unknown';
         }
 
-        // React handler method for optimized field setting
+        // React handler method for optimized field setting with rate limiting
         async setFieldValueReact(labelText, value) {
+            await this.rateLimiter.throttle();
+            
             const handler = this.fieldHandlers.get(labelText);
             const field = this.fieldMappings.get(labelText);
             
@@ -485,6 +510,108 @@
                 } else {
                     return false;
                 }
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // React handler method specifically for clearing fields with rate limiting
+        async clearFieldValueReact(labelText) {
+            await this.rateLimiter.throttle();
+            
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // Create synthetic event for clearing
+                const syntheticEvent = {
+                    target: {
+                        value: '', // Empty string to clear
+                        type: field.type || 'text',
+                        name: field.name || '',
+                        checked: false
+                    },
+                    currentTarget: field,
+                    preventDefault: () => {},
+                    stopPropagation: () => {},
+                    persist: () => {}
+                };
+                
+                // Call the React handler
+                await handler(syntheticEvent);
+                
+                // Verify the field was actually cleared
+                await sleep(50);
+                const currentValue = field.value;
+                
+                if (currentValue === '' || currentValue === null || currentValue === undefined) {
+                    return true;
+                } else {
+                    return false;
+                }
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // Enhanced toggle value setting using React handlers with rate limiting
+        async setToggleValueReact(labelText, value) {
+            await this.rateLimiter.throttle();
+            
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // For toggle buttons, we need to check current state and click if different
+                const currentValue = field.textContent?.trim();
+                
+                if (currentValue !== value) {
+                    // Simulate a click event for toggle buttons
+                    const clickEvent = {
+                        type: 'click',
+                        target: field,
+                        currentTarget: field,
+                        preventDefault: () => {},
+                        stopPropagation: () => {},
+                        persist: () => {}
+                    };
+                    
+                    // Try onClick handler if available
+                    if (field.onclick) {
+                        field.onclick(clickEvent);
+                    } else if (handler) {
+                        await handler(clickEvent);
+                    } else {
+                        // Fallback to direct click
+                        field.click();
+                    }
+                    
+                    await sleep(100);
+                    
+                    // Verify the toggle was successful
+                    const newValue = field.textContent?.trim();
+                    if (newValue === value) {
+                        return true;
+                    }
+                    
+                    // If not the target value, try clicking again (some toggles cycle through options)
+                    if (newValue !== value && newValue !== currentValue) {
+                        field.click();
+                        await sleep(100);
+                    }
+                }
+                
+                return true;
                 
             } catch (error) {
                 return false;
@@ -641,30 +768,72 @@
             return fieldName === "Description" || fieldName === "Fresh Deployer";
         }
 
+        // Rate-limited clearAllFields method to prevent 429 errors
         async clearAllFields() {
-            const allFields = [
-                // Basic
-                'Min MCAP (USD)', 'Max MCAP (USD)',
-                // Token Details
-                'Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score',
-                // Wallets
-                'Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets',
-                // Risk
-                'Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
-                'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
-                'Max Drained Count', 'Description', 'Fresh Deployer',
-                // Advanced
-                'Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %'
-            ];
+            console.log('🧹 Rate-limited field clearing starting...');
+            console.time('Rate-Limited Field Clearing');
+            
+            // Group fields by section for efficient clearing
+            const sectionMap = {
+                'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                'Token Details': ['Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score'],
+                'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets'],
+                'Risk': ['Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
+                         'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
+                         'Max Drained Count', 'Description', 'Fresh Deployer'],
+                'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+            };
 
-            for (const field of allFields) {
-                if (this.isToggleButton(field)) {
-                    await this.setToggleValue(field, "Don't care");
-                } else {
-                    await this.setFieldValue(field, undefined);
+            let totalCleared = 0;
+
+            // Process each section with increased delays to prevent rate limiting
+            for (const [sectionName, fields] of Object.entries(sectionMap)) {
+                console.log(`🧹 Clearing section: ${sectionName}`);
+                
+                // Open section and map handlers
+                await this.openSectionAndMapHandlers(sectionName);
+                
+                // Longer delay after opening section to let it fully load
+                await sleep(300);
+                
+                // Clear fields in smaller batches to reduce load
+                const batchSize = 3; // Process 3 fields at a time
+                for (let i = 0; i < fields.length; i += batchSize) {
+                    const batch = fields.slice(i, i + batchSize);
+                    
+                    for (const field of batch) {
+                        let success = false;
+
+                        if (this.isToggleButton(field)) {
+                            // Use DOM method first for toggle buttons to reduce complexity
+                            success = await this.setToggleValue(field, "Don't care");
+                        } else {
+                            // Use DOM method for clearing to be more reliable
+                            success = await this.setFieldValue(field, undefined);
+                        }
+
+                        if (success) {
+                            totalCleared++;
+                        }
+                        
+                        // Increased delay between individual fields
+                        await sleep(150);
+                    }
+                    
+                    // Additional delay between batches
+                    if (i + batchSize < fields.length) {
+                        await sleep(200);
+                    }
                 }
-                await sleep(100);
+                
+                // Delay between sections
+                await sleep(400);
             }
+            
+            console.timeEnd('Rate-Limited Field Clearing');
+            console.log(`🧹 Cleared ${totalCleared} fields successfully`);
+            
+            return totalCleared;
         }
 
         // Optimized config application with React handlers and DOM fallback
@@ -681,10 +850,8 @@
             };
 
             if (clearFirst) {
-                for (const section in sectionMap) {
-                    await this.openSection(sectionMap[section]);
-                    await this.clearAllFields();
-                }
+                // Use the optimized clearing method
+                await this.clearAllFields();
             }
 
             let totalSuccess = 0;
@@ -704,7 +871,12 @@
                         let success = false;
 
                         if (this.isToggleButton(param)) {
-                            success = await this.setToggleValue(param, value, sectionMap[section]);
+                            success = await this.setToggleValueReact(param, value);
+                            
+                            // Fallback to DOM method if React handler not available
+                            if (!success) {
+                                success = await this.setToggleValue(param, value, sectionMap[section]);
+                            }
                         } else {
                             // Try React handler first
                             success = await this.setFieldValueReact(param, value);
@@ -719,8 +891,8 @@
                             totalSuccess++;
                         }
                         
-                        // Small delay to avoid overwhelming React
-                        await sleep(100);
+                        // Conservative delay to prevent rate limiting
+                        await sleep(120);
                     }
                 }
             }
