@@ -95,8 +95,40 @@
                 risk: { "Min Bundled %": 0.5 },
                 advanced: { "Min Win Pred %": 20 }
             },
-           
+            ai30: {
+               basic: { "Min MCAP (USD)": 7000 },
+               wallets: { "Max KYC Wallets": 1, "Min KYC Wallets": 1 },
+               risk: { "Min Bundled %": 5 },
+               advanced: { "Min Win Pred %": 30 }
+            },
             // This is for Multiple Starting Points optimization
+            ultraHighBuyRatio: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 10000 },
+                tokenDetails: { "Min AG Score": "3" },
+                wallets: { "Min KYC Wallets": 1 },
+                risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
+            },
+            mediumBuyTightRange: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6500 },
+                risk: { "Min Buy Ratio %": 90, "Min Vol MCAP %": 40 }
+            },
+            freshLaunchSpecialist: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 4 }
+            },
+            highQualityFilter: {
+                basic: { "Min MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "8" },
+                wallets: { "Min KYC Wallets": 3 },
+                risk: { "Min Vol MCAP %": 40, "Max Vol MCAP %": 70 }
+            },
+            moderateBuyBroad: {
+                tokenDetails: { "Min AG Score": "6" },
+                risk: { "Min Buy Ratio %": 80, "Min Vol MCAP %": 40 }
+            },
             oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
             conservative: {
                 basic: { "Min MCAP (USD)": 8000, "Max MCAP (USD)": 25000 },
@@ -127,12 +159,8 @@
                 advanced: {  "Max Liquidity %": 95,  "Min Win Pred %": 15  }
             },
             bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
-            mcap8KCeiling: { basic: { "Max MCAP (USD)": 8000 } },
-            mcap20KFloor: { basic: { "Min MCAP (USD)": 20000 } },
-            highBuyRatioFocus: { risk: { "Min Buy Ratio %": 90, "Max Buy Ratio %": 100 } },
             deployerBalance10: { risk: { "Min Deployer Balance (SOL)": 10 } },
             agScore7: { tokenDetails: { "Min AG Score": "7" } },
-
         },
 
         // Optimization settings
@@ -165,9 +193,24 @@
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let STOPPED = false;
 
+    // Efficient deep clone utility function (replaces expensive JSON.parse(JSON.stringify()))
+    function deepClone(obj) {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (obj instanceof Date) return new Date(obj.getTime());
+        if (Array.isArray(obj)) return obj.map(item => deepClone(item));
+        
+        const cloned = {};
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                cloned[key] = deepClone(obj[key]);
+            }
+        }
+        return cloned;
+    }
+
     // Ensure complete config by merging with template
     function ensureCompleteConfig(config) {
-        const completeConfig = JSON.parse(JSON.stringify(COMPLETE_CONFIG_TEMPLATE));
+        const completeConfig = deepClone(COMPLETE_CONFIG_TEMPLATE);
 
         for (const [section, sectionConfig] of Object.entries(config)) {
             if (completeConfig[section]) {
@@ -216,9 +259,14 @@
     };
 
     // ========================================
-    // 🎛️ DOM INTERACTION LAYER
+    // 🎛️ OPTIMIZED UI INTERACTION LAYER
     // ========================================
     class UIController {
+        constructor() {
+            this.fieldHandlers = new Map();
+            this.fieldMappings = new Map();
+        }
+
         async getCurrentConfig() {
             const config = { basic: {}, tokenDetails: {}, wallets: {}, risk: {}, advanced: {} };
 
@@ -296,6 +344,154 @@
             return config;
         }
 
+        // Open section and map React handlers for newly visible fields
+        async openSectionAndMapHandlers(sectionTitle) {
+            // Open the section
+            const allHeaders = Array.from(document.querySelectorAll('button[type="button"]'));
+            const sectionHeader = allHeaders.find(header =>
+                header.textContent.includes(sectionTitle)
+            );
+
+            if (!sectionHeader) {
+                return false;
+            }
+
+            sectionHeader.click();
+            await sleep(200); // Wait for section to expand
+            
+            // Map React handlers for newly visible fields
+            this.mapVisibleFieldHandlers();
+            
+            return true;
+        }
+        
+        // Map React handlers for currently visible fields
+        mapVisibleFieldHandlers() {
+            const inputs = document.querySelectorAll('input[type="number"]:not([data-mapped])');
+            const selects = document.querySelectorAll('select:not([data-mapped])');
+            
+            [...inputs, ...selects].forEach(field => {
+                const label = this.findFieldLabel(field);
+                
+                // Try multiple patterns for React props
+                let handler = null;
+                let propsKey = null;
+                
+                // Look for React Fiber properties (React 16+)
+                const fiberKey = Object.keys(field).find(key => 
+                    key.startsWith('__reactInternalInstance') || 
+                    key.startsWith('__reactFiber') ||
+                    key.startsWith('_reactInternalFiber')
+                );
+                
+                if (fiberKey && field[fiberKey]) {
+                    const fiberNode = field[fiberKey];
+                    // Navigate the fiber tree to find props
+                    let current = fiberNode;
+                    for (let i = 0; i < 5 && current; i++) {
+                        if (current.memoizedProps && current.memoizedProps.onChange) {
+                            handler = current.memoizedProps.onChange;
+                            propsKey = `${fiberKey}.memoizedProps`;
+                            break;
+                        }
+                        if (current.pendingProps && current.pendingProps.onChange) {
+                            handler = current.pendingProps.onChange;
+                            propsKey = `${fiberKey}.pendingProps`;
+                            break;
+                        }
+                        current = current.return || current.child || current.sibling;
+                    }
+                }
+                
+                // Fallback: Look for direct React props
+                if (!handler) {
+                    propsKey = Object.keys(field).find(key => 
+                        key.includes('reactProps') || 
+                        key.includes('__reactProps') ||
+                        key.includes('props')
+                    );
+                    
+                    if (propsKey && field[propsKey] && field[propsKey].onChange) {
+                        handler = field[propsKey].onChange;
+                    }
+                }
+                
+                // Additional fallback: Check for onChange directly on the element
+                if (!handler && field.onChange && typeof field.onChange === 'function') {
+                    handler = field.onChange;
+                    propsKey = 'direct';
+                }
+                
+                if (handler) {
+                    this.fieldHandlers.set(label, handler);
+                    this.fieldMappings.set(label, field);
+                    field.setAttribute('data-mapped', 'true'); // Mark as mapped
+                }
+            });
+        }
+        
+        // Find the label for a field
+        findFieldLabel(element) {
+            let container = element.closest('.form-group') || element.parentElement;
+            
+            for (let i = 0; i < 5; i++) {
+                if (!container) break;
+                
+                const label = container.querySelector('.sidebar-label');
+                if (label) {
+                    return label.textContent.trim();
+                }
+                
+                container = container.parentElement;
+            }
+            
+            return element.placeholder || 'Unknown';
+        }
+
+        // React handler method for optimized field setting
+        async setFieldValueReact(labelText, value) {
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // Create a more comprehensive synthetic event
+                const syntheticEvent = {
+                    target: {
+                        value: String(value),
+                        type: field.type || 'text',
+                        name: field.name || '',
+                        checked: field.type === 'checkbox' ? Boolean(value) : undefined
+                    },
+                    currentTarget: field,
+                    preventDefault: () => {},
+                    stopPropagation: () => {},
+                    persist: () => {}
+                };
+                
+                // Call the React handler
+                await handler(syntheticEvent);
+                
+                // Verify the field was actually updated
+                await sleep(50);
+                const currentValue = field.value;
+                const expectedValue = String(value);
+                
+                if (currentValue === expectedValue || Math.abs(parseFloat(currentValue) - parseFloat(expectedValue)) < 0.01) {
+                    return true;
+                } else {
+                    return false;
+                }
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // DOM fallback method (legacy support)
         async setFieldValue(labelText, value, sectionName = null, maxRetries = 2) {
             const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
 
@@ -306,7 +502,6 @@
                 if (!label) {
                     if (attempt < maxRetries && sectionName) {
                         await this.openSection(sectionName);
-                        await sleep(250);
                         continue;
                     }
                     return false;
@@ -439,7 +634,6 @@
             }
 
             sectionHeader.click();
-            await sleep(50);
             return true;
         }
 
@@ -473,7 +667,11 @@
             }
         }
 
+        // Optimized config application with React handlers and DOM fallback
         async applyConfig(config, clearFirst = false) {
+            console.log('🚀 Optimized config application starting...');
+            console.time('Optimized Config Application');
+            
             const sectionMap = {
                 basic: 'Basic',
                 tokenDetails: 'Token Details',
@@ -489,24 +687,48 @@
                 }
             }
 
-            let changes = 0;
+            let totalSuccess = 0;
+            
+            // Process each section
             for (const [section, params] of Object.entries(config)) {
+                if (!params || Object.keys(params).length === 0) {
+                    continue;
+                }
+                
+                // Open section and map handlers
+                await this.openSectionAndMapHandlers(sectionMap[section]);
+                
+                // Apply parameters using React handlers with DOM fallback
                 for (const [param, value] of Object.entries(params)) {
-                    if (value !== undefined) {
+                    if (value !== undefined && value !== null && value !== '') {
                         let success = false;
 
                         if (this.isToggleButton(param)) {
                             success = await this.setToggleValue(param, value, sectionMap[section]);
                         } else {
-                            success = await this.setFieldValue(param, value, sectionMap[section]);
+                            // Try React handler first
+                            success = await this.setFieldValueReact(param, value);
+                            
+                            // Fallback to DOM method if React handler not available
+                            if (!success) {
+                                success = await this.setFieldValue(param, value, sectionMap[section]);
+                            }
                         }
 
-                        if (success) changes++;
+                        if (success) {
+                            totalSuccess++;
+                        }
+                        
+                        // Small delay to avoid overwhelming React
                         await sleep(100);
                     }
                 }
             }
-            return changes;
+            
+            console.timeEnd('Optimized Config Application');
+            console.log(`✅ Applied ${totalSuccess} fields successfully`);
+            
+            return totalSuccess;
         }
     }
 
@@ -1113,19 +1335,20 @@
     // Genetic Algorithm Implementation
     class GeneticOptimizer {
         constructor(optimizer) {
+            this.optimizer = optimizer; // Always set the optimizer reference first
+            
             if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
                 this.populationSize = 10;
                 this.mutationRate = 0.4;
                 this.crossoverRate = 0.8;
                 this.eliteCount = 3;
             } else {
-            this.optimizer = optimizer;
-            this.populationSize = 7;
-            this.mutationRate = 0.3;
-            this.crossoverRate = 0.7;
-            this.eliteCount = 2;
+                this.populationSize = 7;
+                this.mutationRate = 0.3;
+                this.crossoverRate = 0.7;
+                this.eliteCount = 2;
+            }
         }
-    }
         
         async runGeneticOptimization() {
             updateProgress('🧬 Genetic Algorithm Phase', 50, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
@@ -1162,11 +1385,11 @@
             const population = [];
             
             // Add current best config
-            population.push(JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig())));
+            population.push(deepClone(this.optimizer.getCurrentBestConfig()));
             
             // Add variations of best config
             for (let i = 1; i < this.populationSize; i++) {
-                const config = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
+                const config = deepClone(this.optimizer.getCurrentBestConfig());
                 this.mutateConfig(config, 0.5); // Higher mutation rate for initialization
                 population.push(config);
             }
@@ -1205,7 +1428,7 @@
             // Elitism: keep best individuals
             for (let i = 0; i < this.eliteCount; i++) {
                 if (evaluatedPop[i]) {
-                    newPopulation.push(JSON.parse(JSON.stringify(evaluatedPop[i].config)));
+                    newPopulation.push(deepClone(evaluatedPop[i].config));
                 }
             }
             
@@ -1216,7 +1439,7 @@
                 
                 let offspring = Math.random() < this.crossoverRate ? 
                     this.crossover(parent1, parent2) : 
-                    JSON.parse(JSON.stringify(parent1));
+                    deepClone(parent1);
                 
                 if (Math.random() < this.mutationRate) {
                     this.mutateConfig(offspring, 0.2);
@@ -1244,7 +1467,7 @@
         }
         
         crossover(parent1, parent2) {
-            const offspring = JSON.parse(JSON.stringify(parent1));
+            const offspring = deepClone(parent1);
             
             // Crossover at section level
             const sections = Object.keys(offspring);
@@ -1252,7 +1475,7 @@
             
             for (let i = crossoverPoint; i < sections.length; i++) {
                 const section = sections[i];
-                offspring[section] = JSON.parse(JSON.stringify(parent2[section]));
+                offspring[section] = deepClone(parent2[section]);
             }
             
             return offspring;
@@ -1291,7 +1514,7 @@
         async runSimulatedAnnealing() {
             updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
             
-            let currentConfig = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
+            let currentConfig = deepClone(this.optimizer.getCurrentBestConfig());
             let currentScore = this.optimizer.getCurrentBestScore();
             let temperature = this.initialTemperature;
             
@@ -1334,7 +1557,7 @@
         }
         
         generateNeighbor(config) {
-            const neighbor = JSON.parse(JSON.stringify(config));
+            const neighbor = deepClone(config);
             
             // Randomly modify 1-2 parameters
             const paramList = Object.keys(PARAM_RULES);
@@ -1534,8 +1757,8 @@
             // Set baseline values for both tracking systems
             this.bestRunnersPercentage = metrics.runnersPercentage || 0;
             this.bestPnlPercentage = metrics.tpPnlPercent;
-            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeBaseline));
-            this.bestPnlConfig = JSON.parse(JSON.stringify(completeBaseline));
+            this.bestRunnersConfig = deepClone(completeBaseline);
+            this.bestPnlConfig = deepClone(completeBaseline);
             
             if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
                 // RUNNERS % optimization mode - HIGHER percentage is BETTER
@@ -1699,7 +1922,7 @@
                         // Update runners tracking if we have runners data
                         if (this.optimizationPhase === 'RUNNERS' || metrics.runnersPercentage > this.bestRunnersPercentage) {
                             this.bestRunnersPercentage = metrics.runnersPercentage;
-                            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeConfig));
+                            this.bestRunnersConfig = deepClone(completeConfig);
                         }
                     }
                     
@@ -1707,7 +1930,7 @@
                         // Update PnL tracking if we have PnL data
                         if (this.optimizationPhase !== 'RUNNERS' || metrics.tpPnlPercent > this.bestPnlPercentage) {
                             this.bestPnlPercentage = metrics.tpPnlPercent;
-                            this.bestPnlConfig = JSON.parse(JSON.stringify(completeConfig));
+                            this.bestPnlConfig = deepClone(completeConfig);
                         }
                     }
                     
@@ -1786,7 +2009,7 @@
             const rules = PARAM_RULES[param];
             if (!rules) return null;
 
-            const config = JSON.parse(JSON.stringify(baseConfig));
+            const config = deepClone(baseConfig);
             const currentValue = config[section][param];
 
             // Use adaptive step size if enabled and available
@@ -1825,7 +2048,7 @@
             }
 
             return variations.slice(0, 4).map(val => {
-                const newConfig = JSON.parse(JSON.stringify(config));
+                const newConfig = deepClone(config);
                 // Force integer rounding for specific parameters
                 if (param.includes('Wallets') || param.includes('Count') || param.includes('Age')) {
                     val = Math.round(val);
@@ -1842,7 +2065,7 @@
             const variations = [];
             
             for (const sample of samples) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 let name = 'LHS: ';
                 
                 for (const [param, value] of Object.entries(sample)) {
@@ -1870,7 +2093,7 @@
             ];
             
             for (const range of mcapRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 config.basic["Min MCAP (USD)"] = range.min;
                 config.basic["Max MCAP (USD)"] = range.max;
                 variations.push({ 
@@ -1888,7 +2111,7 @@
             ];
             
             for (const range of walletRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 config.wallets["Min Unique Wallets"] = range.minUnique;
                 config.wallets["Max Unique Wallets"] = range.maxUnique;
                 config.wallets["Min KYC Wallets"] = range.minKyc;
@@ -2085,11 +2308,13 @@
             updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
             const startingPoints = [
+                CONFIG.PRESETS.ultraHighBuyRatio,
+                CONFIG.PRESETS.highQualityFilter,
                 CONFIG.PRESETS.conservative,
                 CONFIG.PRESETS.aggressive,
                 CONFIG.PRESETS.balanced,
                 CONFIG.PRESETS.microCap,
-                CONFIG.PRESETS.oldDeployerBase,
+                CONFIG.PRESETS.oldDeployer,
             ];
 
             for (const startingPoint of startingPoints) {
@@ -2164,7 +2389,7 @@
                 for (const value of combo.values) {
                     if (STOPPED || this.getRemainingTime() <= 0.1) break;
 
-                    const config = JSON.parse(JSON.stringify(this.bestConfig));
+                    const config = deepClone(this.bestConfig);
                     config[combo.section][combo.param] = value;
 
                     const result = await this.testConfig(config, `Combo: ${combo.param}=${value}`);
@@ -2184,7 +2409,7 @@
             const importantParams = this.parameterTests.slice(0, 5); // Top 5 parameters
 
             while (this.getRemainingTime() > 0.02 && !STOPPED) { // Keep 2% buffer
-                const config = JSON.parse(JSON.stringify(this.bestConfig));
+                const config = deepClone(this.bestConfig);
 
                 // Modify 1-2 random parameters from top performers
                 const modifications = Math.floor(Math.random() * 2) + 1;
@@ -2220,7 +2445,7 @@
             const rules = PARAM_RULES[param];
             if (!rules) return null;
 
-            const config = JSON.parse(JSON.stringify(baseConfig));
+            const config = deepClone(baseConfig);
             const currentValue = config[section][param];
 
             // Generate more extensive variations than standard generateVariation
@@ -2266,7 +2491,7 @@
             }
 
             return variations.slice(0, 8).map(val => {
-                const newConfig = JSON.parse(JSON.stringify(config));
+                const newConfig = deepClone(config);
                 newConfig[section][param] = val;
                 return { config: newConfig, name: `${param}: ${val}` };
             });
