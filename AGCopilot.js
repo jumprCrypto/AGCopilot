@@ -87,52 +87,65 @@
         // Alternative baselines for quick switching
         PRESETS: {
             // You can add your presets here
-            // For example:
-            ai20: {
-                basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 40000 },
-                tokenDetails: { "Min AG Score": "5", "Min Deployer Age (min)": 800 },
-                wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 3, "Min KYC Wallets": 3, "Max KYC Wallets": 5 },
-                risk: { "Min Bundled %": 0.5 },
-                advanced: { "Min Win Pred %": 20 }
+            WIP: {
+                basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
+                tokenDetails: { "Min AG Score": 3 },
+                wallets: { "Min Unique Wallets": 3, "Min KYC Wallets": 2, "Max Unique Wallets": 3 },
+                risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
+                advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
             },
-           
             // This is for Multiple Starting Points optimization
-            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
-            conservative: {
-                basic: { "Min MCAP (USD)": 8000, "Max MCAP (USD)": 25000 },
-                tokenDetails: { "Min AG Score": "7", "Max Token Age (min)": 30 },
-                wallets: { "Min Unique Wallets": 2, "Max Unique Wallets": 4, "Min KYC Wallets": 3, "Max KYC Wallets": 6 },
-                risk: { "Min Bundled %": 0.1, "Max Bundled %": 25, "Min Buy Ratio %": 65, "Max Vol MCAP %": 50, "Min Deployer Balance (SOL)": 2.0 },
-                advanced: { "Max Liquidity %": 60, "Min Win Pred %": 30 }
+            // From Top Presets
+            cabalOrRug: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Max TTC (sec)": 1, "Min Win Pred %": 3 }
+            },    
+            rolandProduction: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 2 }
+            },            
+            bonkSuper: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 4 }
+            },            
+            roland4to6K: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 4 }
+            },            
+            alpha97: {
+                risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
+            },            
+            boomerBonk: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 2 }
+            },            
+            boomerBonk1: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Min KYC Wallets": 1 },
+                risk: { "Max Bundled %": 75, "Min Deployer Balance (SOL)": 7 },
+                advanced: { "Min Win Pred %": 4 }
             },
-            aggressive: {
-                basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 15000 },
-                tokenDetails: { "Min AG Score": "4", "Max Token Age (min)": 60 },
-                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 8, "Min KYC Wallets": 0, "Max KYC Wallets": 3 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 80, "Min Buy Ratio %": 40, "Max Vol MCAP %": 150, "Min Deployer Balance (SOL)": 0.5 },
-                advanced: { "Max Liquidity %": 90, "Min Win Pred %": 20 }
-            },
-            balanced: {
-                basic: {  "Min MCAP (USD)": 3000, "Max MCAP (USD)": 35000 },
-                tokenDetails: { "Min AG Score": "5", "Max Token Age (min)": 45 },
-                wallets: { "Min Unique Wallets": 1,  "Max Unique Wallets": 6, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 55, "Max Vol MCAP %": 100, "Min Deployer Balance (SOL)": 1.0 },
-                advanced: { "Max Liquidity %": 75, "Min Win Pred %": 30 }
-            },
-            microCap: {
-                basic: { "Min MCAP (USD)": 200, "Max MCAP (USD)": 5000 },
-                tokenDetails: { "Min AG Score": "3", "Max Token Age (min)": 15, "Min Deployer Age (min)": 5 },
-                wallets: { "Min Unique Wallets": 0, "Max Unique Wallets": 3, "Min KYC Wallets": 0, "Max KYC Wallets": 2 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 100, "Min Buy Ratio %": 70, "Max Vol MCAP %": 300, "Fresh Deployer": "Yes" },
-                advanced: {  "Max Liquidity %": 95,  "Min Win Pred %": 15  }
-            },
-            bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
-            mcap8KCeiling: { basic: { "Max MCAP (USD)": 8000 } },
-            mcap20KFloor: { basic: { "Min MCAP (USD)": 20000 } },
-            highBuyRatioFocus: { risk: { "Min Buy Ratio %": 90, "Max Buy Ratio %": 100 } },
+            // More stuff
+            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },           
+			bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
             deployerBalance10: { risk: { "Min Deployer Balance (SOL)": 10 } },
             agScore7: { tokenDetails: { "Min AG Score": "7" } },
-
         },
 
         // Optimization settings
@@ -165,9 +178,24 @@
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let STOPPED = false;
 
+    // Efficient deep clone utility function (replaces expensive JSON.parse(JSON.stringify()))
+    function deepClone(obj) {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (obj instanceof Date) return new Date(obj.getTime());
+        if (Array.isArray(obj)) return obj.map(item => deepClone(item));
+        
+        const cloned = {};
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                cloned[key] = deepClone(obj[key]);
+            }
+        }
+        return cloned;
+    }
+
     // Ensure complete config by merging with template
     function ensureCompleteConfig(config) {
-        const completeConfig = JSON.parse(JSON.stringify(COMPLETE_CONFIG_TEMPLATE));
+        const completeConfig = deepClone(COMPLETE_CONFIG_TEMPLATE);
 
         for (const [section, sectionConfig] of Object.entries(config)) {
             if (completeConfig[section]) {
@@ -216,11 +244,38 @@
     };
 
     // ========================================
-    // 🎛️ DOM INTERACTION LAYER
+    // 🎛️ OPTIMIZED UI INTERACTION LAYER
     // ========================================
+    
+    // Simple rate limiter to prevent 429 errors
+    class RateLimiter {
+        constructor(minDelay = 100) {
+            this.minDelay = minDelay;
+            this.lastRequest = 0;
+        }
+        
+        async throttle() {
+            const now = Date.now();
+            const elapsed = now - this.lastRequest;
+            
+            if (elapsed < this.minDelay) {
+                await sleep(this.minDelay - elapsed);
+            }
+            
+            this.lastRequest = Date.now();
+        }
+    }
+    
     class UIController {
+        constructor() {
+            this.fieldHandlers = new Map();
+            this.fieldMappings = new Map();
+            this.rateLimiter = new RateLimiter(150);
+        }
+
         async getCurrentConfig() {
-            const config = { basic: {}, tokenDetails: {}, wallets: {}, risk: {}, advanced: {} };
+            // Start with complete template to ensure ALL fields are included
+            const config = deepClone(COMPLETE_CONFIG_TEMPLATE);
 
             const getFieldValue = (labelText) => {
                 const labels = Array.from(document.querySelectorAll('.sidebar-label'));
@@ -244,7 +299,9 @@
 
                 const button = container.querySelector('button');
                 if (button) {
-                    return button.textContent.trim();
+                    const text = button.textContent.trim();
+                    // Only return value if it's not the default "Don't care" state
+                    return (text === "Don't care" || text === "") ? undefined : text;
                 }
 
                 return undefined;
@@ -258,12 +315,14 @@
                 let container = label.closest('.form-group') || label.parentElement;
                 const button = container.querySelector('button');
                 if (button) {
-                    return button.textContent.trim();
+                    const text = button.textContent.trim();
+                    // Only return value if it's not the default "Don't care" state
+                    return (text === "Don't care" || text === "") ? undefined : text;
                 }
                 return undefined;
             };
 
-            // Map fields to config sections
+            // Map ALL fields to config sections (overwrites undefined values from template)
             config.basic["Min MCAP (USD)"] = getFieldValue("Min MCAP (USD)");
             config.basic["Max MCAP (USD)"] = getFieldValue("Max MCAP (USD)");
 
@@ -296,6 +355,258 @@
             return config;
         }
 
+        // Open section and map React handlers for newly visible fields
+        async openSectionAndMapHandlers(sectionTitle) {
+            // Open the section
+            const allHeaders = Array.from(document.querySelectorAll('button[type="button"]'));
+            const sectionHeader = allHeaders.find(header =>
+                header.textContent.includes(sectionTitle)
+            );
+
+            if (!sectionHeader) {
+                return false;
+            }
+
+            sectionHeader.click();
+            await sleep(150); // Moderate section expansion wait
+            
+            // Map React handlers for newly visible fields
+            this.mapVisibleFieldHandlers();
+            
+            return true;
+        }
+        
+        // Map React handlers for currently visible fields
+        mapVisibleFieldHandlers() {
+            const inputs = document.querySelectorAll('input[type="number"]:not([data-mapped])');
+            const selects = document.querySelectorAll('select:not([data-mapped])');
+            
+            [...inputs, ...selects].forEach(field => {
+                const label = this.findFieldLabel(field);
+                
+                // Try multiple patterns for React props
+                let handler = null;
+                let propsKey = null;
+                
+                // Look for React Fiber properties (React 16+)
+                const fiberKey = Object.keys(field).find(key => 
+                    key.startsWith('__reactInternalInstance') || 
+                    key.startsWith('__reactFiber') ||
+                    key.startsWith('_reactInternalFiber')
+                );
+                
+                if (fiberKey && field[fiberKey]) {
+                    const fiberNode = field[fiberKey];
+                    // Navigate the fiber tree to find props
+                    let current = fiberNode;
+                    for (let i = 0; i < 5 && current; i++) {
+                        if (current.memoizedProps && current.memoizedProps.onChange) {
+                            handler = current.memoizedProps.onChange;
+                            propsKey = `${fiberKey}.memoizedProps`;
+                            break;
+                        }
+                        if (current.pendingProps && current.pendingProps.onChange) {
+                            handler = current.pendingProps.onChange;
+                            propsKey = `${fiberKey}.pendingProps`;
+                            break;
+                        }
+                        current = current.return || current.child || current.sibling;
+                    }
+                }
+                
+                // Fallback: Look for direct React props
+                if (!handler) {
+                    propsKey = Object.keys(field).find(key => 
+                        key.includes('reactProps') || 
+                        key.includes('__reactProps') ||
+                        key.includes('props')
+                    );
+                    
+                    if (propsKey && field[propsKey] && field[propsKey].onChange) {
+                        handler = field[propsKey].onChange;
+                    }
+                }
+                
+                // Additional fallback: Check for onChange directly on the element
+                if (!handler && field.onChange && typeof field.onChange === 'function') {
+                    handler = field.onChange;
+                    propsKey = 'direct';
+                }
+                
+                if (handler) {
+                    this.fieldHandlers.set(label, handler);
+                    this.fieldMappings.set(label, field);
+                    field.setAttribute('data-mapped', 'true'); // Mark as mapped
+                }
+            });
+        }
+        
+        // Find the label for a field
+        findFieldLabel(element) {
+            let container = element.closest('.form-group') || element.parentElement;
+            
+            for (let i = 0; i < 5; i++) {
+                if (!container) break;
+                
+                const label = container.querySelector('.sidebar-label');
+                if (label) {
+                    return label.textContent.trim();
+                }
+                
+                container = container.parentElement;
+            }
+            
+            return element.placeholder || 'Unknown';
+        }
+
+        // React handler method for optimized field setting with rate limiting
+        async setFieldValueReact(labelText, value) {
+            await this.rateLimiter.throttle();
+            
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // Create a more comprehensive synthetic event
+                const syntheticEvent = {
+                    target: {
+                        value: String(value),
+                        type: field.type || 'text',
+                        name: field.name || '',
+                        checked: field.type === 'checkbox' ? Boolean(value) : undefined
+                    },
+                    currentTarget: field,
+                    preventDefault: () => {},
+                    stopPropagation: () => {},
+                    persist: () => {}
+                };
+                
+                // Call the React handler
+                await handler(syntheticEvent);
+                
+                // Verify the field was actually updated
+                await sleep(40); // More conservative verification wait
+                const currentValue = field.value;
+                const expectedValue = String(value);
+                
+                if (currentValue === expectedValue || Math.abs(parseFloat(currentValue) - parseFloat(expectedValue)) < 0.01) {
+                    return true;
+                } else {
+                    return false;
+                }
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // React handler method specifically for clearing fields with rate limiting
+        async clearFieldValueReact(labelText) {
+            await this.rateLimiter.throttle();
+            
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // Create synthetic event for clearing
+                const syntheticEvent = {
+                    target: {
+                        value: '', // Empty string to clear
+                        type: field.type || 'text',
+                        name: field.name || '',
+                        checked: false
+                    },
+                    currentTarget: field,
+                    preventDefault: () => {},
+                    stopPropagation: () => {},
+                    persist: () => {}
+                };
+                
+                // Call the React handler
+                await handler(syntheticEvent);
+                
+                // Verify the field was actually cleared
+                await sleep(40); // More conservative verification wait
+                const currentValue = field.value;
+                
+                if (currentValue === '' || currentValue === null || currentValue === undefined) {
+                    return true;
+                } else {
+                    return false;
+                }
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // Enhanced toggle value setting using React handlers with rate limiting
+        async setToggleValueReact(labelText, value) {
+            await this.rateLimiter.throttle();
+            
+            const handler = this.fieldHandlers.get(labelText);
+            const field = this.fieldMappings.get(labelText);
+            
+            if (!handler || !field) {
+                return false;
+            }
+            
+            try {
+                // For toggle buttons, we need to check current state and click if different
+                const currentValue = field.textContent?.trim();
+                
+                if (currentValue !== value) {
+                    // Simulate a click event for toggle buttons
+                    const clickEvent = {
+                        type: 'click',
+                        target: field,
+                        currentTarget: field,
+                        preventDefault: () => {},
+                        stopPropagation: () => {},
+                        persist: () => {}
+                    };
+                    
+                    // Try onClick handler if available
+                    if (field.onclick) {
+                        field.onclick(clickEvent);
+                    } else if (handler) {
+                        await handler(clickEvent);
+                    } else {
+                        // Fallback to direct click
+                        field.click();
+                    }
+                    
+                    await sleep(50); // Faster toggle verification
+                    
+                    // Verify the toggle was successful
+                    const newValue = field.textContent?.trim();
+                    if (newValue === value) {
+                        return true;
+                    }
+                    
+                    // If not the target value, try clicking again (some toggles cycle through options)
+                    if (newValue !== value && newValue !== currentValue) {
+                        field.click();
+                        await sleep(50); // Faster second click wait
+                    }
+                }
+                
+                return true;
+                
+            } catch (error) {
+                return false;
+            }
+        }
+
+        // DOM fallback method (legacy support)
         async setFieldValue(labelText, value, sectionName = null, maxRetries = 2) {
             const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
 
@@ -306,7 +617,6 @@
                 if (!label) {
                     if (attempt < maxRetries && sectionName) {
                         await this.openSection(sectionName);
-                        await sleep(250);
                         continue;
                     }
                     return false;
@@ -328,7 +638,7 @@
                         const clearButton = relativeContainer?.querySelector('button');
                         if (clearButton && clearButton.textContent.trim() === '×') {
                             clearButton.click();
-                            await sleep(200);
+                            await sleep(100); // Faster clear button wait
                         } else {
                             input.focus();
                             input.value = '';
@@ -401,7 +711,7 @@
                 if (!label) {
                     if (attempt < maxRetries && sectionName) {
                         await this.openSection(sectionName);
-                        await sleep(200);
+                        await sleep(100); // Faster section retry wait
                         continue;
                     }
                     return false;
@@ -414,12 +724,12 @@
                     const currentValue = button.textContent.trim();
                     if (currentValue !== value) {
                         button.click();
-                        await sleep(200);
+                        await sleep(100); // Faster toggle wait
 
                         const newValue = button.textContent.trim();
                         if (newValue !== value && newValue !== currentValue) {
                             button.click();
-                            await sleep(200);
+                            await sleep(100); // Faster second toggle wait
                         }
                     }
                     return true;
@@ -439,7 +749,6 @@
             }
 
             sectionHeader.click();
-            await sleep(50);
             return true;
         }
 
@@ -447,33 +756,71 @@
             return fieldName === "Description" || fieldName === "Fresh Deployer";
         }
 
+        // Rate-limited clearAllFields method to prevent 429 errors
         async clearAllFields() {
-            const allFields = [
-                // Basic
-                'Min MCAP (USD)', 'Max MCAP (USD)',
-                // Token Details
-                'Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score',
-                // Wallets
-                'Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets',
-                // Risk
-                'Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
-                'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
-                'Max Drained Count', 'Description', 'Fresh Deployer',
-                // Advanced
-                'Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %'
-            ];
+            
+            // Group fields by section for efficient clearing
+            const sectionMap = {
+                'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                'Token Details': ['Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score'],
+                'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets'],
+                'Risk': ['Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
+                         'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
+                         'Max Drained Count', 'Description', 'Fresh Deployer'],
+                'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+            };
 
-            for (const field of allFields) {
-                if (this.isToggleButton(field)) {
-                    await this.setToggleValue(field, "Don't care");
-                } else {
-                    await this.setFieldValue(field, undefined);
+            let totalCleared = 0;
+
+            // Process each section with increased delays to prevent rate limiting
+            for (const [sectionName, fields] of Object.entries(sectionMap)) {
+                
+                // Open section and map handlers
+                await this.openSectionAndMapHandlers(sectionName);
+                
+                // Longer delay after opening section to let it fully load
+                await sleep(300);
+
+                // Clear fields in smaller batches to reduce load
+                const batchSize = 3; // Process 3 fields at a time
+                for (let i = 0; i < fields.length; i += batchSize) {
+                    const batch = fields.slice(i, i + batchSize);
+                    
+                    for (const field of batch) {
+                        let success = false;
+
+                        if (this.isToggleButton(field)) {
+                            // Use DOM method first for toggle buttons to reduce complexity
+                            success = await this.setToggleValue(field, "Don't care");
+                        } else {
+                            // Use DOM method for clearing to be more reliable
+                            success = await this.setFieldValue(field, undefined);
+                        }
+
+                        if (success) {
+                            totalCleared++;
+                        }
+                        
+                        // Increased delay between individual fields
+                        await sleep(150);
+                    }
+                    
+                    // Additional delay between batches
+                    if (i + batchSize < fields.length) {
+                        await sleep(200);
+                    }
                 }
-                await sleep(100);
+                
+                // Delay between sections
+                await sleep(400);
             }
+            
+            return totalCleared;
         }
 
+        // Smart config application with selective clearing - only clears/changes what's needed
         async applyConfig(config, clearFirst = false) {
+                        
             const sectionMap = {
                 basic: 'Basic',
                 tokenDetails: 'Token Details',
@@ -482,31 +829,112 @@
                 advanced: 'Advanced'
             };
 
-            if (clearFirst) {
-                for (const section in sectionMap) {
-                    await this.openSection(sectionMap[section]);
-                    await this.clearAllFields();
-                }
-            }
-
-            let changes = 0;
+            // Get current config to compare what needs to change
+            const currentConfig = clearFirst ? {} : await this.getCurrentConfig();
+            
+            let totalSuccess = 0;
+            
+            // Define all possible fields by section for selective clearing
+            const allFieldsBySection = {
+                basic: ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                tokenDetails: ['Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score'],
+                wallets: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets'],
+                risk: ['Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
+                       'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
+                       'Max Drained Count', 'Description', 'Fresh Deployer'],
+                advanced: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+            };
+            
+            // Process each section
             for (const [section, params] of Object.entries(config)) {
-                for (const [param, value] of Object.entries(params)) {
-                    if (value !== undefined) {
-                        let success = false;
-
-                        if (this.isToggleButton(param)) {
-                            success = await this.setToggleValue(param, value, sectionMap[section]);
-                        } else {
-                            success = await this.setFieldValue(param, value, sectionMap[section]);
+                const sectionName = sectionMap[section];
+                if (!sectionName) continue;
+                
+                // Open section and map handlers
+                await this.openSectionAndMapHandlers(sectionName);
+                
+                // Get all fields for this section
+                const allFieldsInSection = allFieldsBySection[section] || [];
+                const configFieldsInSection = params ? Object.keys(params) : [];
+                
+                // Step 1: Clear fields that are in the section but NOT in the config (selective clearing)
+                if (!clearFirst) {
+                    for (const field of allFieldsInSection) {
+                        // Check if field is NOT in the new config OR is explicitly undefined in new config
+                        const isInNewConfig = configFieldsInSection.includes(field);
+                        const newValue = isInNewConfig ? params[field] : undefined;
+                        const currentValue = currentConfig[section] && currentConfig[section][field];
+                        
+                        // Clear if:
+                        // 1. Field is not in new config but has a current value
+                        // 2. Field is in new config with undefined value but has a current value
+                        const shouldClear = (!isInNewConfig && currentValue !== undefined && currentValue !== null && currentValue !== '') ||
+                                          (isInNewConfig && newValue === undefined && currentValue !== undefined && currentValue !== null && currentValue !== '');
+                        
+                        if (shouldClear) {
+                            let success = false;
+                            
+                            if (this.isToggleButton(field)) {
+                                success = await this.setToggleValue(field, "Don't care", sectionName);
+                            } else {
+                                success = await this.setFieldValue(field, undefined, sectionName);
+                            }
+                            
+                            if (success) {
+                                totalSuccess++;
+                            }
+                            await sleep(90); // More conservative between clearing operations
                         }
-
-                        if (success) changes++;
-                        await sleep(100);
                     }
                 }
+                
+                // Step 2: Set/update fields that are specified in the config
+                if (params && Object.keys(params).length > 0) {
+                    for (const [param, value] of Object.entries(params)) {
+                        if (value !== undefined && value !== null && value !== '') {
+                            // Check if the value is different from current (optimization)
+                            const currentValue = !clearFirst && currentConfig[section] && currentConfig[section][param];
+                            const needsUpdate = clearFirst || 
+                                               currentValue === undefined || 
+                                               String(currentValue) !== String(value);
+                            
+                            if (needsUpdate) {
+                                let success = false;
+
+                                if (this.isToggleButton(param)) {
+                                    success = await this.setToggleValueReact(param, value);
+                                    
+                                    // Fallback to DOM method if React handler not available
+                                    if (!success) {
+                                        success = await this.setToggleValue(param, value, sectionName);
+                                    }
+                                } else {
+                                    // Try React handler first
+                                    success = await this.setFieldValueReact(param, value);
+                                    
+                                    // Fallback to DOM method if React handler not available
+                                    if (!success) {
+                                        success = await this.setFieldValue(param, value, sectionName);
+                                    }
+                                }
+
+                                if (success) {
+                                    totalSuccess++;
+                                }
+                                
+                                // More conservative delay between field updates
+                                await sleep(90);
+                            }
+                        }
+                    }
+                }
+                
+                // Brief delay between sections
+                await sleep(150);
             }
-            return changes;
+            
+            
+            return totalSuccess;
         }
     }
 
@@ -1113,19 +1541,20 @@
     // Genetic Algorithm Implementation
     class GeneticOptimizer {
         constructor(optimizer) {
+            this.optimizer = optimizer; // Always set the optimizer reference first
+            
             if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
                 this.populationSize = 10;
                 this.mutationRate = 0.4;
                 this.crossoverRate = 0.8;
                 this.eliteCount = 3;
             } else {
-            this.optimizer = optimizer;
-            this.populationSize = 7;
-            this.mutationRate = 0.3;
-            this.crossoverRate = 0.7;
-            this.eliteCount = 2;
+                this.populationSize = 7;
+                this.mutationRate = 0.3;
+                this.crossoverRate = 0.7;
+                this.eliteCount = 2;
+            }
         }
-    }
         
         async runGeneticOptimization() {
             updateProgress('🧬 Genetic Algorithm Phase', 50, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
@@ -1162,11 +1591,11 @@
             const population = [];
             
             // Add current best config
-            population.push(JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig())));
+            population.push(deepClone(this.optimizer.getCurrentBestConfig()));
             
             // Add variations of best config
             for (let i = 1; i < this.populationSize; i++) {
-                const config = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
+                const config = deepClone(this.optimizer.getCurrentBestConfig());
                 this.mutateConfig(config, 0.5); // Higher mutation rate for initialization
                 population.push(config);
             }
@@ -1205,7 +1634,7 @@
             // Elitism: keep best individuals
             for (let i = 0; i < this.eliteCount; i++) {
                 if (evaluatedPop[i]) {
-                    newPopulation.push(JSON.parse(JSON.stringify(evaluatedPop[i].config)));
+                    newPopulation.push(deepClone(evaluatedPop[i].config));
                 }
             }
             
@@ -1216,7 +1645,7 @@
                 
                 let offspring = Math.random() < this.crossoverRate ? 
                     this.crossover(parent1, parent2) : 
-                    JSON.parse(JSON.stringify(parent1));
+                    deepClone(parent1);
                 
                 if (Math.random() < this.mutationRate) {
                     this.mutateConfig(offspring, 0.2);
@@ -1244,7 +1673,7 @@
         }
         
         crossover(parent1, parent2) {
-            const offspring = JSON.parse(JSON.stringify(parent1));
+            const offspring = deepClone(parent1);
             
             // Crossover at section level
             const sections = Object.keys(offspring);
@@ -1252,7 +1681,7 @@
             
             for (let i = crossoverPoint; i < sections.length; i++) {
                 const section = sections[i];
-                offspring[section] = JSON.parse(JSON.stringify(parent2[section]));
+                offspring[section] = deepClone(parent2[section]);
             }
             
             return offspring;
@@ -1291,7 +1720,7 @@
         async runSimulatedAnnealing() {
             updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics ? this.optimizer.bestMetrics.tokensMatched : '--', this.optimizer.startTime);
             
-            let currentConfig = JSON.parse(JSON.stringify(this.optimizer.getCurrentBestConfig()));
+            let currentConfig = deepClone(this.optimizer.getCurrentBestConfig());
             let currentScore = this.optimizer.getCurrentBestScore();
             let temperature = this.initialTemperature;
             
@@ -1334,7 +1763,7 @@
         }
         
         generateNeighbor(config) {
-            const neighbor = JSON.parse(JSON.stringify(config));
+            const neighbor = deepClone(config);
             
             // Randomly modify 1-2 parameters
             const paramList = Object.keys(PARAM_RULES);
@@ -1534,8 +1963,8 @@
             // Set baseline values for both tracking systems
             this.bestRunnersPercentage = metrics.runnersPercentage || 0;
             this.bestPnlPercentage = metrics.tpPnlPercent;
-            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeBaseline));
-            this.bestPnlConfig = JSON.parse(JSON.stringify(completeBaseline));
+            this.bestRunnersConfig = deepClone(completeBaseline);
+            this.bestPnlConfig = deepClone(completeBaseline);
             
             if (CONFIG.USE_RUNNERS_OPTIMIZATION) {
                 // RUNNERS % optimization mode - HIGHER percentage is BETTER
@@ -1597,7 +2026,7 @@
                 const metrics = await extractMetrics();
                 if (!metrics) {
                     // Restore best config if test failed
-                    await this.ui.applyConfig(this.bestConfig, true);
+                    await this.ui.applyConfig(this.bestConfig);
                     const result = { success: false };
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, result);
@@ -1608,7 +2037,7 @@
 
                 if (metrics.tpPnlPercent === undefined || metrics.tokensMatched < CONFIG.MIN_TOKENS) {
                     // Restore best config if insufficient tokens
-                    await this.ui.applyConfig(this.bestConfig, true);
+                    await this.ui.applyConfig(this.bestConfig);
                     const result = { success: false };
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, result);
@@ -1667,7 +2096,7 @@
                         console.log(`❌ Runners % out of tolerance: ${runnersPercentage.toFixed(1)}% (target: ${this.targetRunnersPercentage.toFixed(1)}% ±${CONFIG.RUNNERS_PERCENTAGE_TOLERANCE}%)`);
                         
                         // Restore best config and return failure
-                        await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                        await this.ui.applyConfig(this.getCurrentBestConfig());
                         const result = { success: false, outOfTolerance: true };
                         if (CONFIG.USE_CONFIG_CACHING) {
                             this.configCache.set(completeConfig, result);
@@ -1699,7 +2128,7 @@
                         // Update runners tracking if we have runners data
                         if (this.optimizationPhase === 'RUNNERS' || metrics.runnersPercentage > this.bestRunnersPercentage) {
                             this.bestRunnersPercentage = metrics.runnersPercentage;
-                            this.bestRunnersConfig = JSON.parse(JSON.stringify(completeConfig));
+                            this.bestRunnersConfig = deepClone(completeConfig);
                         }
                     }
                     
@@ -1707,7 +2136,7 @@
                         // Update PnL tracking if we have PnL data
                         if (this.optimizationPhase !== 'RUNNERS' || metrics.tpPnlPercent > this.bestPnlPercentage) {
                             this.bestPnlPercentage = metrics.tpPnlPercent;
-                            this.bestPnlConfig = JSON.parse(JSON.stringify(completeConfig));
+                            this.bestPnlConfig = deepClone(completeConfig);
                         }
                     }
                     
@@ -1740,7 +2169,7 @@
                     console.log(`🏆 New best ${optimizationMetric}: ${displayMetric} (improvement: ${improvementDisplay})`);
                 } else {
                     // Restore best config if no improvement
-                    await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                    await this.ui.applyConfig(this.getCurrentBestConfig());
                     updateProgress(`↩️ Restored best config`, this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                 }
 
@@ -1752,7 +2181,7 @@
                 return result;
             } catch (error) {
                 // Restore best config on error
-                await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                await this.ui.applyConfig(this.getCurrentBestConfig());
                 const result = { success: false };
                 if (CONFIG.USE_CONFIG_CACHING) {
                     this.configCache.set(completeConfig, result);
@@ -1786,7 +2215,7 @@
             const rules = PARAM_RULES[param];
             if (!rules) return null;
 
-            const config = JSON.parse(JSON.stringify(baseConfig));
+            const config = deepClone(baseConfig);
             const currentValue = config[section][param];
 
             // Use adaptive step size if enabled and available
@@ -1825,7 +2254,7 @@
             }
 
             return variations.slice(0, 4).map(val => {
-                const newConfig = JSON.parse(JSON.stringify(config));
+                const newConfig = deepClone(config);
                 // Force integer rounding for specific parameters
                 if (param.includes('Wallets') || param.includes('Count') || param.includes('Age')) {
                     val = Math.round(val);
@@ -1842,7 +2271,7 @@
             const variations = [];
             
             for (const sample of samples) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 let name = 'LHS: ';
                 
                 for (const [param, value] of Object.entries(sample)) {
@@ -1870,7 +2299,7 @@
             ];
             
             for (const range of mcapRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 config.basic["Min MCAP (USD)"] = range.min;
                 config.basic["Max MCAP (USD)"] = range.max;
                 variations.push({ 
@@ -1888,7 +2317,7 @@
             ];
             
             for (const range of walletRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig));
+                const config = deepClone(baseConfig);
                 config.wallets["Min Unique Wallets"] = range.minUnique;
                 config.wallets["Max Unique Wallets"] = range.maxUnique;
                 config.wallets["Min KYC Wallets"] = range.minKyc;
@@ -2084,26 +2513,24 @@
         async runMultipleStartingPoints() {
             updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
-            const startingPoints = [
-                CONFIG.PRESETS.conservative,
-                CONFIG.PRESETS.aggressive,
-                CONFIG.PRESETS.balanced,
-                CONFIG.PRESETS.microCap,
-                CONFIG.PRESETS.oldDeployerBase,
-            ];
+            // Use all presets from CONFIG.PRESETS dynamically
+            const startingPoints = Object.values(CONFIG.PRESETS);
 
+            // Always test all presets, regardless of time constraints
             for (const startingPoint of startingPoints) {
-                if (STOPPED || this.getRemainingTime() <= 0.02) break;
+                if (STOPPED) break; // Only stop if manually stopped
 
                 const result = await this.testConfig(startingPoint, `Starting point: ${JSON.stringify(startingPoint).slice(0, 50)}...`);
                 if (!result.success) continue;
 
-                // Test variations around this starting point
-                const variations = this.generateVariation(startingPoint, this.parameterTests[0].param, this.parameterTests[0].section);
-                if (variations) {
-                    for (const variation of variations.slice(0, 2)) {
-                        if (STOPPED || this.getRemainingTime() <= 0.02) break;
-                        await this.testConfig(variation.config, variation.name);
+                // Test variations around this starting point (only if we have reasonable time)
+                if (this.getRemainingTime() > 0.01) {
+                    const variations = this.generateVariation(startingPoint, this.parameterTests[0].param, this.parameterTests[0].section);
+                    if (variations) {
+                        for (const variation of variations.slice(0, 2)) {
+                            if (STOPPED) break;
+                            await this.testConfig(variation.config, variation.name);
+                        }
                     }
                 }
 
@@ -2164,7 +2591,7 @@
                 for (const value of combo.values) {
                     if (STOPPED || this.getRemainingTime() <= 0.1) break;
 
-                    const config = JSON.parse(JSON.stringify(this.bestConfig));
+                    const config = deepClone(this.bestConfig);
                     config[combo.section][combo.param] = value;
 
                     const result = await this.testConfig(config, `Combo: ${combo.param}=${value}`);
@@ -2184,7 +2611,7 @@
             const importantParams = this.parameterTests.slice(0, 5); // Top 5 parameters
 
             while (this.getRemainingTime() > 0.02 && !STOPPED) { // Keep 2% buffer
-                const config = JSON.parse(JSON.stringify(this.bestConfig));
+                const config = deepClone(this.bestConfig);
 
                 // Modify 1-2 random parameters from top performers
                 const modifications = Math.floor(Math.random() * 2) + 1;
@@ -2220,7 +2647,7 @@
             const rules = PARAM_RULES[param];
             if (!rules) return null;
 
-            const config = JSON.parse(JSON.stringify(baseConfig));
+            const config = deepClone(baseConfig);
             const currentValue = config[section][param];
 
             // Generate more extensive variations than standard generateVariation
@@ -2266,7 +2693,7 @@
             }
 
             return variations.slice(0, 8).map(val => {
-                const newConfig = JSON.parse(JSON.stringify(config));
+                const newConfig = deepClone(config);
                 newConfig[section][param] = val;
                 return { config: newConfig, name: `${param}: ${val}` };
             });
@@ -2318,7 +2745,7 @@
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 10px;">
                     🎯 Target PnL %: 
-                    <input type="number" id="targetPnl" value="150" min="100" max="500" 
+                    <input type="number" id="targetPnl" value="100" min="100" max="500" 
                            style="width: 80px; padding: 5px; margin-left: 10px; 
                                   background: #333; color: white; border: 1px solid #555; 
                                   border-radius: 4px;">
@@ -2334,7 +2761,7 @@
                 
                 <label style="display: block; margin-bottom: 10px;">
                     🔢 Min Tokens Required: 
-                    <input type="number" id="minTokens" value="50" min="5" max="100" 
+                    <input type="number" id="minTokens" value="70" min="5" max="100" 
                            style="width: 80px; padding: 5px; margin-left: 10px; 
                                   background: #333; color: white; border: 1px solid #555; 
                                   border-radius: 4px;">
@@ -2403,7 +2830,7 @@
                         </label>
 
                          <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="multipleStartingPoints" checked 
+                            <input type="checkbox" id="multipleStartingPoints" unchecked 
                                 style="margin-right: 8px; transform: scale(1.2);">
                             <div>
                                 <div style="color: #4a9eff;">🚀 Multiple Starting Points</div>
