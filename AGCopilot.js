@@ -270,7 +270,7 @@
         constructor() {
             this.fieldHandlers = new Map();
             this.fieldMappings = new Map();
-            this.rateLimiter = new RateLimiter(150);
+            this.rateLimiter = new RateLimiter(250);
         }
 
         async getCurrentConfig() {
