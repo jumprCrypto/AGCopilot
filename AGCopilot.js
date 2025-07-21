@@ -87,22 +87,9 @@
         // Alternative baselines for quick switching
         PRESETS: {
             // You can add your presets here
-            // For example:
-            WIP: {
-                basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
-                tokenDetails: { "Min AG Score": 3 },
-                wallets: { "Min Unique Wallets": 3, "Min KYC Wallets": 2, "Max Unique Wallets": 3 },
-                risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
-                advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
-            },
-            ai30: {
-               basic: { "Min MCAP (USD)": 7000 },
-               wallets: { "Max KYC Wallets": 1, "Min KYC Wallets": 1 },
-               risk: { "Min Bundled %": 5 },
-               advanced: { "Min Win Pred %": 30 }
-            },
+            
             // This is for Multiple Starting Points optimization
-            //These are from Top Presets
+            // These are from Top Presets
             ultraHighBuyRatio: {
                 basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 10000 },
                 tokenDetails: { "Min AG Score": "3" },
@@ -130,9 +117,9 @@
                 tokenDetails: { "Min AG Score": "6" },
                 risk: { "Min Buy Ratio %": 80, "Min Vol MCAP %": 40 }
             },
-            //More stuff
+            // More stuff
             oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
-            conservative: {
+             conservative: {
                 basic: { "Min MCAP (USD)": 8000, "Max MCAP (USD)": 25000 },
                 tokenDetails: { "Min AG Score": "7", "Max Token Age (min)": 30 },
                 wallets: { "Min Unique Wallets": 2, "Max Unique Wallets": 4, "Min KYC Wallets": 3, "Max KYC Wallets": 6 },
@@ -160,7 +147,7 @@
                 risk: { "Min Bundled %": 0, "Max Bundled %": 100, "Min Buy Ratio %": 70, "Max Vol MCAP %": 300, "Fresh Deployer": "Yes" },
                 advanced: {  "Max Liquidity %": 95,  "Min Win Pred %": 15  }
             },
-            bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
+			bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
             deployerBalance10: { risk: { "Min Deployer Balance (SOL)": 10 } },
             agScore7: { tokenDetails: { "Min AG Score": "7" } },
         },
@@ -287,7 +274,7 @@
         constructor() {
             this.fieldHandlers = new Map();
             this.fieldMappings = new Map();
-            this.rateLimiter = new RateLimiter(100); // 80ms minimum between requests (more conservative)
+            this.rateLimiter = new RateLimiter(150);
         }
 
         async getCurrentConfig() {
