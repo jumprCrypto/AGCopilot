@@ -89,13 +89,11 @@
             // You can add your presets here
             // For example:
             WIP: {
-                // basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 40000 },
-                // tokenDetails: { "Min AG Score": "5", "Min Deployer Age (min)": 800 },
-                // wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 3, "Min KYC Wallets": 3, "Max KYC Wallets": 5 },
-                // risk: { "Min Bundled %": 0.5 },
-                // advanced: { "Min Win Pred %": 20 }
-                wallets: {  "Min Unique Wallets": 3, "Min KYC Wallets": 1, "Max KYC Wallets": 1, "Max Unique Wallets": 7 },
-                risk: { "Min Bundled %": 4 }
+                basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
+                tokenDetails: { "Min AG Score": 3 },
+                wallets: { "Min Unique Wallets": 3, "Min KYC Wallets": 2, "Max Unique Wallets": 3 },
+                risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
+                advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
             },
             ai30: {
                basic: { "Min MCAP (USD)": 7000 },
@@ -104,6 +102,7 @@
                advanced: { "Min Win Pred %": 30 }
             },
             // This is for Multiple Starting Points optimization
+            //These are from Top Presets
             ultraHighBuyRatio: {
                 basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 10000 },
                 tokenDetails: { "Min AG Score": "3" },
@@ -131,6 +130,7 @@
                 tokenDetails: { "Min AG Score": "6" },
                 risk: { "Min Buy Ratio %": 80, "Min Vol MCAP %": 40 }
             },
+            //More stuff
             oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
             conservative: {
                 basic: { "Min MCAP (USD)": 8000, "Max MCAP (USD)": 25000 },
@@ -287,7 +287,7 @@
         constructor() {
             this.fieldHandlers = new Map();
             this.fieldMappings = new Map();
-            this.rateLimiter = new RateLimiter(120); // 120ms minimum between requests
+            this.rateLimiter = new RateLimiter(100); // 80ms minimum between requests (more conservative)
         }
 
         async getCurrentConfig() {
@@ -380,7 +380,7 @@
             }
 
             sectionHeader.click();
-            await sleep(200); // Wait for section to expand
+            await sleep(150); // Moderate section expansion wait
             
             // Map React handlers for newly visible fields
             this.mapVisibleFieldHandlers();
@@ -501,7 +501,7 @@
                 await handler(syntheticEvent);
                 
                 // Verify the field was actually updated
-                await sleep(50);
+                await sleep(40); // More conservative verification wait
                 const currentValue = field.value;
                 const expectedValue = String(value);
                 
@@ -546,7 +546,7 @@
                 await handler(syntheticEvent);
                 
                 // Verify the field was actually cleared
-                await sleep(50);
+                await sleep(40); // More conservative verification wait
                 const currentValue = field.value;
                 
                 if (currentValue === '' || currentValue === null || currentValue === undefined) {
@@ -596,7 +596,7 @@
                         field.click();
                     }
                     
-                    await sleep(100);
+                    await sleep(50); // Faster toggle verification
                     
                     // Verify the toggle was successful
                     const newValue = field.textContent?.trim();
@@ -607,7 +607,7 @@
                     // If not the target value, try clicking again (some toggles cycle through options)
                     if (newValue !== value && newValue !== currentValue) {
                         field.click();
-                        await sleep(100);
+                        await sleep(50); // Faster second click wait
                     }
                 }
                 
@@ -650,7 +650,7 @@
                         const clearButton = relativeContainer?.querySelector('button');
                         if (clearButton && clearButton.textContent.trim() === '×') {
                             clearButton.click();
-                            await sleep(200);
+                            await sleep(100); // Faster clear button wait
                         } else {
                             input.focus();
                             input.value = '';
@@ -723,7 +723,7 @@
                 if (!label) {
                     if (attempt < maxRetries && sectionName) {
                         await this.openSection(sectionName);
-                        await sleep(200);
+                        await sleep(100); // Faster section retry wait
                         continue;
                     }
                     return false;
@@ -736,12 +736,12 @@
                     const currentValue = button.textContent.trim();
                     if (currentValue !== value) {
                         button.click();
-                        await sleep(200);
+                        await sleep(100); // Faster toggle wait
 
                         const newValue = button.textContent.trim();
                         if (newValue !== value && newValue !== currentValue) {
                             button.click();
-                            await sleep(200);
+                            await sleep(100); // Faster second toggle wait
                         }
                     }
                     return true;
@@ -770,8 +770,6 @@
 
         // Rate-limited clearAllFields method to prevent 429 errors
         async clearAllFields() {
-            console.log('🧹 Rate-limited field clearing starting...');
-            console.time('Rate-Limited Field Clearing');
             
             // Group fields by section for efficient clearing
             const sectionMap = {
@@ -788,14 +786,13 @@
 
             // Process each section with increased delays to prevent rate limiting
             for (const [sectionName, fields] of Object.entries(sectionMap)) {
-                console.log(`🧹 Clearing section: ${sectionName}`);
                 
                 // Open section and map handlers
                 await this.openSectionAndMapHandlers(sectionName);
                 
                 // Longer delay after opening section to let it fully load
                 await sleep(300);
-                
+
                 // Clear fields in smaller batches to reduce load
                 const batchSize = 3; // Process 3 fields at a time
                 for (let i = 0; i < fields.length; i += batchSize) {
@@ -830,17 +827,12 @@
                 await sleep(400);
             }
             
-            console.timeEnd('Rate-Limited Field Clearing');
-            console.log(`🧹 Cleared ${totalCleared} fields successfully`);
-            
             return totalCleared;
         }
 
-        // Optimized config application with React handlers and DOM fallback
+        // Smart config application with selective clearing - only clears/changes what's needed
         async applyConfig(config, clearFirst = false) {
-            console.log('🚀 Optimized config application starting...');
-            console.time('Optimized Config Application');
-            
+                        
             const sectionMap = {
                 basic: 'Basic',
                 tokenDetails: 'Token Details',
@@ -849,56 +841,104 @@
                 advanced: 'Advanced'
             };
 
-            if (clearFirst) {
-                // Use the optimized clearing method
-                await this.clearAllFields();
-            }
-
+            // Get current config to compare what needs to change
+            const currentConfig = clearFirst ? {} : await this.getCurrentConfig();
+            
             let totalSuccess = 0;
+            
+            // Define all possible fields by section for selective clearing
+            const allFieldsBySection = {
+                basic: ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                tokenDetails: ['Min Deployer Age (min)', 'Max Token Age (min)', 'Min AG Score'],
+                wallets: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets'],
+                risk: ['Min Vol MCAP %', 'Max Vol MCAP %', 'Min Buy Ratio %', 'Max Buy Ratio %',
+                       'Min Deployer Balance (SOL)', 'Max Bundled %', 'Min Bundled %', 'Max Drained %',
+                       'Max Drained Count', 'Description', 'Fresh Deployer'],
+                advanced: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+            };
             
             // Process each section
             for (const [section, params] of Object.entries(config)) {
-                if (!params || Object.keys(params).length === 0) {
-                    continue;
-                }
+                const sectionName = sectionMap[section];
+                if (!sectionName) continue;
                 
                 // Open section and map handlers
-                await this.openSectionAndMapHandlers(sectionMap[section]);
+                await this.openSectionAndMapHandlers(sectionName);
                 
-                // Apply parameters using React handlers with DOM fallback
-                for (const [param, value] of Object.entries(params)) {
-                    if (value !== undefined && value !== null && value !== '') {
-                        let success = false;
-
-                        if (this.isToggleButton(param)) {
-                            success = await this.setToggleValueReact(param, value);
+                // Get all fields for this section
+                const allFieldsInSection = allFieldsBySection[section] || [];
+                const configFieldsInSection = params ? Object.keys(params) : [];
+                
+                // Step 1: Clear fields that are in the section but NOT in the config (selective clearing)
+                if (!clearFirst) {
+                    for (const field of allFieldsInSection) {
+                        if (!configFieldsInSection.includes(field)) {
+                            const currentValue = currentConfig[section] && currentConfig[section][field];
                             
-                            // Fallback to DOM method if React handler not available
-                            if (!success) {
-                                success = await this.setToggleValue(param, value, sectionMap[section]);
-                            }
-                        } else {
-                            // Try React handler first
-                            success = await this.setFieldValueReact(param, value);
-                            
-                            // Fallback to DOM method if React handler not available
-                            if (!success) {
-                                success = await this.setFieldValue(param, value, sectionMap[section]);
+                            // Only clear if the field currently has a value
+                            if (currentValue !== undefined && currentValue !== null && currentValue !== '') {
+                                let success = false;
+                                
+                                if (this.isToggleButton(field)) {
+                                    success = await this.setToggleValue(field, "Don't care", sectionName);
+                                } else {
+                                    success = await this.setFieldValue(field, undefined, sectionName);
+                                }
+                                
+                                if (success) {
+                                    totalSuccess++;
+                                }
+                                await sleep(90); // More conservative between clearing operations
                             }
                         }
-
-                        if (success) {
-                            totalSuccess++;
-                        }
-                        
-                        // Conservative delay to prevent rate limiting
-                        await sleep(120);
                     }
                 }
+                
+                // Step 2: Set/update fields that are specified in the config
+                if (params && Object.keys(params).length > 0) {
+                    for (const [param, value] of Object.entries(params)) {
+                        if (value !== undefined && value !== null && value !== '') {
+                            // Check if the value is different from current (optimization)
+                            const currentValue = !clearFirst && currentConfig[section] && currentConfig[section][param];
+                            const needsUpdate = clearFirst || 
+                                               currentValue === undefined || 
+                                               String(currentValue) !== String(value);
+                            
+                            if (needsUpdate) {
+                                let success = false;
+
+                                if (this.isToggleButton(param)) {
+                                    success = await this.setToggleValueReact(param, value);
+                                    
+                                    // Fallback to DOM method if React handler not available
+                                    if (!success) {
+                                        success = await this.setToggleValue(param, value, sectionName);
+                                    }
+                                } else {
+                                    // Try React handler first
+                                    success = await this.setFieldValueReact(param, value);
+                                    
+                                    // Fallback to DOM method if React handler not available
+                                    if (!success) {
+                                        success = await this.setFieldValue(param, value, sectionName);
+                                    }
+                                }
+
+                                if (success) {
+                                    totalSuccess++;
+                                }
+                                
+                                // More conservative delay between field updates
+                                await sleep(90);
+                            }
+                        }
+                    }
+                }
+                
+                // Brief delay between sections
+                await sleep(150);
             }
             
-            console.timeEnd('Optimized Config Application');
-            console.log(`✅ Applied ${totalSuccess} fields successfully`);
             
             return totalSuccess;
         }
@@ -1992,7 +2032,7 @@
                 const metrics = await extractMetrics();
                 if (!metrics) {
                     // Restore best config if test failed
-                    await this.ui.applyConfig(this.bestConfig, true);
+                    await this.ui.applyConfig(this.bestConfig);
                     const result = { success: false };
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, result);
@@ -2003,7 +2043,7 @@
 
                 if (metrics.tpPnlPercent === undefined || metrics.tokensMatched < CONFIG.MIN_TOKENS) {
                     // Restore best config if insufficient tokens
-                    await this.ui.applyConfig(this.bestConfig, true);
+                    await this.ui.applyConfig(this.bestConfig);
                     const result = { success: false };
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, result);
@@ -2062,7 +2102,7 @@
                         console.log(`❌ Runners % out of tolerance: ${runnersPercentage.toFixed(1)}% (target: ${this.targetRunnersPercentage.toFixed(1)}% ±${CONFIG.RUNNERS_PERCENTAGE_TOLERANCE}%)`);
                         
                         // Restore best config and return failure
-                        await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                        await this.ui.applyConfig(this.getCurrentBestConfig());
                         const result = { success: false, outOfTolerance: true };
                         if (CONFIG.USE_CONFIG_CACHING) {
                             this.configCache.set(completeConfig, result);
@@ -2135,7 +2175,7 @@
                     console.log(`🏆 New best ${optimizationMetric}: ${displayMetric} (improvement: ${improvementDisplay})`);
                 } else {
                     // Restore best config if no improvement
-                    await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                    await this.ui.applyConfig(this.getCurrentBestConfig());
                     updateProgress(`↩️ Restored best config`, this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
                 }
 
@@ -2147,7 +2187,7 @@
                 return result;
             } catch (error) {
                 // Restore best config on error
-                await this.ui.applyConfig(this.getCurrentBestConfig(), true);
+                await this.ui.applyConfig(this.getCurrentBestConfig());
                 const result = { success: false };
                 if (CONFIG.USE_CONFIG_CACHING) {
                     this.configCache.set(completeConfig, result);
@@ -2800,7 +2840,7 @@
                         </label>
 
                          <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="multipleStartingPoints" checked 
+                            <input type="checkbox" id="multipleStartingPoints" unchecked 
                                 style="margin-right: 8px; transform: scale(1.2);">
                             <div>
                                 <div style="color: #4a9eff;">🚀 Multiple Starting Points</div>
