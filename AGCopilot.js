@@ -87,66 +87,62 @@
         // Alternative baselines for quick switching
         PRESETS: {
             // You can add your presets here
-            
+            WIP: {
+                basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
+                tokenDetails: { "Min AG Score": 3 },
+                wallets: { "Min Unique Wallets": 3, "Min KYC Wallets": 2, "Max Unique Wallets": 3 },
+                risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
+                advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
+            },
             // This is for Multiple Starting Points optimization
-            // These are from Top Presets
-            ultraHighBuyRatio: {
-                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 10000 },
-                tokenDetails: { "Min AG Score": "3" },
-                wallets: { "Min KYC Wallets": 1 },
-                risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
-            },
-            mediumBuyTightRange: {
-                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6500 },
-                risk: { "Min Buy Ratio %": 90, "Min Vol MCAP %": 40 }
-            },
-            freshLaunchSpecialist: {
+            // From Top Presets
+            cabalOrRug: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Max TTC (sec)": 1, "Min Win Pred %": 3 }
+            },    
+            rolandProduction: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 2 }
+            },            
+            bonkSuper: {
                 basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
-                tokenDetails: { "Min AG Score": "4", "Max Token Age (min)": 1 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
                 wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
                 risk: { "Min Deployer Balance (SOL)": 10 },
                 advanced: { "Min Win Pred %": 4 }
-            },
-            highQualityFilter: {
-                basic: { "Min MCAP (USD)": 5000 },
-                tokenDetails: { "Min AG Score": "8" },
-                wallets: { "Min KYC Wallets": 3 },
-                risk: { "Min Vol MCAP %": 40, "Max Vol MCAP %": 70 }
-            },
-            moderateBuyBroad: {
-                tokenDetails: { "Min AG Score": "6" },
-                risk: { "Min Buy Ratio %": 80, "Min Vol MCAP %": 40 }
+            },            
+            roland4to6K: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
+                tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 4 }
+            },            
+            alpha97: {
+                risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
+            },            
+            boomerBonk: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
+                risk: { "Min Deployer Balance (SOL)": 10 },
+                advanced: { "Min Win Pred %": 2 }
+            },            
+            boomerBonk1: {
+                basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
+                tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
+                wallets: { "Min Unique Wallets": 1, "Min KYC Wallets": 1 },
+                risk: { "Max Bundled %": 75, "Min Deployer Balance (SOL)": 7 },
+                advanced: { "Min Win Pred %": 4 }
             },
             // More stuff
-            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
-             conservative: {
-                basic: { "Min MCAP (USD)": 8000, "Max MCAP (USD)": 25000 },
-                tokenDetails: { "Min AG Score": "7", "Max Token Age (min)": 30 },
-                wallets: { "Min Unique Wallets": 2, "Max Unique Wallets": 4, "Min KYC Wallets": 3, "Max KYC Wallets": 6 },
-                risk: { "Min Bundled %": 0.1, "Max Bundled %": 25, "Min Buy Ratio %": 65, "Max Vol MCAP %": 50, "Min Deployer Balance (SOL)": 2.0 },
-                advanced: { "Max Liquidity %": 60, "Min Win Pred %": 30 }
-            },
-            aggressive: {
-                basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 15000 },
-                tokenDetails: { "Min AG Score": "4", "Max Token Age (min)": 60 },
-                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 8, "Min KYC Wallets": 0, "Max KYC Wallets": 3 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 80, "Min Buy Ratio %": 40, "Max Vol MCAP %": 150, "Min Deployer Balance (SOL)": 0.5 },
-                advanced: { "Max Liquidity %": 90, "Min Win Pred %": 20 }
-            },
-            balanced: {
-                basic: {  "Min MCAP (USD)": 3000, "Max MCAP (USD)": 35000 },
-                tokenDetails: { "Min AG Score": "5", "Max Token Age (min)": 45 },
-                wallets: { "Min Unique Wallets": 1,  "Max Unique Wallets": 6, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 55, "Max Vol MCAP %": 100, "Min Deployer Balance (SOL)": 1.0 },
-                advanced: { "Max Liquidity %": 75, "Min Win Pred %": 30 }
-            },
-            microCap: {
-                basic: { "Min MCAP (USD)": 200, "Max MCAP (USD)": 5000 },
-                tokenDetails: { "Min AG Score": "3", "Max Token Age (min)": 15, "Min Deployer Age (min)": 5 },
-                wallets: { "Min Unique Wallets": 0, "Max Unique Wallets": 3, "Min KYC Wallets": 0, "Max KYC Wallets": 2 },
-                risk: { "Min Bundled %": 0, "Max Bundled %": 100, "Min Buy Ratio %": 70, "Max Vol MCAP %": 300, "Fresh Deployer": "Yes" },
-                advanced: {  "Max Liquidity %": 95,  "Min Win Pred %": 15  }
-            },
+            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },           
 			bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
             deployerBalance10: { risk: { "Min Deployer Balance (SOL)": 10 } },
             agScore7: { tokenDetails: { "Min AG Score": "7" } },
@@ -278,7 +274,8 @@
         }
 
         async getCurrentConfig() {
-            const config = { basic: {}, tokenDetails: {}, wallets: {}, risk: {}, advanced: {} };
+            // Start with complete template to ensure ALL fields are included
+            const config = deepClone(COMPLETE_CONFIG_TEMPLATE);
 
             const getFieldValue = (labelText) => {
                 const labels = Array.from(document.querySelectorAll('.sidebar-label'));
@@ -302,7 +299,9 @@
 
                 const button = container.querySelector('button');
                 if (button) {
-                    return button.textContent.trim();
+                    const text = button.textContent.trim();
+                    // Only return value if it's not the default "Don't care" state
+                    return (text === "Don't care" || text === "") ? undefined : text;
                 }
 
                 return undefined;
@@ -316,12 +315,14 @@
                 let container = label.closest('.form-group') || label.parentElement;
                 const button = container.querySelector('button');
                 if (button) {
-                    return button.textContent.trim();
+                    const text = button.textContent.trim();
+                    // Only return value if it's not the default "Don't care" state
+                    return (text === "Don't care" || text === "") ? undefined : text;
                 }
                 return undefined;
             };
 
-            // Map fields to config sections
+            // Map ALL fields to config sections (overwrites undefined values from template)
             config.basic["Min MCAP (USD)"] = getFieldValue("Min MCAP (USD)");
             config.basic["Max MCAP (USD)"] = getFieldValue("Max MCAP (USD)");
 
@@ -859,24 +860,30 @@
                 // Step 1: Clear fields that are in the section but NOT in the config (selective clearing)
                 if (!clearFirst) {
                     for (const field of allFieldsInSection) {
-                        if (!configFieldsInSection.includes(field)) {
-                            const currentValue = currentConfig[section] && currentConfig[section][field];
+                        // Check if field is NOT in the new config OR is explicitly undefined in new config
+                        const isInNewConfig = configFieldsInSection.includes(field);
+                        const newValue = isInNewConfig ? params[field] : undefined;
+                        const currentValue = currentConfig[section] && currentConfig[section][field];
+                        
+                        // Clear if:
+                        // 1. Field is not in new config but has a current value
+                        // 2. Field is in new config with undefined value but has a current value
+                        const shouldClear = (!isInNewConfig && currentValue !== undefined && currentValue !== null && currentValue !== '') ||
+                                          (isInNewConfig && newValue === undefined && currentValue !== undefined && currentValue !== null && currentValue !== '');
+                        
+                        if (shouldClear) {
+                            let success = false;
                             
-                            // Only clear if the field currently has a value
-                            if (currentValue !== undefined && currentValue !== null && currentValue !== '') {
-                                let success = false;
-                                
-                                if (this.isToggleButton(field)) {
-                                    success = await this.setToggleValue(field, "Don't care", sectionName);
-                                } else {
-                                    success = await this.setFieldValue(field, undefined, sectionName);
-                                }
-                                
-                                if (success) {
-                                    totalSuccess++;
-                                }
-                                await sleep(90); // More conservative between clearing operations
+                            if (this.isToggleButton(field)) {
+                                success = await this.setToggleValue(field, "Don't care", sectionName);
+                            } else {
+                                success = await this.setFieldValue(field, undefined, sectionName);
                             }
+                            
+                            if (success) {
+                                totalSuccess++;
+                            }
+                            await sleep(90); // More conservative between clearing operations
                         }
                     }
                 }
@@ -2506,28 +2513,24 @@
         async runMultipleStartingPoints() {
             updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics ? this.bestMetrics.tokensMatched : '--', this.startTime);
 
-            const startingPoints = [
-                CONFIG.PRESETS.ultraHighBuyRatio,
-                CONFIG.PRESETS.highQualityFilter,
-                CONFIG.PRESETS.conservative,
-                CONFIG.PRESETS.aggressive,
-                CONFIG.PRESETS.balanced,
-                CONFIG.PRESETS.microCap,
-                CONFIG.PRESETS.oldDeployer,
-            ];
+            // Use all presets from CONFIG.PRESETS dynamically
+            const startingPoints = Object.values(CONFIG.PRESETS);
 
+            // Always test all presets, regardless of time constraints
             for (const startingPoint of startingPoints) {
-                if (STOPPED || this.getRemainingTime() <= 0.02) break;
+                if (STOPPED) break; // Only stop if manually stopped
 
                 const result = await this.testConfig(startingPoint, `Starting point: ${JSON.stringify(startingPoint).slice(0, 50)}...`);
                 if (!result.success) continue;
 
-                // Test variations around this starting point
-                const variations = this.generateVariation(startingPoint, this.parameterTests[0].param, this.parameterTests[0].section);
-                if (variations) {
-                    for (const variation of variations.slice(0, 2)) {
-                        if (STOPPED || this.getRemainingTime() <= 0.02) break;
-                        await this.testConfig(variation.config, variation.name);
+                // Test variations around this starting point (only if we have reasonable time)
+                if (this.getRemainingTime() > 0.01) {
+                    const variations = this.generateVariation(startingPoint, this.parameterTests[0].param, this.parameterTests[0].section);
+                    if (variations) {
+                        for (const variation of variations.slice(0, 2)) {
+                            if (STOPPED) break;
+                            await this.testConfig(variation.config, variation.name);
+                        }
                     }
                 }
 
@@ -2742,7 +2745,7 @@
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 10px;">
                     🎯 Target PnL %: 
-                    <input type="number" id="targetPnl" value="150" min="100" max="500" 
+                    <input type="number" id="targetPnl" value="100" min="100" max="500" 
                            style="width: 80px; padding: 5px; margin-left: 10px; 
                                   background: #333; color: white; border: 1px solid #555; 
                                   border-radius: 4px;">
@@ -2758,7 +2761,7 @@
                 
                 <label style="display: block; margin-bottom: 10px;">
                     🔢 Min Tokens Required: 
-                    <input type="number" id="minTokens" value="50" min="5" max="100" 
+                    <input type="number" id="minTokens" value="70" min="5" max="100" 
                            style="width: 80px; padding: 5px; margin-left: 10px; 
                                   background: #333; color: white; border: 1px solid #555; 
                                   border-radius: 4px;">
