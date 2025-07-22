@@ -206,29 +206,31 @@
         return summary;
     }
 
-    function generateCSVOutput(allTokenData) {
+    function generateCSVOutput(allTokenData, removeHeaders = true) {
         const csvLines = [];
         
         // Custom TSV Header matching your requested format
-        csvLines.push([
-            'Ticker',
-            'CA',
-            'MC',
-            'Liquidity',
-            'Liquidity Percentage',
-            'Platform',
-            'Wallet Stats',
-            'Recent Swap',
-            'Buy Ratio',
-            'Vol2MC',
-            'AG Score',
-            'Bundle',
-            'Drained%',
-            'Deployer Balance',
-            'Funding Address',
-            'Deployer Age',
-            'Description'
-        ].join('\t'));
+        if (!removeHeaders) {
+            csvLines.push([
+                'Ticker',
+                'CA',
+                'MC',
+                'Liquidity',
+                'Liquidity Percentage',
+                'Platform',
+                'Wallet Stats',
+                'Recent Swap',
+                'Buy Ratio',
+                'Vol2MC',
+                'AG Score',
+                'Bundle',
+                'Drained%',
+                'Deployer Balance',
+                'Funding Address',
+                'Deployer Age',
+                'Description'
+            ].join('\t'));
+        }
         
         // TSV Data rows with your custom format
         allTokenData.forEach(tokenData => {
@@ -255,7 +257,7 @@
                 if (processed.tokenAddress) {
                     const ca = processed.tokenAddress.toLowerCase();
                     if (ca.endsWith('pump')) {
-                        platform = 'Pump';
+                        platform = 'PumpFun';
                     } else if (ca.endsWith('bonk')) {
                         platform = 'Bonk';
                     }
@@ -310,46 +312,48 @@
     }
 
     // Generate original detailed TSV format (all columns)
-    function generateDetailedTSV(allTokenData) {
+    function generateDetailedTSV(allTokenData, removeHeaders = true) {
         const csvLines = [];
         
         // Original detailed TSV Header
-        csvLines.push([
-            'Token_Name',
-            'Symbol', 
-            'Contract_Address',
-            'Signal_ID',
-            'Signal_Timestamp',
-            'Signal_Date',
-            'Signal_MCAP_USD',
-            'Current_MCAP_USD', 
-            'ATH_MCAP_USD',
-            'ATH_Date',
-            'ATL_MCAP_USD',
-            'ATL_Date',
-            'ATH_Multiplier',
-            'Current_vs_ATH_Percent',
-            'Trigger_Mode',
-            'Win_Prediction_Percent',
-            'Time_to_Complete_Seconds',
-            'AG_Score',
-            'Token_Age_Minutes',
-            'Deployer_Age_Minutes',
-            'Liquidity_USD',
-            'Liquidity_Percent',
-            'Unique_Wallets',
-            'KYC_Wallets',
-            'Bundled_Percent',
-            'Buy_Volume_Percent',
-            'Volume_vs_MCAP_Percent',
-            'Drained_Percent',
-            'Drained_Count',
-            'Deployer_Balance_SOL',
-            'Fresh_Deployer',
-            'Has_Description',
-            'Has_Socials',
-            'Deployer_Funding_Win_Rate'
-        ].join('\t'));
+        if (!removeHeaders) {
+            csvLines.push([
+                'Token_Name',
+                'Symbol', 
+                'Contract_Address',
+                'Signal_ID',
+                'Signal_Timestamp',
+                'Signal_Date',
+                'Signal_MCAP_USD',
+                'Current_MCAP_USD', 
+                'ATH_MCAP_USD',
+                'ATH_Date',
+                'ATL_MCAP_USD',
+                'ATL_Date',
+                'ATH_Multiplier',
+                'Current_vs_ATH_Percent',
+                'Trigger_Mode',
+                'Win_Prediction_Percent',
+                'Time_to_Complete_Seconds',
+                'AG_Score',
+                'Token_Age_Minutes',
+                'Deployer_Age_Minutes',
+                'Liquidity_USD',
+                'Liquidity_Percent',
+                'Unique_Wallets',
+                'KYC_Wallets',
+                'Bundled_Percent',
+                'Buy_Volume_Percent',
+                'Volume_vs_MCAP_Percent',
+                'Drained_Percent',
+                'Drained_Count',
+                'Deployer_Balance_SOL',
+                'Fresh_Deployer',
+                'Has_Description',
+                'Has_Socials',
+                'Deployer_Funding_Win_Rate'
+            ].join('\t'));
+        }
         
         // Original detailed TSV data rows
         allTokenData.forEach(tokenData => {
@@ -550,9 +554,6 @@
                 <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
                     🔍 Signal Extractor
                 </h3>
-                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
-                    Optimized for Google Sheets import
-                </p>
             </div>
             
             <div style="margin-bottom: 15px;">
@@ -596,6 +597,21 @@
                 <div style="font-size: 11px; opacity: 0.7; margin-top: 3px;">
                     📊 Only signals matching selected trigger modes will be extracted
                 </div>
+            </div>
+            
+            <div style="margin-bottom: 5px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" id="remove-headers" checked style="margin-right: 8px;">
+                    <span style="font-size: 12px; font-weight: bold;">Remove Headers from Export</span>
+                </label>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 12px; font-weight: bold;">Signals per Token:</span>
+                    <input type="number" id="signals-per-token" value="3" min="1" max="999" 
+                           style="width: 60px; padding: 4px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
+                </label>
             </div>
             
             <div style="margin-bottom: 15px;">
@@ -732,6 +748,10 @@
             const selectedTriggerModes = getSelectedTriggerModes();
             updateStatus(`Selected trigger modes: ${selectedTriggerModes.length > 0 ? selectedTriggerModes.map(mode => mode === '' ? 'Bullish Bonding' : `Mode ${mode}`).join(', ') : 'All modes'}`);
             
+            // Get signals per token limit
+            const signalsPerToken = parseInt(document.getElementById('signals-per-token').value) || 3;
+            updateStatus(`Signals per token limit: ${signalsPerToken}`);
+            
             // Parse and validate contract addresses
             const addresses = contractAddresses
                 .split('\n')
@@ -776,11 +796,19 @@
                         continue;
                     }
                     
-                    const processedData = processTokenData(tokenInfo, filteredSwaps);
+                    // Apply signals per token limit
+                    const signalsPerToken = parseInt(document.getElementById('signals-per-token').value) || 3;
+                    const limitedSwaps = filteredSwaps.slice(0, signalsPerToken);
+                    
+                    if (limitedSwaps.length < filteredSwaps.length) {
+                        updateStatus(`[${i + 1}/${addresses.length}] Limited to first ${limitedSwaps.length} signals (out of ${filteredSwaps.length} filtered)`);
+                    }
+                    
+                    const processedData = processTokenData(tokenInfo, limitedSwaps);
                     
                     allTokenData.push({
                         processed: processedData,
-                        swaps: filteredSwaps, // Use filtered swaps
+                        swaps: limitedSwaps, // Use limited swaps instead of filtered swaps
                         contractAddress: address
                     });
                     
@@ -840,17 +868,19 @@
         
         document.getElementById('copy-detailed-csv-btn').addEventListener('click', async () => {
             if (window.extractedData) {
-                const csvOutput = generateCSVOutput(window.extractedData.tokens);
+                const removeHeaders = document.getElementById('remove-headers').checked;
+                const csvOutput = generateCSVOutput(window.extractedData.tokens, removeHeaders);
                 const success = await copyToClipboard(csvOutput);
-                updateStatus(success ? '📊 Custom format TSV copied! Paste into Google Sheets' : 'Failed to copy to clipboard', !success);
+                updateStatus(success ? `📊 Custom format TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
             }
         });
         
         document.getElementById('copy-full-detailed-btn').addEventListener('click', async () => {
             if (window.extractedData) {
-                const detailedOutput = generateDetailedTSV(window.extractedData.tokens);
+                const removeHeaders = document.getElementById('remove-headers').checked;
+                const detailedOutput = generateDetailedTSV(window.extractedData.tokens, removeHeaders);
                 const success = await copyToClipboard(detailedOutput);
-                updateStatus(success ? '📈 Full detailed TSV copied! Paste into Google Sheets' : 'Failed to copy to clipboard', !success);
+                updateStatus(success ? `📈 Full detailed TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
             }
         });
         
