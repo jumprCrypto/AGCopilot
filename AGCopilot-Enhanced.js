@@ -32,19 +32,19 @@
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
         // Basic
-        'Min MCAP (USD)': { min: 1, max: 50000, step: 1000, type: 'integer' },
-        'Max MCAP (USD)': { min: 1000, max: 99999, step: 1000, type: 'integer' },
+        'Min MCAP (USD)': { min: 0, max: 10000, step: 1000, type: 'integer'},
+        'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
 
         // Token Details
         'Min Deployer Age (min)': { min: 0, max: 1440, step: 5, type: 'integer' },
-        'Max Token Age (min)': { min: 60, max: 99999, step: 15, type: 'integer' },
-        'Min AG Score': { min: 1, max: 5, step: 1, type: 'integer' },
+        'Max Token Age (min)': { min: 5, max: 99999, step: 15, type: 'integer' },
+        'Min AG Score': { min: 1, max: 7, step: 1, type: 'integer' },
 
         // Wallets
-        'Min Unique Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
-        'Max Unique Wallets': { min: 1, max: 20, step: 1, type: 'integer' },
-        'Min KYC Wallets': { min: 0, max: 8, step: 1, type: 'integer' },
-        'Max KYC Wallets': { min: 1, max: 15, step: 1, type: 'integer' },
+        'Min Unique Wallets': { min: 1, max: 3, step: 1, type: 'integer' },
+        'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
+        'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
+        'Max KYC Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
 
         // Risk
         'Min Bundled %': { min: 0, max: 50, step: 1 },
@@ -53,15 +53,15 @@
         'Min Buy Ratio %': { min: 0, max: 50, step: 10 },
         'Max Buy Ratio %': { min: 50, max: 100, step: 5 },
         'Min Vol MCAP %': { min: 0, max: 100, step: 10 },
-        'Max Vol MCAP %': { min: 50, max: 300, step: 20 },
+        'Max Vol MCAP %': { min: 33, max: 300, step: 20 },
         'Max Drained %': { min: 0, max: 100, step: 5 },
-        'Max Drained Count': { min: 0, max: 5, step: 1, type: 'integer' },
+        'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 300, step: 5, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 3600, step: 5, type: 'integer' },
         'Max TTC (sec)': { min: 10, max: 3600, step: 10, type: 'integer' },
-        'Max Liquidity %': { min: 20, max: 95, step: 10, type: 'integer' },
-        'Min Win Pred %': { min: 30, max: 80, step: 5, type: 'integer' }
+        'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
+        'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
 
     // Complete config template for backward compatibility (with Description and Fresh Deployer)
@@ -630,7 +630,12 @@
                 // Save the baseline config as the current best config
                 window.currentBestConfig = this.bestConfig;
             } else {
-                console.log('❌ Failed to establish baseline');
+                console.log('❌ Failed to establish baseline - using fallback configuration');
+                // Set a fallback baseline if testing failed
+                this.bestConfig = baselineConfig;
+                this.bestScore = -999; // Very low score to ensure any real result is better
+                this.bestMetrics = { tokensMatched: 0, tpPnlPercent: -999, winRate: 0 };
+                window.currentBestConfig = this.bestConfig;
             }
             
             updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
@@ -640,6 +645,12 @@
         generateParameterVariations(config, param, section) {
             const rules = PARAM_RULES[param];
             if (!rules) return [];
+
+            // Check if config is valid
+            if (!config || !config[section]) {
+                console.warn(`⚠️ Invalid config for ${param} in section ${section}`);
+                return [];
+            }
 
             const currentValue = config[section]?.[param];
             const variations = [];
@@ -685,6 +696,12 @@
         // Main parameter testing phase
         async runParameterPhase() {
             updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+
+            // Check if we have a valid baseline configuration
+            if (!this.bestConfig) {
+                console.error('❌ Cannot run parameter testing: No baseline configuration established');
+                throw new Error('No baseline configuration established');
+            }
 
             const parameters = Object.keys(PARAM_RULES);
             console.log(`🔍 Testing ${parameters.length} parameters:`, parameters.slice(0, 5));
@@ -1197,6 +1214,26 @@
         oldDeployer: { 
             tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
         },
+        PfMainOld: {
+            basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
+            tokenDetails: { "Min AG Score": "3" },
+            wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2 },
+            risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
+            advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
+        },
+        ClaudeR6: {
+            basic: { "Min MCAP (USD)": 6000, "Max MCAP (USD)": 25000 },
+            tokenDetails: { "Min AG Score": "5", "Max Token Age (min)": 52, "Min Deployer Age (min)": 17 },
+            wallets: { "Min Unique Wallets": 0, "Max Unique Wallets": 1, "Min KYC Wallets": 0, "Max KYC Wallets": 2 },
+            risk: { "Max Bundled %": 82, "Min Vol MCAP %": 9, "Max Vol MCAP %": 90, "Min Buy Ratio %": 20, "Max Buy Ratio %": 90, "Min Deployer Balance (SOL)": 0.95, "Fresh Deployer": "Yes", "Description": "Yes" },
+            advanced: { "Max Liquidity %": 66, "Max TTC (sec)": 30 }
+        },
+        Turbo2: {
+            basic: { "Max MCAP (USD)": 40000 },
+            tokenDetails: { "Min Deployer Age (min)": 10, "Min AG Score": "6", "Max Token Age (min)": 180 },
+            risk: { "Min Bundled %": 0.8, "Max Vol MCAP %": 33, "Min Deployer Balance (SOL)": 4.45, "Fresh Deployer": "Yes", "Description": "Yes" },
+            advanced: { "Max Liquidity %": 75, "Min Win Pred %": 30 }
+        },
         bundle1_74: { 
             risk: { "Max Bundled %": 1.74 } 
         },
@@ -1221,16 +1258,6 @@
             advanced: { "Min TTC (sec)": 5, "Max Liquidity %": 90 }
         }
     };
-
-    // Copy configuration to clipboard
-    function copyConfigToClipboard(config) {
-        const configText = JSON.stringify(config, null, 2);
-        navigator.clipboard.writeText(configText).then(() => {
-            updateStatus('📋 Configuration copied to clipboard!');
-        }).catch(err => {
-            updateStatus('❌ Failed to copy configuration', true);
-        });
-    }
 
     // Apply preset configuration
     async function applyPreset(presetName) {
@@ -1360,14 +1387,7 @@
             <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
                 <h4 style="margin: 0 0 10px 0; font-size: 14px; opacity: 0.9;">⚙️ Optimization Settings</h4>
                 
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: bold;">Optimization Target:</label>
-                    <select id="optimization-target" style="width: 100%; padding: 8px; border: none; border-radius: 5px; font-size: 14px; color: black; background: white;">
-                        <option value="pnl">📈 PnL % Optimization</option>
-                    </select>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;">
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">Target PnL %:</span>
                         <input type="number" id="target-pnl" value="100" min="5" max="50" step="0.5"
@@ -1378,9 +1398,6 @@
                         <input type="number" id="min-tokens" value="50" min="1" max="100" step="1"
                                style="padding: 6px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
                     </label>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px;">
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">Runtime (min):</span>
                         <input type="number" id="runtime-min" value="30" min="5" max="120" step="5"
@@ -1394,7 +1411,7 @@
                         <span style="font-size: 12px; font-weight: bold;">🛡️ Outlier-Resistant Scoring</span>
                     </label>
                     <div style="font-size: 10px; opacity: 0.8; margin-bottom: 10px; line-height: 1.3;">
-                        Prevents single lucky tokens (like 200x gains) from skewing results. Combines win rate and sample size for more reliable optimization.
+                        Combines win rate and sample size for more reliable optimization.
                     </div>
                     
                     <label style="display: flex; align-items: center; cursor: pointer; margin-bottom: 8px;">
@@ -1402,7 +1419,7 @@
                         <span style="font-size: 12px; font-weight: bold;">🔥 Simulated Annealing</span>
                     </label>
                     <div style="font-size: 10px; opacity: 0.8; margin-bottom: 10px; line-height: 1.3;">
-                        Advanced optimization technique that can escape local maxima by occasionally accepting worse solutions.
+                        Escape local maxima by occasionally accepting worse solutions.
                     </div>
                     
                     <label style="display: flex; align-items: center; cursor: pointer;">
@@ -1410,7 +1427,7 @@
                         <span style="font-size: 12px; font-weight: bold;">🎯 Multiple Starting Points</span>
                     </label>
                     <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; line-height: 1.3;">
-                        Test optimization from different initial configurations to find globally optimal solutions.
+                        Start from all presets to find globally optimal solutions.
                     </div>
                 </div>
             </div>
@@ -1461,7 +1478,10 @@
             ">
                 <h5 style="margin: 0 0 8px 0; font-size: 12px; color: #4CAF50;">🏆 Best Configuration Found:</h5>
                 <div id="best-config-stats" style="font-size: 11px; margin-bottom: 8px;"></div>
-                <button onclick="applyBestConfigToUI()" style="width: 100%; padding: 8px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">⚙️ Apply to UI</button>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <button onclick="applyBestConfigToUI()" style="padding: 8px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">⚙️ Apply to UI</button>
+                    <button onclick="copyBestConfigToClipboard()" style="padding: 8px; background: rgba(156, 39, 176, 0.3); border: 1px solid rgba(156, 39, 176, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">📋 Copy Config</button>
+                </div>
             </div>
             
             <!-- Footer -->
@@ -1494,6 +1514,19 @@
                 }
             } else {
                 console.log('❌ No best configuration available to apply');
+            }
+        };
+        
+        window.copyBestConfigToClipboard = function() {
+            if (window.currentBestConfig) {
+                const configText = JSON.stringify(window.currentBestConfig, null, 2);
+                navigator.clipboard.writeText(configText).then(() => {
+                    console.log('📋 Best configuration copied to clipboard!');
+                }).catch(err => {
+                    console.log('❌ Failed to copy configuration to clipboard');
+                });
+            } else {
+                console.log('❌ No best configuration available to copy');
             }
         };
         

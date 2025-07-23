@@ -142,7 +142,28 @@
                 advanced: { "Min Win Pred %": 4 }
             },
             // More stuff
-            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },           
+            oldDeployer: { tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } },
+            PfMainOld: {
+                basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
+                tokenDetails: { "Min AG Score": "3" },
+                wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2 },
+                risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
+                advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
+            },
+            ClaudeR6: {
+                basic: { "Min MCAP (USD)": 6000, "Max MCAP (USD)": 25000 },
+                tokenDetails: { "Min AG Score": "5", "Max Token Age (min)": 52, "Min Deployer Age (min)": 17 },
+                wallets: { "Min Unique Wallets": 0, "Max Unique Wallets": 1, "Min KYC Wallets": 0, "Max KYC Wallets": 2 },
+                risk: { "Max Bundled %": 82, "Min Vol MCAP %": 9, "Max Vol MCAP %": 90, "Min Buy Ratio %": 20, "Max Buy Ratio %": 90, "Min Deployer Balance (SOL)": 0.95,"Fresh Deployer": "Yes", "Description": "Yes" },
+                advanced: { "Max Liquidity %": 66,  "Max TTC (sec)": 30 }
+            },
+            Turbo2: {
+                basic: { "Max MCAP (USD)": 40000 },
+                tokenDetails: { "Min Deployer Age (min)": 10, "Min AG Score": "6", "Max Token Age (min)": 180 },
+                //wallets: { "Min Unique Wallets": 1,  "Max Unique Wallets": 6, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
+                risk: { "Min Bundled %": 0.8, "Max Vol MCAP %": 33, "Min Deployer Balance (SOL)": 4.45, "Fresh Deployer": "Yes", "Description": "Yes" },
+                advanced: { "Max Liquidity %": 75, "Min Win Pred %": 30 }
+            },
 			bundle1_74: { risk: { "Max Bundled %": 1.74 } }, 
             deployerBalance10: { risk: { "Min Deployer Balance (SOL)": 10 } },
             agScore7: { tokenDetails: { "Min AG Score": "7" } },
@@ -169,6 +190,12 @@
         RUNNERS_TARGET_PERCENTAGE: 30, // Target percentage of 10x+ runners
         RUNNERS_PNL_HYBRID_MODE: true, // After finding best runners %, optimize PnL % for that target
         RUNNERS_PERCENTAGE_TOLERANCE: 2.0, // Allow ±2% variance from target runners % during PnL optimization
+        
+        // Rate limiting settings to prevent 429 errors
+        AGGRESSIVE_RATE_LIMITING: true, // Enable more conservative delays when experiencing errors
+        BASE_FIELD_DELAY: 350, // Base delay between field updates (ms)
+        SECTION_DELAY: 250, // Delay between processing different sections (ms)
+        BATCH_SIZE: 2, // Number of fields to process before taking a break
         
     };
 
@@ -247,22 +274,70 @@
     // 🎛️ OPTIMIZED UI INTERACTION LAYER
     // ========================================
     
-    // Simple rate limiter to prevent 429 errors
+    // Enhanced rate limiter to prevent 429 errors with exponential backoff
     class RateLimiter {
-        constructor(minDelay = 100) {
+        constructor(minDelay = 350) { // Increased base delay
             this.minDelay = minDelay;
             this.lastRequest = 0;
+            this.consecutiveErrors = 0;
+            this.lastErrorTime = 0;
+            this.requestQueue = [];
+            this.isProcessing = false;
         }
         
         async throttle() {
             const now = Date.now();
             const elapsed = now - this.lastRequest;
             
-            if (elapsed < this.minDelay) {
-                await sleep(this.minDelay - elapsed);
+            // Calculate delay with exponential backoff for errors
+            let currentDelay = this.minDelay;
+            
+            // If we've had recent 429 errors, apply exponential backoff
+            if (this.consecutiveErrors > 0 && (now - this.lastErrorTime) < 30000) { // 30 second window
+                currentDelay = this.minDelay * Math.pow(2, Math.min(this.consecutiveErrors, 4)); // Cap at 16x
+                console.log(`🚦 Rate limiter: ${this.consecutiveErrors} consecutive errors, delay increased to ${currentDelay}ms`);
+            }
+            
+            if (elapsed < currentDelay) {
+                await sleep(currentDelay - elapsed);
             }
             
             this.lastRequest = Date.now();
+        }
+        
+        // Method to call when a 429 error occurs
+        recordError() {
+            this.consecutiveErrors++;
+            this.lastErrorTime = Date.now();
+            console.log(`⚠️ Rate limit error recorded. Consecutive errors: ${this.consecutiveErrors}`);
+        }
+        
+        // Method to call when a request succeeds
+        recordSuccess() {
+            if (this.consecutiveErrors > 0) {
+                console.log(`✅ Request succeeded, resetting error count from ${this.consecutiveErrors}`);
+                this.consecutiveErrors = 0;
+            }
+        }
+        
+        // Get current effective delay for logging
+        getCurrentDelay() {
+            const now = Date.now();
+            if (this.consecutiveErrors > 0 && (now - this.lastErrorTime) < 30000) {
+                return this.minDelay * Math.pow(2, Math.min(this.consecutiveErrors, 4));
+            }
+            return this.minDelay;
+        }
+        
+        // Get rate limiter status for monitoring
+        getStatus() {
+            return {
+                baseDelay: this.minDelay,
+                currentDelay: this.getCurrentDelay(),
+                consecutiveErrors: this.consecutiveErrors,
+                lastErrorTime: this.lastErrorTime,
+                timeSinceLastError: this.lastErrorTime ? Date.now() - this.lastErrorTime : 0
+            };
         }
     }
     
@@ -270,7 +345,20 @@
         constructor() {
             this.fieldHandlers = new Map();
             this.fieldMappings = new Map();
-            this.rateLimiter = new RateLimiter(250);
+            this.rateLimiter = new RateLimiter(CONFIG.BASE_FIELD_DELAY); // Use configurable delay
+            this.lastStatusLog = 0;
+        }
+        
+        // Log rate limiter status periodically (every 30 seconds max)
+        logRateLimiterStatus() {
+            const now = Date.now();
+            if (now - this.lastStatusLog > 30000) { // Log every 30 seconds max
+                const status = this.rateLimiter.getStatus();
+                if (status.consecutiveErrors > 0 || status.currentDelay > status.baseDelay) {
+                    console.log(`🚦 Rate Limiter Status: ${status.consecutiveErrors} errors, delay: ${status.currentDelay}ms (base: ${status.baseDelay}ms)`);
+                    this.lastStatusLog = now;
+                }
+            }
         }
 
         async getCurrentConfig() {
@@ -459,151 +547,221 @@
             return element.placeholder || 'Unknown';
         }
 
-        // React handler method for optimized field setting with rate limiting
-        async setFieldValueReact(labelText, value) {
-            await this.rateLimiter.throttle();
+        // React handler method for optimized field setting with rate limiting and error handling
+        async setFieldValueReact(labelText, value, maxRetries = 2) {
+            this.logRateLimiterStatus(); // Monitor rate limiter
             
-            const handler = this.fieldHandlers.get(labelText);
-            const field = this.fieldMappings.get(labelText);
-            
-            if (!handler || !field) {
-                return false;
-            }
-            
-            try {
-                // Create a more comprehensive synthetic event
-                const syntheticEvent = {
-                    target: {
-                        value: String(value),
-                        type: field.type || 'text',
-                        name: field.name || '',
-                        checked: field.type === 'checkbox' ? Boolean(value) : undefined
-                    },
-                    currentTarget: field,
-                    preventDefault: () => {},
-                    stopPropagation: () => {},
-                    persist: () => {}
-                };
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                await this.rateLimiter.throttle();
                 
-                // Call the React handler
-                await handler(syntheticEvent);
+                const handler = this.fieldHandlers.get(labelText);
+                const field = this.fieldMappings.get(labelText);
                 
-                // Verify the field was actually updated
-                await sleep(40); // More conservative verification wait
-                const currentValue = field.value;
-                const expectedValue = String(value);
-                
-                if (currentValue === expectedValue || Math.abs(parseFloat(currentValue) - parseFloat(expectedValue)) < 0.01) {
-                    return true;
-                } else {
+                if (!handler || !field) {
                     return false;
                 }
                 
-            } catch (error) {
-                return false;
-            }
-        }
-
-        // React handler method specifically for clearing fields with rate limiting
-        async clearFieldValueReact(labelText) {
-            await this.rateLimiter.throttle();
-            
-            const handler = this.fieldHandlers.get(labelText);
-            const field = this.fieldMappings.get(labelText);
-            
-            if (!handler || !field) {
-                return false;
-            }
-            
-            try {
-                // Create synthetic event for clearing
-                const syntheticEvent = {
-                    target: {
-                        value: '', // Empty string to clear
-                        type: field.type || 'text',
-                        name: field.name || '',
-                        checked: false
-                    },
-                    currentTarget: field,
-                    preventDefault: () => {},
-                    stopPropagation: () => {},
-                    persist: () => {}
-                };
-                
-                // Call the React handler
-                await handler(syntheticEvent);
-                
-                // Verify the field was actually cleared
-                await sleep(40); // More conservative verification wait
-                const currentValue = field.value;
-                
-                if (currentValue === '' || currentValue === null || currentValue === undefined) {
-                    return true;
-                } else {
-                    return false;
-                }
-                
-            } catch (error) {
-                return false;
-            }
-        }
-
-        // Enhanced toggle value setting using React handlers with rate limiting
-        async setToggleValueReact(labelText, value) {
-            await this.rateLimiter.throttle();
-            
-            const handler = this.fieldHandlers.get(labelText);
-            const field = this.fieldMappings.get(labelText);
-            
-            if (!handler || !field) {
-                return false;
-            }
-            
-            try {
-                // For toggle buttons, we need to check current state and click if different
-                const currentValue = field.textContent?.trim();
-                
-                if (currentValue !== value) {
-                    // Simulate a click event for toggle buttons
-                    const clickEvent = {
-                        type: 'click',
-                        target: field,
+                try {
+                    // Create a more comprehensive synthetic event
+                    const syntheticEvent = {
+                        target: {
+                            value: String(value),
+                            type: field.type || 'text',
+                            name: field.name || '',
+                            checked: field.type === 'checkbox' ? Boolean(value) : undefined
+                        },
                         currentTarget: field,
                         preventDefault: () => {},
                         stopPropagation: () => {},
                         persist: () => {}
                     };
                     
-                    // Try onClick handler if available
-                    if (field.onclick) {
-                        field.onclick(clickEvent);
-                    } else if (handler) {
-                        await handler(clickEvent);
-                    } else {
-                        // Fallback to direct click
-                        field.click();
-                    }
+                    // Call the React handler
+                    await handler(syntheticEvent);
                     
-                    await sleep(50); // Faster toggle verification
+                    // Record success for rate limiter
+                    this.rateLimiter.recordSuccess();
                     
-                    // Verify the toggle was successful
-                    const newValue = field.textContent?.trim();
-                    if (newValue === value) {
+                    // Verify the field was actually updated
+                    await sleep(50); // Slightly increased verification wait
+                    const currentValue = field.value;
+                    const expectedValue = String(value);
+                    
+                    if (currentValue === expectedValue || Math.abs(parseFloat(currentValue) - parseFloat(expectedValue)) < 0.01) {
                         return true;
+                    } else {
+                        // Field wasn't updated properly, might be a rate limit issue
+                        if (attempt < maxRetries) {
+                            console.log(`⚠️ Field "${labelText}" not updated properly (attempt ${attempt + 1}), retrying...`);
+                            this.rateLimiter.recordError();
+                            continue;
+                        }
+                        return false;
                     }
                     
-                    // If not the target value, try clicking again (some toggles cycle through options)
-                    if (newValue !== value && newValue !== currentValue) {
-                        field.click();
-                        await sleep(50); // Faster second click wait
+                } catch (error) {
+                    // Check if it's a rate limit error
+                    if (error.message && (error.message.includes('429') || error.message.includes('rate limit'))) {
+                        console.log(`🚦 Rate limit detected for field "${labelText}" (attempt ${attempt + 1})`);
+                        this.rateLimiter.recordError();
+                        if (attempt < maxRetries) {
+                            await sleep(1000 * (attempt + 1)); // Progressive delay
+                            continue;
+                        }
                     }
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        // React handler method specifically for clearing fields with rate limiting and error handling
+        async clearFieldValueReact(labelText, maxRetries = 2) {
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                await this.rateLimiter.throttle();
+                
+                const handler = this.fieldHandlers.get(labelText);
+                const field = this.fieldMappings.get(labelText);
+                
+                if (!handler || !field) {
+                    return false;
                 }
                 
-                return true;
-                
-            } catch (error) {
-                return false;
+                try {
+                    // Create synthetic event for clearing
+                    const syntheticEvent = {
+                        target: {
+                            value: '', // Empty string to clear
+                            type: field.type || 'text',
+                            name: field.name || '',
+                            checked: false
+                        },
+                        currentTarget: field,
+                        preventDefault: () => {},
+                        stopPropagation: () => {},
+                        persist: () => {}
+                    };
+                    
+                    // Call the React handler
+                    await handler(syntheticEvent);
+                    
+                    // Record success for rate limiter
+                    this.rateLimiter.recordSuccess();
+                    
+                    // Verify the field was actually cleared
+                    await sleep(50); // Slightly increased verification wait
+                    const currentValue = field.value;
+                    
+                    if (currentValue === '' || currentValue === null || currentValue === undefined) {
+                        return true;
+                    } else {
+                        if (attempt < maxRetries) {
+                            console.log(`⚠️ Field "${labelText}" not cleared properly (attempt ${attempt + 1}), retrying...`);
+                            this.rateLimiter.recordError();
+                            continue;
+                        }
+                        return false;
+                    }
+                    
+                } catch (error) {
+                    // Check if it's a rate limit error
+                    if (error.message && (error.message.includes('429') || error.message.includes('rate limit'))) {
+                        console.log(`🚦 Rate limit detected while clearing field "${labelText}" (attempt ${attempt + 1})`);
+                        this.rateLimiter.recordError();
+                        if (attempt < maxRetries) {
+                            await sleep(1000 * (attempt + 1)); // Progressive delay
+                            continue;
+                        }
+                    }
+                    return false;
+                }
             }
+            return false;
+        }
+
+        // Enhanced toggle value setting using React handlers with rate limiting and error handling
+        async setToggleValueReact(labelText, value, maxRetries = 2) {
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                await this.rateLimiter.throttle();
+                
+                const handler = this.fieldHandlers.get(labelText);
+                const field = this.fieldMappings.get(labelText);
+                
+                if (!handler || !field) {
+                    return false;
+                }
+                
+                try {
+                    // For toggle buttons, we need to check current state and click if different
+                    const currentValue = field.textContent?.trim();
+                    
+                    if (currentValue !== value) {
+                        // Simulate a click event for toggle buttons
+                        const clickEvent = {
+                            type: 'click',
+                            target: field,
+                            currentTarget: field,
+                            preventDefault: () => {},
+                            stopPropagation: () => {},
+                            persist: () => {}
+                        };
+                        
+                        // Try onClick handler if available
+                        if (field.onclick) {
+                            field.onclick(clickEvent);
+                        } else if (handler) {
+                            await handler(clickEvent);
+                        } else {
+                            // Fallback to direct click
+                            field.click();
+                        }
+                        
+                        // Record success for rate limiter
+                        this.rateLimiter.recordSuccess();
+                        
+                        await sleep(60); // Slightly increased toggle verification
+                        
+                        // Verify the toggle was successful
+                        const newValue = field.textContent?.trim();
+                        if (newValue === value) {
+                            return true;
+                        }
+                        
+                        // If not the target value, try clicking again (some toggles cycle through options)
+                        if (newValue !== value && newValue !== currentValue) {
+                            field.click();
+                            await sleep(60); // Consistent timing for second click
+                            const finalValue = field.textContent?.trim();
+                            if (finalValue === value) {
+                                return true;
+                            }
+                        }
+                        
+                        // If still not right and we have retries left
+                        if (attempt < maxRetries) {
+                            console.log(`⚠️ Toggle "${labelText}" not set properly (attempt ${attempt + 1}), retrying...`);
+                            this.rateLimiter.recordError();
+                            continue;
+                        }
+                        return false;
+                    }
+                    
+                    return true;
+                    
+                } catch (error) {
+                    // Check if it's a rate limit error
+                    if (error.message && (error.message.includes('429') || error.message.includes('rate limit'))) {
+                        console.log(`🚦 Rate limit detected for toggle "${labelText}" (attempt ${attempt + 1})`);
+                        this.rateLimiter.recordError();
+                        if (attempt < maxRetries) {
+                            await sleep(1000 * (attempt + 1)); // Progressive delay
+                            continue;
+                        }
+                    }
+                    return false;
+                }
+            }
+            return false;
         }
 
         // DOM fallback method (legacy support)
@@ -782,7 +940,7 @@
                 await sleep(300);
 
                 // Clear fields in smaller batches to reduce load
-                const batchSize = 3; // Process 3 fields at a time
+                const batchSize = CONFIG.BATCH_SIZE; // Use configurable batch size
                 for (let i = 0; i < fields.length; i += batchSize) {
                     const batch = fields.slice(i, i + batchSize);
                     
@@ -820,6 +978,7 @@
 
         // Smart config application with selective clearing - only clears/changes what's needed
         async applyConfig(config, clearFirst = false) {
+            this.logRateLimiterStatus(); // Monitor rate limiter at start of config application
                         
             const sectionMap = {
                 basic: 'Basic',
@@ -922,15 +1081,19 @@
                                     totalSuccess++;
                                 }
                                 
-                                // More conservative delay between field updates
-                                await sleep(90);
+                                // Adaptive delay based on rate limiter status and configuration
+                                const baseDelay = CONFIG.AGGRESSIVE_RATE_LIMITING ? 150 : 100;
+                                const adaptiveDelay = CONFIG.AGGRESSIVE_RATE_LIMITING ? 
+                                    Math.max(baseDelay, this.rateLimiter.getCurrentDelay() * 0.5) : baseDelay;
+                                await sleep(adaptiveDelay);
                             }
                         }
                     }
                 }
                 
-                // Brief delay between sections
-                await sleep(150);
+                // Adaptive section delay based on configuration
+                const sectionDelay = CONFIG.AGGRESSIVE_RATE_LIMITING ? CONFIG.SECTION_DELAY : 150;
+                await sleep(sectionDelay);
             }
             
             
@@ -3059,6 +3222,9 @@
 
             createProgressBar();
             updateProgress('🚀 Starting optimization...', 0, '--', 0, '--');
+            
+            // Log rate limiting configuration
+            console.log(`🚦 Rate Limiting: Base delay ${CONFIG.BASE_FIELD_DELAY}ms, Aggressive mode ${CONFIG.AGGRESSIVE_RATE_LIMITING ? 'ON' : 'OFF'}, Batch size ${CONFIG.BATCH_SIZE}`);
 
             const optimizer = new SimpleOptimizer();
             const result = await optimizer.runOptimization();
