@@ -1326,57 +1326,56 @@
 
                 let container = label.closest('.form-group') || label.parentElement;
 
-                // Navigate up the DOM tree to find the input container
+                // Handle toggle buttons FIRST (Description and Fresh Deployer) before DOM navigation
+                if (labelText === "Description" || labelText === "Fresh Deployer") {
+                    // Look for toggle button specifically in the label's immediate area
+                    let toggleButton = container.querySelector('button');
+                    
+                    // If not found, try searching in parent containers but only for toggle buttons
+                    if (!toggleButton) {
+                        let searchContainer = container.parentElement;
+                        let searchDepth = 0;
+                        while (searchContainer && searchDepth < 3) {
+                            toggleButton = searchContainer.querySelector('button');
+                            // Ensure we found a toggle button and not a clear button (×)
+                            if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                                break;
+                            }
+                            toggleButton = null;
+                            searchContainer = searchContainer.parentElement;
+                            searchDepth++;
+                        }
+                    }
+                    
+                    if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                        const targetValue = value || "Don't care";
+                        const currentValue = toggleButton.textContent.trim();
+                        
+                        if (currentValue !== targetValue) {
+                            toggleButton.click();
+                            await sleep(100);
+
+                            const newValue = toggleButton.textContent.trim();
+                            if (newValue !== targetValue && newValue !== currentValue) {
+                                toggleButton.click();
+                                await sleep(100);
+                            }
+                        }
+                        return true;
+                    } else {
+                        console.warn(`Toggle button not found for ${labelText}`);
+                        return false; // Early return to prevent fallthrough to number input logic
+                    }
+                }
+
+                // Navigate up the DOM tree to find the input container (only for non-toggle fields)
                 if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
                     container = container.parentElement;
                     if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
                         container = container.parentElement;
                     }
                 }
-
-                const button = container.querySelector('button');
-                if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
-                    const targetValue = value || "Don't care";
-                    const currentValue = button.textContent.trim();
-                    
-                    if (currentValue !== targetValue) {
-                        button.click();
-                        await sleep(100);
-
-                        const newValue = button.textContent.trim();
-                        if (newValue !== targetValue && newValue !== currentValue) {
-                            button.click();
-                            await sleep(100);
-                        }
-                    }
-                    return true;
-                }
                 
-                
-                // Handle toggle buttons FIRST (Description and Fresh Deployer) 
-                // if (labelText === "Description" || labelText === "Fresh Deployer") {
-                //     console.log(`Setting toggle field: ${labelText} to ${value}`);
-                //     const button = container.querySelector('button');
-                //     if (button) {
-                //         const targetValue = value || "Don't care";
-                //         const currentValue = button.textContent.trim();
-                //         console.log(`Current value: ${currentValue}, Target value: ${targetValue}`);
-                //         if (currentValue !== targetValue) {
-                //             button.click();
-                //             await sleep(100);
-
-                //             const newValue = button.textContent.trim();
-                //             if (newValue !== targetValue && newValue !== currentValue) {
-                //                 button.click();
-                //                 await sleep(100);
-                //             }
-                //         }
-                //         return true;
-                //     }
-                //     // If no button found for toggle fields, return false
-                //     return false;
-                // }
-
                 // Handle number inputs (only for non-boolean fields)
                 const input = container.querySelector('input[type="number"]');
                 if (input) {
