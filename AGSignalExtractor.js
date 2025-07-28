@@ -115,7 +115,7 @@
 
     // Get token info by search (contract address)
     async function getTokenInfo(contractAddress) {
-        const url = `${CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
+        const url = `${CONFIG.API_BASE_URL}/swaps?fromDate=2000-01-01&toDate=9999-12-31&search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
         const data = await fetchWithRetry(url);
         
         if (!data.swaps || data.swaps.length === 0) {
@@ -242,13 +242,20 @@
                 'Liquidity Percentage',
                 'Platform',
                 'Wallet Stats',
-                'Recent Swap',
+                'Recent Swap(s)',
                 'Buy Ratio',
                 'Vol2MC',
                 'AG Score',
+                'Holders Count',
                 'Bundle',
                 'Drained%',
+                'Drained Count',
+                'TTC',
+                'Z Score',
+                'Avg Z Score',
+                'Buyer Label',
                 'Deployer Balance',
+                'Fresh Deployer',
                 'Funding Address',
                 'Deployer Age',
                 'Description'
@@ -273,7 +280,7 @@
                      `$${swap.criteria.liquidity}`) : '';
                 
                 // Wallet stats (updated format: F: X KYC: Y Unq: Z)
-                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0}`;
+                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.smCount || 0}`;
                 
                 // Platform logic based on CA ending
                 let platform = 'Unknown';
@@ -302,11 +309,12 @@
                 // Drained percentage
                 const drainedPercent = swap.criteria?.drainedPct ? `${swap.criteria.drainedPct.toFixed(1)}%` : '';
                 
-                // Deployer age in readable format
+                // Deployer age in readable format (convert from seconds to minutes/hours/days)
                 const deployerAge = swap.criteria?.deployerAge ? 
-                    (swap.criteria.deployerAge >= 1440 ? `${(swap.criteria.deployerAge / 1440).toFixed(1)}d` :
-                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}h` :
-                     `${swap.criteria.deployerAge}m`) : '';
+                    (swap.criteria.deployerAge >= 86400 ? `${(swap.criteria.deployerAge / 86400).toFixed(1)}d` :
+                     swap.criteria.deployerAge >= 3600 ? `${(swap.criteria.deployerAge / 3600).toFixed(1)}h` :
+                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}m` :
+                     `${swap.criteria.deployerAge}s`) : '';
                 
                 const row = [
                     processed.symbol || '',                                    // Ticker
@@ -320,10 +328,17 @@
                     buyRatio,                                                 // Buy Ratio
                     vol2MC,                                                   // Vol2MC
                     swap.criteria?.agScore || '',                             // AG Score
+                    swap.criteria.holdersCount,                                            // Holders Count
                     bundlePercent,                                            // Bundle
-                    drainedPercent,                                           // Drained%
+                    drainedPercent,                                            // Bundle
+                    swap.criteria.drainedCount,
+                    swap.criteria.ttc,
+                    swap.criteria.zScore,
+                    swap.criteria.avgZScore,
+                    swap.criteria.buyerLabel,
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
-                    '', // Funding Address (not available in current data)
+                    swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Funding Address (not available in current data)
+                    '',
                     deployerAge,                                              // Deployer Age
                     swap.criteria?.hasDescription ? 'Yes' : 'No'             // Description
                 ];
@@ -424,11 +439,16 @@
                     swap.criteria?.liquidityPct || '',
                     swap.criteria?.uniqueCount || '',
                     swap.criteria?.kycCount || '',
+                    swap.criteria?.smCount || '',
+                    swap.criteria?.holdersCount || '',
                     swap.criteria?.bundledPct || '',
                     swap.criteria?.buyVolumePct || '',
                     swap.criteria?.volMcapPct || '',
                     swap.criteria?.drainedPct || '',
                     swap.criteria?.drainedCount || '',
+                    swap.criteria?.zScore || '',
+                    swap.criteria?.avgZscore || '',
+                    swap.criteria?.buyerLabel || '',
                     swap.criteria?.deployerBalance || '',
                     swap.criteria?.freshDeployer ? 'TRUE' : 'FALSE', // Google Sheets boolean format
                     swap.criteria?.hasDescription ? 'TRUE' : 'FALSE',
@@ -635,38 +655,11 @@
                         <input type="number" id="signals-per-token" value="3" min="1" max="999" 
                                style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </div>
-                    <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 2px; font-size: 10px; font-weight: bold;">Buffer % for cfg gen:</label>
-                        <input type="number" id="config-buffer" value="10" min="0" max="50" 
-                               style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
-                    </div>
+
                 </div>
             </div>
             
             <div style="margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Outlier Filtering for config generation:</label>
-                <div style="background: rgba(0,0,0,0.2); border-radius: 5px; padding: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
-                    <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 80px;">
-                        <input type="radio" name="outlier-filter" id="outlier-none" value="none" checked style="margin-right: 3px;">
-                        <span style="font-size: 9px;">None</span>
-                    </label>
-                    <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 80px;">
-                        <input type="radio" name="outlier-filter" id="outlier-zscore" value="zscore" style="margin-right: 3px;">
-                        <span style="font-size: 9px;">Z-Score</span>
-                    </label>
-                    <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 70px;">
-                        <input type="radio" name="outlier-filter" id="outlier-iqr" value="iqr" style="margin-right: 3px;">
-                        <span style="font-size: 9px;">IQR</span>
-                    </label>
-                    <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 90px;">
-                        <input type="radio" name="outlier-filter" id="outlier-percentile" value="percentile" style="margin-right: 3px;">
-                        <span style="font-size: 9px;">Percentile</span>
-                    </label>
-                </div>
-                <div style="font-size: 9px; opacity: 0.7; margin-top: 2px;">
-                    🎯 Filter outliers to create tighter configs
-                </div>
-            </div>
             
             <div style="margin-bottom: 10px;">
                 <button id="extract-btn" style="
@@ -699,7 +692,7 @@
             
             <div id="action-buttons" style="margin-top: 10px; display: none;">
                 <button id="copy-detailed-csv-btn" style="
-                    width: 30%; 
+                    width: 47%; 
                     padding: 8px; 
                     background: #28a745; 
                     border: none; 
@@ -713,7 +706,7 @@
                     📊 Custom
                 </button>
                 <button id="copy-full-detailed-btn" style="
-                    width: 30%; 
+                    width: 47%;
                     padding: 8px; 
                     background: #6f42c1; 
                     border: none; 
@@ -726,22 +719,6 @@
                 ">
                     📈 Detail
                 </button>
-                <button id="generate-config-btn" style="
-                    width: 30%; 
-                    padding: 8px; 
-                    background: linear-gradient(45deg, #FF6B6B, #FF8E53); 
-                    border: none; 
-                    border-radius: 4px; 
-                    color: white; 
-                    font-size: 10px; 
-                    cursor: pointer;
-                    font-weight: bold;
-                ">
-                    ⚙️ Apply
-                </button>
-                <div style="font-size: 9px; opacity: 0.8; margin-top: 5px; text-align: center;">
-                    💡 Generate & apply tightest config to backtester
-                </div>
             </div>
             
             <div style="margin-top: 10px; text-align: center;">
@@ -778,532 +755,11 @@
     }
 
     // ========================================
-    // ⚙️ CONFIG GENERATION FUNCTIONS
+    // 🚀 MAIN EXTRACTION FUNCTION
     // ========================================
     
-    // Outlier filtering functions
-    function removeOutliers(values, method = 'none') {
-        if (!values || values.length === 0) return values;
-        if (method === 'none') return values;
-        
-        const validValues = values.filter(v => v !== null && v !== undefined && !isNaN(v));
-        if (validValues.length < 4) return validValues; // Need at least 4 values for meaningful outlier detection
-        
-        const sorted = [...validValues].sort((a, b) => a - b);
-        
-        switch (method) {
-            case 'iqr': {
-                // Interquartile Range method - removes extreme outliers
-                const q1Index = Math.floor(sorted.length * 0.25);
-                const q3Index = Math.floor(sorted.length * 0.75);
-                const q1 = sorted[q1Index];
-                const q3 = sorted[q3Index];
-                const iqr = q3 - q1;
-                const lowerBound = q1 - 1.5 * iqr;
-                const upperBound = q3 + 1.5 * iqr;
-                
-                return validValues.filter(v => v >= lowerBound && v <= upperBound);
-            }
-            
-            case 'percentile': {
-                // Keep middle 80% (remove top and bottom 10%)
-                const startIndex = Math.floor(sorted.length * 0.1);
-                const endIndex = Math.ceil(sorted.length * 0.9);
-                const filtered = sorted.slice(startIndex, endIndex);
-                
-                return validValues.filter(v => v >= filtered[0] && v <= filtered[filtered.length - 1]);
-            }
-            
-            case 'zscore': {
-                // Z-Score method - remove values more than 2.5 standard deviations from mean
-                const mean = validValues.reduce((sum, v) => sum + v, 0) / validValues.length;
-                const variance = validValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / validValues.length;
-                const stdDev = Math.sqrt(variance);
-                const threshold = 2.5;
-                
-                return validValues.filter(v => Math.abs(v - mean) <= threshold * stdDev);
-            }
-            
-            default:
-                return validValues;
-        }
-    }
-    
-    // Get selected outlier filtering method
-    function getOutlierFilterMethod() {
-        const methods = ['none', 'iqr', 'percentile', 'zscore'];
-        for (const method of methods) {
-            const radio = document.getElementById(`outlier-${method}`);
-            if (radio && radio.checked) {
-                return method;
-            }
-        }
-        return 'none'; // Default fallback
-    }
-    
-    // Analyze all signals to find optimal parameter bounds
-    function analyzeSignalCriteria(allTokenData, bufferPercent = 10) {
-        const allSignals = [];
-        
-        // Collect all signals from all tokens
-        allTokenData.forEach(tokenData => {
-            tokenData.swaps.forEach(swap => {
-                if (swap.criteria) {
-                    allSignals.push({
-                        ...swap.criteria,
-                        signalMcap: swap.signalMcap,
-                        athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
-                    });
-                }
-            });
-        });
-        
-        if (allSignals.length === 0) {
-            throw new Error('No signal criteria found to analyze');
-        }
-        
-        // Get outlier filtering method
-        const outlierMethod = getOutlierFilterMethod();
-        
-        // Helper function to apply buffer to bounds
-        const applyBuffer = (value, isMin = true, isPercent = false) => {
-            if (value === null || value === undefined) return null;
-            
-            const multiplier = isMin ? (1 - bufferPercent / 100) : (1 + bufferPercent / 100);
-            let result = value * multiplier;
-            
-            // Ensure bounds stay within realistic ranges
-            if (isPercent) {
-                result = Math.max(0, Math.min(100, result));
-            } else if (result < 0) {
-                result = 0;
-            }
-            
-            return Math.round(result * 100) / 100; // Round to 2 decimal places
-        };
-        
-        // Helper function to get valid values with outlier filtering
-        const getValidValues = (field) => {
-            const rawValues = allSignals
-                .map(signal => signal[field])
-                .filter(val => val !== null && val !== undefined && !isNaN(val));
-            
-            return removeOutliers(rawValues, outlierMethod);
-        };
-        
-        // Analyze each parameter
-        const analysis = {
-            totalSignals: allSignals.length,
-            tokenCount: allTokenData.length,
-            bufferPercent: bufferPercent,
-            outlierMethod: outlierMethod,
-            
-            // MCAP Analysis (expecting low values under 20k)
-            mcap: (() => {
-                const rawMcaps = allSignals.map(s => s.signalMcap).filter(m => m && m > 0);
-                const mcaps = removeOutliers(rawMcaps, outlierMethod);
-                
-                if (mcaps.length === 0) return { 
-                    min: 0, max: 20000, avg: 0, count: 0, 
-                    originalCount: rawMcaps.length, filteredCount: 0, outlierMethod 
-                };
-                
-                const min = Math.min(...mcaps);
-                const max = Math.max(...mcaps);
-                const avg = mcaps.reduce((sum, m) => sum + m, 0) / mcaps.length;
-                
-                // Sort MCaps to find a reasonable tightest max (75th percentile)
-                const sortedMcaps = [...mcaps].sort((a, b) => a - b);
-                const percentile75Index = Math.floor(sortedMcaps.length * 0.75);
-                const tightestMax = sortedMcaps[percentile75Index] || max;
-                
-                return {
-                    min: Math.round(min),
-                    max: Math.round(applyBuffer(max, false)), // Max with buffer
-                    avg: Math.round(avg),
-                    count: mcaps.length,
-                    originalCount: rawMcaps.length,
-                    filteredCount: mcaps.length,
-                    outliersRemoved: rawMcaps.length - mcaps.length,
-                    tightestMax: Math.round(applyBuffer(tightestMax, false)), // 75th percentile with buffer
-                    outlierMethod: outlierMethod
-                };
-            })(),
-            
-            // AG Score Analysis
-            agScore: (() => {
-                const scores = getValidValues('agScore');
-                if (scores.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                const min = Math.min(...scores);
-                const max = Math.max(...scores);
-                const avg = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: scores.length
-                };
-            })(),
-            
-            // Token Age Analysis (should be tight for same team releases)
-            tokenAge: (() => {
-                const ages = getValidValues('tokenAge');
-                if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 }; // Default max 7 days
-                
-                const min = Math.min(...ages);
-                const max = Math.max(...ages);
-                const avg = ages.reduce((sum, a) => sum + a, 0) / ages.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: ages.length
-                };
-            })(),
-            
-            // Deployer Age Analysis (should be tight for same team)
-            deployerAge: (() => {
-                const ages = getValidValues('deployerAge');
-                if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 };
-                
-                const min = Math.min(...ages);
-                const max = Math.max(...ages);
-                const avg = ages.reduce((sum, a) => sum + a, 0) / ages.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: ages.length
-                };
-            })(),
-            
-            // Deployer Balance Analysis (should be tight for same team)
-            deployerBalance: (() => {
-                const balances = getValidValues('deployerBalance');
-                if (balances.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
-                
-                const min = Math.min(...balances);
-                const max = Math.max(...balances);
-                const avg = balances.reduce((sum, b) => sum + b, 0) / balances.length;
-                
-                return {
-                    min: applyBuffer(min, true),
-                    max: applyBuffer(max, false),
-                    avg: Math.round(avg * 100) / 100,
-                    count: balances.length
-                };
-            })(),
-            
-            // Wallet Stats Analysis (should be tight)
-            uniqueWallets: (() => {
-                const counts = getValidValues('uniqueCount');
-                if (counts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
-                
-                const min = Math.min(...counts);
-                const max = Math.max(...counts);
-                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: counts.length
-                };
-            })(),
-            
-            // KYC Wallets Analysis
-            kycWallets: (() => {
-                const counts = getValidValues('kycCount');
-                if (counts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                const min = Math.min(...counts);
-                const max = Math.max(...counts);
-                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: counts.length
-                };
-            })(),
-            
-            // Liquidity Analysis
-            liquidity: (() => {
-                const liquids = getValidValues('liquidity');
-                if (liquids.length === 0) return { min: 0, max: 100000, avg: 0, count: 0 };
-                
-                const min = Math.min(...liquids);
-                const max = Math.max(...liquids);
-                const avg = liquids.reduce((sum, l) => sum + l, 0) / liquids.length;
-                
-                return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
-                    avg: Math.round(avg),
-                    count: liquids.length
-                };
-            })(),
-            
-            // Percentage-based criteria (with 0-100% bounds)
-            liquidityPct: (() => {
-                const pcts = getValidValues('liquidityPct');
-                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
-                    count: pcts.length
-                };
-            })(),
-            
-            buyVolumePct: (() => {
-                const pcts = getValidValues('buyVolumePct');
-                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
-                    count: pcts.length
-                };
-            })(),
-            
-            bundledPct: (() => {
-                const pcts = getValidValues('bundledPct');
-                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
-                    count: pcts.length
-                };
-            })(),
-            
-            drainedPct: (() => {
-                const pcts = getValidValues('drainedPct');
-                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
-                
-                return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
-                    count: pcts.length
-                };
-            })(),
-            
-            volMcapPct: (() => {
-                const pcts = getValidValues('volMcapPct');
-                if (pcts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
-                
-                return {
-                    min: applyBuffer(Math.min(...pcts), true),
-                    max: applyBuffer(Math.max(...pcts), false),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
-                    count: pcts.length
-                };
-            })(),
-            
-            // Boolean criteria analysis
-            freshDeployer: {
-                trueCount: allSignals.filter(s => s.freshDeployer === true).length,
-                falseCount: allSignals.filter(s => s.freshDeployer === false).length,
-                nullCount: allSignals.filter(s => s.freshDeployer === null || s.freshDeployer === undefined).length,
-                preferredValue: null // Will be determined based on majority
-            },
-            
-            hasDescription: {
-                trueCount: allSignals.filter(s => s.hasDescription === true).length,
-                falseCount: allSignals.filter(s => s.hasDescription === false).length,
-                nullCount: allSignals.filter(s => s.hasDescription === null || s.hasDescription === undefined).length,
-                preferredValue: null
-            },
-            
-            hasSocials: {
-                trueCount: allSignals.filter(s => s.hasSocials === true).length,
-                falseCount: allSignals.filter(s => s.hasSocials === false).length,
-                nullCount: allSignals.filter(s => s.hasSocials === null || s.hasSocials === undefined).length,
-                preferredValue: null
-            }
-        };
-        
-        // Determine preferred boolean values based on majority
-        ['freshDeployer', 'hasDescription', 'hasSocials'].forEach(field => {
-            const data = analysis[field];
-            if (data.trueCount > data.falseCount) {
-                data.preferredValue = true;
-            } else if (data.falseCount > data.trueCount) {
-                data.preferredValue = false;
-            } else {
-                data.preferredValue = null; // "Don't Care" for ties
-            }
-        });
-        
-        return analysis;
-    }
-    
-    // Generate the tightest possible configuration
-    function generateTightestConfig(analysis) {
-        const config = {
-            metadata: {
-                generatedAt: new Date().toISOString(),
-                basedOnSignals: analysis.totalSignals,
-                basedOnTokens: analysis.tokenCount,
-                bufferPercent: analysis.bufferPercent,
-                outlierMethod: analysis.outlierMethod,
-                configType: 'Tightest Generated Config',
-                outlierStats: {
-                    mcap: {
-                        originalCount: analysis.mcap.originalCount,
-                        filteredCount: analysis.mcap.filteredCount,
-                        outliersRemoved: analysis.mcap.outliersRemoved
-                    }
-                }
-            },
-            
-            // Basic Settings
-            basic: {
-                mcapMin: analysis.mcap.min || 0,
-                mcapMax: analysis.mcap.tightestMax || analysis.mcap.max || 20000,
-                agScoreMin: analysis.agScore.min || 0,
-                agScoreMax: analysis.agScore.max || 100,
-                tokenAgeMin: analysis.tokenAge.min || 0,
-                tokenAgeMax: analysis.tokenAge.max || 10080,
-                deployerAgeMin: analysis.deployerAge.min || 0,
-                deployerAgeMax: analysis.deployerAge.max || 10080,
-                deployerBalanceMin: analysis.deployerBalance.min || 0,
-                deployerBalanceMax: analysis.deployerBalance.max || 1000
-            },
-            
-            // Wallet Settings
-            wallets: {
-                uniqueWalletsMin: analysis.uniqueWallets.min || 0,
-                uniqueWalletsMax: analysis.uniqueWallets.max || 1000,
-                kycWalletsMin: analysis.kycWallets.min || 0,
-                kycWalletsMax: analysis.kycWallets.max || 100
-            },
-            
-            // Liquidity Settings
-            liquidity: {
-                liquidityMin: analysis.liquidity.min || 0,
-                liquidityMax: analysis.liquidity.max || 100000,
-                liquidityPctMin: analysis.liquidityPct.min || 0,
-                liquidityPctMax: analysis.liquidityPct.max || 100
-            },
-            
-            // Volume & Trading Settings
-            trading: {
-                buyVolumePctMin: analysis.buyVolumePct.min || 0,
-                buyVolumePctMax: analysis.buyVolumePct.max || 100,
-                volMcapPctMin: analysis.volMcapPct.min || 0,
-                volMcapPctMax: analysis.volMcapPct.max || 1000
-            },
-            
-            // Risk Settings
-            risk: {
-                bundledPctMin: analysis.bundledPct.min || 0,
-                bundledPctMax: analysis.bundledPct.max || 100,
-                drainedPctMin: analysis.drainedPct.min || 0,
-                drainedPctMax: analysis.drainedPct.max || 100
-            },
-            
-            // Boolean Settings
-            booleans: {
-                freshDeployer: analysis.freshDeployer.preferredValue, // null = "Don't Care"
-                hasDescription: analysis.hasDescription.preferredValue,
-                hasSocials: analysis.hasSocials.preferredValue
-            },
-            
-            // Summary Statistics
-            summary: {
-                avgMcap: analysis.mcap.avg,
-                avgAgScore: analysis.agScore.avg,
-                avgTokenAge: analysis.tokenAge.avg,
-                avgDeployerAge: analysis.deployerAge.avg,
-                avgUniqueWallets: analysis.uniqueWallets.avg,
-                dataCompleteness: {
-                    mcap: `${analysis.mcap.count}/${analysis.totalSignals}`,
-                    agScore: `${analysis.agScore.count}/${analysis.totalSignals}`,
-                    tokenAge: `${analysis.tokenAge.count}/${analysis.totalSignals}`,
-                    wallets: `${analysis.uniqueWallets.count}/${analysis.totalSignals}`
-                }
-            }
-        };
-        
-        return config;
-    }
-    
-    // Format config for display or copying
-    function formatConfigForDisplay(config) {
-        const lines = [];
-        
-        lines.push('🎯 TIGHTEST GENERATED CONFIG');
-        lines.push('═'.repeat(50));
-        lines.push(`📊 Based on: ${config.metadata.basedOnSignals} signals from ${config.metadata.basedOnTokens} tokens`);
-        lines.push(`🛡️ Buffer: ${config.metadata.bufferPercent}%`);
-        lines.push(`🎯 Outlier Filter: ${config.metadata.outlierMethod || 'none'}`);
-        lines.push(`⏰ Generated: ${new Date(config.metadata.generatedAt).toLocaleString()}`);
-        lines.push('');
-        
-        lines.push('📈 BASIC CRITERIA:');
-        lines.push(`MCAP: $${config.basic.mcapMin} - $${config.basic.mcapMax}`);
-        lines.push(`AG Score: ${config.basic.agScoreMin} - ${config.basic.agScoreMax}`);
-        lines.push(`Token Age: ${config.basic.tokenAgeMin} - ${config.basic.tokenAgeMax} minutes`);
-        lines.push(`Deployer Age: ${config.basic.deployerAgeMin} - ${config.basic.deployerAgeMax} minutes`);
-        lines.push(`Deployer Balance: ${config.basic.deployerBalanceMin} - ${config.basic.deployerBalanceMax} SOL`);
-        lines.push('');
-        
-        lines.push('👥 WALLET CRITERIA:');
-        lines.push(`Unique Wallets: ${config.wallets.uniqueWalletsMin} - ${config.wallets.uniqueWalletsMax}`);
-        lines.push(`KYC Wallets: ${config.wallets.kycWalletsMin} - ${config.wallets.kycWalletsMax}`);
-        lines.push('');
-        
-        lines.push('💧 LIQUIDITY CRITERIA:');
-        lines.push(`Liquidity: $${config.liquidity.liquidityMin} - $${config.liquidity.liquidityMax}`);
-        lines.push(`Liquidity %: ${config.liquidity.liquidityPctMin}% - ${config.liquidity.liquidityPctMax}%`);
-        lines.push('');
-        
-        lines.push('📊 TRADING CRITERIA:');
-        lines.push(`Buy Volume %: ${config.trading.buyVolumePctMin}% - ${config.trading.buyVolumePctMax}%`);
-        lines.push(`Vol/MCAP %: ${config.trading.volMcapPctMin}% - ${config.trading.volMcapPctMax}%`);
-        lines.push('');
-        
-        lines.push('⚠️ RISK CRITERIA:');
-        lines.push(`Bundled %: ${config.risk.bundledPctMin}% - ${config.risk.bundledPctMax}%`);
-        lines.push(`Drained %: ${config.risk.drainedPctMin}% - ${config.risk.drainedPctMax}%`);
-        lines.push('');
-        
-        lines.push('🔘 BOOLEAN SETTINGS:');
-        const boolToString = (val) => val === null ? "Don't Care" : (val ? "Required" : "Forbidden");
-        lines.push(`Fresh Deployer: ${boolToString(config.booleans.freshDeployer)}`);
-        lines.push(`Has Description: ${boolToString(config.booleans.hasDescription)}`);
-        lines.push(`Has Socials: ${boolToString(config.booleans.hasSocials)}`);
-        lines.push('');
-        
-        lines.push('📈 SUMMARY STATS:');
-        lines.push(`Avg MCAP: $${config.summary.avgMcap}`);
-        lines.push(`Avg AG Score: ${config.summary.avgAgScore}`);
-        lines.push(`Avg Token Age: ${config.summary.avgTokenAge} min`);
-        lines.push(`Avg Deployer Age: ${config.summary.avgDeployerAge} min`);
-        
-        // Add outlier filtering stats if available
-        if (config.metadata.outlierStats) {
-            lines.push('');
-            lines.push('🎯 OUTLIER FILTERING STATS:');
-            const stats = config.metadata.outlierStats;
-            lines.push(`MCAP: ${stats.mcap.outliersRemoved || 0} outliers removed (${stats.mcap.filteredCount}/${stats.mcap.originalCount} signals used)`);
-        }
-        
-        lines.push(`Data Completeness: MCAP(${config.summary.dataCompleteness.mcap}), AG(${config.summary.dataCompleteness.agScore}), Age(${config.summary.dataCompleteness.tokenAge}), Wallets(${config.summary.dataCompleteness.wallets})`);
-        
-        return lines.join('\n');
-    }
+    // Get selected trigger modes
+      
     
     // ========================================
     // 🎯 BACKTESTER UI INTERACTION FUNCTIONS
@@ -1326,56 +782,71 @@
 
                 let container = label.closest('.form-group') || label.parentElement;
 
-                // Handle toggle buttons FIRST (Description and Fresh Deployer) before DOM navigation
-                if (labelText === "Description" || labelText === "Fresh Deployer") {
-                    // Look for toggle button specifically in the label's immediate area
-                    let toggleButton = container.querySelector('button');
-                    
-                    // If not found, try searching in parent containers but only for toggle buttons
-                    if (!toggleButton) {
-                        let searchContainer = container.parentElement;
-                        let searchDepth = 0;
-                        while (searchContainer && searchDepth < 3) {
-                            toggleButton = searchContainer.querySelector('button');
-                            // Ensure we found a toggle button and not a clear button (×)
-                            if (toggleButton && toggleButton.textContent.trim() !== '×') {
-                                break;
-                            }
-                            toggleButton = null;
-                            searchContainer = searchContainer.parentElement;
-                            searchDepth++;
-                        }
-                    }
-                    
-                    if (toggleButton && toggleButton.textContent.trim() !== '×') {
-                        const targetValue = value || "Don't care";
-                        const currentValue = toggleButton.textContent.trim();
-                        
-                        if (currentValue !== targetValue) {
-                            toggleButton.click();
-                            await sleep(100);
-
-                            const newValue = toggleButton.textContent.trim();
-                            if (newValue !== targetValue && newValue !== currentValue) {
-                                toggleButton.click();
-                                await sleep(100);
-                            }
-                        }
-                        return true;
-                    } else {
-                        console.warn(`Toggle button not found for ${labelText}`);
-                        return false; // Early return to prevent fallthrough to number input logic
-                    }
-                }
-
-                // Navigate up the DOM tree to find the input container (only for non-toggle fields)
+                // Navigate up the DOM tree to find the input container
                 if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
                     container = container.parentElement;
                     if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
                         container = container.parentElement;
                     }
                 }
+
+                const button = container.querySelector('button');
+                if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                    const targetValue = value || "Don't care";
+                    const currentValue = button.textContent.trim();
+                    
+                    if (currentValue !== targetValue) {
+                        button.click();
+                        await sleep(100);
+
+                        const newValue = button.textContent.trim();
+                        if (newValue !== targetValue && newValue !== currentValue) {
+                            button.click();
+                            await sleep(100);
+                        }
+                    }
+                    return true;
+                }
                 
+                
+                // Handle toggle buttons FIRST (Description and Fresh Deployer) to avoid number input conflicts
+                const buttons = container.querySelectorAll('button');
+                let toggleButton = null;
+                
+                // Find the actual toggle button (not clear buttons marked with ×)
+                for (const btn of buttons) {
+                    const btnText = btn.textContent.trim();
+                     // Skip clear buttons (×) and find actual toggle buttons
+                    if (btnText !== '×' && (btnText === "Don't care" || btnText === "Yes" || btnText.length === 0)) {
+                        toggleButton = btn;
+                        break;
+                    }
+                }
+                
+                if (toggleButton && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                    const targetValue = value || "Don't care";
+                    let currentValue = toggleButton.textContent.trim();
+                    
+                    // Handle different value formats - convert to button text states
+                    let normalizedTarget = targetValue;
+                    if (targetValue === "Required" || targetValue === "Yes" || targetValue === true) {
+                        normalizedTarget = "Yes";  // Buttons show "Yes" not "Required"
+                    } else {
+                        normalizedTarget = "Don't care";
+                    }
+                    
+                    // Keep clicking until we get to the target state (buttons cycle: Don't care -> Yes -> No)
+                    let attempts = 0;
+                    while (currentValue !== normalizedTarget && attempts < 4) {                        
+                        toggleButton.click();
+                        await sleep(300); // Longer wait for UI to update
+                        currentValue = toggleButton.textContent.trim();
+                        attempts++;
+                    }
+                    
+                    return true;
+                }
+
                 // Handle number inputs (only for non-boolean fields)
                 const input = container.querySelector('input[type="number"]');
                 if (input) {
@@ -1806,60 +1277,7 @@
                 const success = await copyToClipboard(detailedOutput);
                 updateStatus(success ? `📈 Full detailed TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
             }
-        });
-        
-        document.getElementById('generate-config-btn').addEventListener('click', async () => {
-            if (window.extractedData) {
-                try {
-                    updateStatus('🔍 Analyzing signal criteria...');
-                    
-                    const bufferPercent = parseInt(document.getElementById('config-buffer').value) || 10;
-                    const analysis = analyzeSignalCriteria(window.extractedData.tokens, bufferPercent);
-                    
-                    updateStatus('⚙️ Generating tightest configuration...');
-                    const config = generateTightestConfig(analysis);
-                    
-                    updateStatus('📋 Formatting configuration for display...');
-                    const formattedConfig = formatConfigForDisplay(config);
-                    
-                    // Copy configuration to clipboard
-                    const clipboardContent = `${formattedConfig}\n\n${'='.repeat(50)}\nRAW JSON CONFIG:\n${'='.repeat(50)}\n${JSON.stringify(config, null, 2)}`;
-                    const copySuccess = await copyToClipboard(clipboardContent);
-                    
-                    // Apply configuration to backtester UI
-                    updateStatus('🎯 Applying configuration to backtester UI...');
-                    const applyResult = await applyConfigToBacktester(config);
-                    
-                    if (applyResult.success) {
-                        updateStatus(`✅ Config applied to backtester! (${applyResult.appliedFields}/${applyResult.totalFields} fields, ${applyResult.successRate}% success rate)`);
-                        
-                        // Show summary of what was applied
-                        const successfulFields = applyResult.results.filter(r => r.startsWith('✅')).slice(0, 5);
-                        if (successfulFields.length > 0) {
-                            updateStatus(`🎯 Applied: ${successfulFields.map(r => r.split(':')[0].replace('✅ ', '')).join(', ')}${applyResult.appliedFields > 5 ? '...' : ''}`);
-                        }
-                        
-                        if (applyResult.appliedFields < applyResult.totalFields) {
-                            const failedCount = applyResult.totalFields - applyResult.appliedFields;
-                            updateStatus(`⚠️ ${failedCount} fields not found in current UI - this is normal if backtester sections aren't expanded`);
-                        }
-                    } else {
-                        updateStatus('❌ Could not apply config to backtester - no matching fields found. Make sure you\'re on the backtester page.', true);
-                    }
-                    
-                    if (copySuccess) {
-                        updateStatus(`📋 Config also copied to clipboard! (${analysis.totalSignals} signals, ${bufferPercent}% buffer)`);
-                        updateStatus(`🎯 Config summary: MCAP $${config.basic.mcapMin}-$${config.basic.mcapMax}, AG ${config.basic.agScoreMin}-${config.basic.agScoreMax}, ${config.wallets.uniqueWalletsMin}-${config.wallets.uniqueWalletsMax} wallets`);
-                    }
-                    
-                } catch (error) {
-                    updateStatus(`❌ Config generation error: ${error.message}`, true);
-                    console.error('Config generation error:', error);
-                }
-            } else {
-                updateStatus('❌ No extracted data available. Run extraction first.', true);
-            }
-        });
+        });      
         
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('signal-extractor-ui').remove();

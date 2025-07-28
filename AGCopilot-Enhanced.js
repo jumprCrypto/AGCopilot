@@ -238,7 +238,7 @@
 
     // Get token info by search (contract address)
     async function getTokenInfo(contractAddress) {
-        const url = `${CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
+        const url = `${CONFIG.API_BASE_URL}/swaps?fromDate=2000-01-01&toDate=9999-12-31&search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
         const data = await fetchWithRetry(url);
         
         if (!data.swaps || data.swaps.length === 0) {
@@ -586,8 +586,192 @@
         }
     }
 
+    // ========================================
+    // 🎯 SIGNAL CLUSTERING FUNCTIONS
+    // ========================================
+    
+    // Get all numeric parameters that are present in the backtester
+    function getClusteringParameters() {
+        return [
+            'signalMcap', 'agScore', 'tokenAge', 'deployerAge', 'deployerBalance',
+            'uniqueCount', 'kycCount', 'liquidity', 'liquidityPct', 'buyVolumePct',
+            'bundledPct', 'drainedPct', 'volMcapPct', 'winPredPercent', 'ttc'
+        ];
+    }
+    
+    // Normalize signal parameters to 0-1 scale for distance calculation
+    function normalizeSignals(signals) {
+        const parameters = getClusteringParameters();
+        const normalizedSignals = [];
+        const ranges = {};
+        
+        // Calculate min/max for each parameter
+        parameters.forEach(param => {
+            const values = signals.map(s => s[param]).filter(v => v !== null && v !== undefined && !isNaN(v));
+            if (values.length > 0) {
+                ranges[param] = {
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    range: Math.max(...values) - Math.min(...values)
+                };
+            }
+        });
+        
+        // Normalize each signal
+        signals.forEach(signal => {
+            const normalized = { ...signal };
+            parameters.forEach(param => {
+                if (ranges[param] && signal[param] !== null && signal[param] !== undefined && !isNaN(signal[param])) {
+                    if (ranges[param].range > 0) {
+                        normalized[param] = (signal[param] - ranges[param].min) / ranges[param].range;
+                    } else {
+                        normalized[param] = 0; // All values are the same
+                    }
+                } else {
+                    normalized[param] = 0; // Missing values default to 0
+                }
+            });
+            normalizedSignals.push(normalized);
+        });
+        
+        return { normalizedSignals, ranges };
+    }
+    
+    // Calculate Euclidean distance between two normalized signals
+    function calculateSignalDistance(signal1, signal2) {
+        const parameters = getClusteringParameters();
+        let sumSquaredDiffs = 0;
+        let validParams = 0;
+        
+        parameters.forEach(param => {
+            const val1 = signal1[param];
+            const val2 = signal2[param];
+            
+            if (val1 !== null && val1 !== undefined && !isNaN(val1) &&
+                val2 !== null && val2 !== undefined && !isNaN(val2)) {
+                sumSquaredDiffs += Math.pow(val1 - val2, 2);
+                validParams++;
+            }
+        });
+        
+        if (validParams === 0) return Infinity;
+        return Math.sqrt(sumSquaredDiffs);
+    }
+    
+    // Find clusters using distance threshold approach
+    function findSignalClusters(signals, tokenData, minClusterTokens) {
+        if (signals.length < 4) return []; // Need at least 4 signals for meaningful clustering
+        
+        console.log(`🔍 Clustering ${signals.length} signals from ${tokenData.length} tokens, min tokens per cluster: ${minClusterTokens}`);
+        
+        // Create a mapping from signal to token address
+        const signalToToken = new Map();
+        let signalIndex = 0;
+        tokenData.forEach(token => {
+            token.swaps.forEach(swap => {
+                if (swap.criteria) {
+                    signalToToken.set(signalIndex, token.address);
+                    signalIndex++;
+                }
+            });
+        });
+        
+        const { normalizedSignals } = normalizeSignals(signals);
+        const clusters = [];
+        const usedSignals = new Set();
+        
+        // Try different distance thresholds to find good clusters
+        const thresholds = [0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.5, 2.0];
+        
+        for (const threshold of thresholds) {
+            const currentClusters = [];
+            const currentUsed = new Set();
+            
+            console.log(`🔍 Trying threshold: ${threshold}`);
+            
+            normalizedSignals.forEach((signal, index) => {
+                if (currentUsed.has(index)) return;
+                
+                // Start a new cluster with this signal
+                const cluster = [index];
+                const clusterTokens = new Set([signalToToken.get(index)]);
+                currentUsed.add(index);
+                
+                // Find all signals within threshold distance
+                normalizedSignals.forEach((otherSignal, otherIndex) => {
+                    if (currentUsed.has(otherIndex)) return;
+                    
+                    const distance = calculateSignalDistance(signal, otherSignal);
+                    if (distance <= threshold) {
+                        cluster.push(otherIndex);
+                        clusterTokens.add(signalToToken.get(otherIndex));
+                        currentUsed.add(otherIndex);
+                    }
+                });
+                
+                // Debug: show cluster info
+                if (cluster.length >= 2) {
+                    console.log(`🔍 Potential cluster: ${cluster.length} signals from ${clusterTokens.size} tokens (need ${minClusterTokens} tokens)`);
+                }
+                
+                // Only keep clusters that meet minimum TOKEN count requirement
+                if (clusterTokens.size >= minClusterTokens) {
+                    currentClusters.push({
+                        indices: cluster,
+                        signals: cluster.map(i => signals[i]),
+                        tokens: Array.from(clusterTokens),
+                        threshold: threshold,
+                        size: cluster.length,
+                        tokenCount: clusterTokens.size,
+                        uniqueTokens: clusterTokens.size,
+                        avgDistance: cluster.length > 1 ? 
+                            cluster.reduce((sum, i) => {
+                                return sum + cluster.reduce((innerSum, j) => {
+                                    return i !== j ? innerSum + calculateSignalDistance(normalizedSignals[i], normalizedSignals[j]) : innerSum;
+                                }, 0);
+                            }, 0) / (cluster.length * (cluster.length - 1)) : 0
+                    });
+                    console.log(`✅ Found cluster: ${cluster.length} signals from ${clusterTokens.size} tokens at threshold ${threshold}`);
+                }
+            });
+            
+            // If we found good clusters at this threshold, add them
+            if (currentClusters.length > 0) {
+                clusters.push(...currentClusters);
+                console.log(`📊 Added ${currentClusters.length} clusters at threshold ${threshold}`);
+                // Stop after finding the first good threshold to avoid overlap
+                break;
+            }
+        }
+        
+        // Remove overlapping clusters (prefer larger, tighter clusters)
+        const finalClusters = [];
+        const globalUsed = new Set();
+        
+        // Sort by tightness (lower avgDistance = tighter) then by token diversity
+        clusters.sort((a, b) => {
+            const tightnessScore = a.avgDistance - b.avgDistance;
+            if (Math.abs(tightnessScore) < 0.01) {
+                return b.tokenCount - a.tokenCount; // If similar tightness, prefer more tokens
+            }
+            return tightnessScore; // Prefer tighter clusters
+        });
+        
+        clusters.forEach(cluster => {
+            // Check if any signals in this cluster are already used
+            const hasOverlap = cluster.indices.some(i => globalUsed.has(i));
+            if (!hasOverlap) {
+                // Mark all signals in this cluster as used
+                cluster.indices.forEach(i => globalUsed.add(i));
+                finalClusters.push(cluster);
+            }
+        });
+        
+        return finalClusters;
+    }
+
     // Analyze all signals to find optimal parameter bounds
-    function analyzeSignalCriteria(allTokenData, bufferPercent = 10, outlierMethod = 'none') {
+    function analyzeSignalCriteria(allTokenData, bufferPercent = 10, outlierMethod = 'none', useClustering = true) {
         const allSignals = [];
         
         // Collect all signals from all tokens
@@ -606,6 +790,92 @@
         if (allSignals.length === 0) {
             throw new Error('No signal criteria found to analyze');
         }
+        
+        // 🎯 CLUSTERING LOGIC
+        if (useClustering && allSignals.length >= 4) {
+            // Calculate minimum cluster size based on number of unique tokens (CAs)
+            const uniqueTokens = new Set(allTokenData.map(t => t.address)).size;
+            const minClusterSize = Math.max(2, Math.min(6, Math.ceil(uniqueTokens * 0.3)));
+            console.log(`🔍 Clustering Debug: ${allSignals.length} signals from ${uniqueTokens} tokens, min cluster size: ${minClusterSize} tokens`);
+            
+            const clusters = findSignalClusters(allSignals, allTokenData, minClusterSize);
+            console.log(`🔍 Found ${clusters.length} clusters:`, clusters.map(c => `${c.size} signals from ${c.uniqueTokens} tokens (threshold: ${c.threshold})`));
+            
+            if (clusters.length > 0) {
+                // Generate multiple configurations from clusters
+                const clusteredAnalyses = [];
+                
+                clusters.forEach((cluster, index) => {
+                    try {
+                        const clusterAnalysis = generateClusterAnalysis(cluster.signals, bufferPercent, outlierMethod);
+                        
+                        // Add cluster-specific metadata
+                        clusterAnalysis.tokenCount = allTokenData.length; // Total tokens analyzed
+                        clusterAnalysis.clusterInfo = {
+                            clusterId: index + 1,
+                            clusterName: `Cluster ${index + 1}`,
+                            signalCount: cluster.size,
+                            tokenCount: cluster.tokenCount,
+                            tightness: cluster.avgDistance,
+                            threshold: cluster.threshold,
+                            description: `${cluster.size} signals from ${cluster.tokenCount} tokens (avg distance: ${cluster.avgDistance.toFixed(3)})`
+                        };
+                        
+                        clusteredAnalyses.push({
+                            id: `cluster_${index + 1}`,
+                            name: `Cluster ${index + 1}`,
+                            description: `${cluster.size} signals from ${cluster.tokenCount} tokens (avg distance: ${cluster.avgDistance.toFixed(3)})`,
+                            signalCount: cluster.size,
+                            tokenCount: cluster.tokenCount,
+                            tightness: cluster.avgDistance,
+                            threshold: cluster.threshold,
+                            analysis: clusterAnalysis,
+                            signals: cluster.signals
+                        });
+                    } catch (error) {
+                        console.warn(`Failed to analyze cluster ${index + 1}:`, error);
+                    }
+                });
+                
+                if (clusteredAnalyses.length > 0) {
+                    // Also generate the full analysis as fallback
+                    const fullAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod);
+                    fullAnalysis.tokenCount = allTokenData.length;
+                    
+                    return {
+                        type: 'clustered',
+                        clusters: clusteredAnalyses,
+                        fallback: fullAnalysis,
+                        totalSignals: allSignals.length,
+                        clusteredSignals: clusteredAnalyses.reduce((sum, c) => sum + c.signalCount, 0),
+                        usedClustering: true
+                    };
+                }
+            }
+        }
+        
+        // Fallback to standard analysis (or if clustering disabled/failed)
+        const standardAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod);
+        standardAnalysis.tokenCount = allTokenData.length; // Add token count
+        return {
+            type: 'standard',
+            analysis: standardAnalysis,
+            usedClustering: false
+        };
+    }
+    
+    // Generate full analysis from all signals (original logic)
+    function generateFullAnalysis(allSignals, bufferPercent, outlierMethod) {
+        return generateAnalysisFromSignals(allSignals, bufferPercent, outlierMethod);
+    }
+    
+    // Generate analysis for a cluster
+    function generateClusterAnalysis(clusterSignals, bufferPercent, outlierMethod) {
+        return generateAnalysisFromSignals(clusterSignals, bufferPercent, outlierMethod);
+    }
+    
+    // Core analysis logic that works with any signal set
+    function generateAnalysisFromSignals(signals, bufferPercent, outlierMethod) {
         
         // Helper function to apply buffer to bounds
         const applyBuffer = (value, isMin = true, isPercent = false) => {
@@ -626,7 +896,7 @@
         
         // Helper function to get valid values with outlier filtering
         const getValidValues = (field) => {
-            const rawValues = allSignals
+            const rawValues = signals
                 .map(signal => signal[field])
                 .filter(val => val !== null && val !== undefined && !isNaN(val));
             
@@ -635,14 +905,13 @@
         
         // Analyze each parameter
         const analysis = {
-            totalSignals: allSignals.length,
-            tokenCount: allTokenData.length,
+            totalSignals: signals.length,
             bufferPercent: bufferPercent,
             outlierMethod: outlierMethod,
             
             // MCAP Analysis (expecting low values under 20k)
             mcap: (() => {
-                const rawMcaps = allSignals.map(s => s.signalMcap).filter(m => m && m > 0);
+                const rawMcaps = signals.map(s => s.signalMcap).filter(m => m && m > 0);
                 const mcaps = removeOutliers(rawMcaps, outlierMethod);
                 
                 if (mcaps.length === 0) return { 
@@ -689,43 +958,246 @@
                 };
             })(),
             
-            // Token Age Analysis
+            // Token Age Analysis (convert from seconds to minutes)
             tokenAge: (() => {
                 const ages = getValidValues('tokenAge');
                 if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 };
                 
-                const min = Math.min(...ages);
-                const max = Math.max(...ages);
-                const avg = ages.reduce((sum, a) => sum + a, 0) / ages.length;
+                // Convert from seconds to minutes (API returns seconds, UI expects minutes)
+                const agesInMinutes = ages.map(ageInSeconds => ageInSeconds / 60);
+                
+                const min = Math.min(...agesInMinutes);
+                const max = Math.max(...agesInMinutes);
+                const avg = agesInMinutes.reduce((sum, a) => sum + a, 0) / agesInMinutes.length;
                 
                 return {
                     min: Math.round(applyBuffer(min, true)),
                     max: Math.round(applyBuffer(max, false)),
                     avg: Math.round(avg),
-                    count: ages.length
+                    count: agesInMinutes.length
                 };
             })(),
             
-            // Deployer Age Analysis
+            // Deployer Age Analysis (convert from seconds to minutes)
             deployerAge: (() => {
                 const ages = getValidValues('deployerAge');
                 if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 };
                 
-                const min = Math.min(...ages);
-                const max = Math.max(...ages);
-                const avg = ages.reduce((sum, a) => sum + a, 0) / ages.length;
+                // Convert from seconds to minutes (API returns seconds, UI expects minutes)
+                const agesInMinutes = ages.map(ageInSeconds => ageInSeconds / 60);
+                
+                const min = Math.min(...agesInMinutes);
+                const max = Math.max(...agesInMinutes);
+                const avg = agesInMinutes.reduce((sum, a) => sum + a, 0) / agesInMinutes.length;
                 
                 return {
                     min: Math.round(applyBuffer(min, true)),
                     max: Math.round(applyBuffer(max, false)),
                     avg: Math.round(avg),
-                    count: ages.length
+                    count: agesInMinutes.length
                 };
             })(),
             
-            // Add other criteria analyses here (liquidity, wallets, etc.)
-            // ... (truncated for brevity, but would include all the same analyses as AGSignalExtractor)
+            // Deployer Balance Analysis (should be tight for same team)
+            deployerBalance: (() => {
+                const balances = getValidValues('deployerBalance');
+                if (balances.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
+                
+                const min = Math.min(...balances);
+                const max = Math.max(...balances);
+                const avg = balances.reduce((sum, b) => sum + b, 0) / balances.length;
+                
+                return {
+                    min: applyBuffer(min, true),
+                    max: applyBuffer(max, false),
+                    avg: Math.round(avg * 100) / 100,
+                    count: balances.length
+                };
+            })(),
+            
+            // Wallet Stats Analysis (should be tight)
+            uniqueWallets: (() => {
+                const counts = getValidValues('uniqueCount');
+                if (counts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
+                
+                const min = Math.min(...counts);
+                const max = Math.max(...counts);
+                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
+                
+                return {
+                    min: Math.round(applyBuffer(min, true)),
+                    max: Math.round(applyBuffer(max, false)),
+                    avg: Math.round(avg),
+                    count: counts.length
+                };
+            })(),
+            
+            // KYC Wallets Analysis
+            kycWallets: (() => {
+                const counts = getValidValues('kycCount');
+                if (counts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                const min = Math.min(...counts);
+                const max = Math.max(...counts);
+                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
+                
+                return {
+                    min: Math.round(applyBuffer(min, true)),
+                    max: Math.round(applyBuffer(max, false)),
+                    avg: Math.round(avg),
+                    count: counts.length
+                };
+            })(),
+            
+            // Liquidity Analysis
+            liquidity: (() => {
+                const liquids = getValidValues('liquidity');
+                if (liquids.length === 0) return { min: 0, max: 100000, avg: 0, count: 0 };
+                
+                const min = Math.min(...liquids);
+                const max = Math.max(...liquids);
+                const avg = liquids.reduce((sum, l) => sum + l, 0) / liquids.length;
+                
+                return {
+                    min: Math.round(applyBuffer(min, true)),
+                    max: Math.round(applyBuffer(max, false)),
+                    avg: Math.round(avg),
+                    count: liquids.length
+                };
+            })(),
+            
+            // Percentage-based criteria (with 0-100% bounds)
+            liquidityPct: (() => {
+                const pcts = getValidValues('liquidityPct');
+                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                return {
+                    min: applyBuffer(Math.min(...pcts), true, true),
+                    max: applyBuffer(Math.max(...pcts), false, true),
+                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    count: pcts.length
+                };
+            })(),
+            
+            buyVolumePct: (() => {
+                const pcts = getValidValues('buyVolumePct');
+                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                return {
+                    min: applyBuffer(Math.min(...pcts), true, true),
+                    max: applyBuffer(Math.max(...pcts), false, true),
+                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    count: pcts.length
+                };
+            })(),
+            
+            bundledPct: (() => {
+                const pcts = getValidValues('bundledPct');
+                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                return {
+                    min: applyBuffer(Math.min(...pcts), true, true),
+                    max: applyBuffer(Math.max(...pcts), false, true),
+                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    count: pcts.length
+                };
+            })(),
+            
+            drainedPct: (() => {
+                const pcts = getValidValues('drainedPct');
+                if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                const min = Math.min(...pcts);
+                const max = Math.max(...pcts);
+                
+                return {
+                    min: applyBuffer(min, true, true),
+                    max: applyBuffer(max, false, true),
+                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    count: pcts.length
+                };
+            })(),
+            
+            volMcapPct: (() => {
+                const pcts = getValidValues('volMcapPct');
+                if (pcts.length === 0) return { min: 0, max: 300, avg: 0, count: 0 };
+                
+                return {
+                    min: applyBuffer(Math.min(...pcts), true),
+                    max: applyBuffer(Math.max(...pcts), false),
+                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    count: pcts.length
+                };
+            })(),
+            
+            // Win Prediction Analysis (NEW - handles winPredPercent from criteria)
+            winPred: (() => {
+                const winPreds = getValidValues('winPredPercent');
+                if (winPreds.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                
+                const min = Math.min(...winPreds);
+                const max = Math.max(...winPreds);
+                const avg = winPreds.reduce((sum, w) => sum + w, 0) / winPreds.length;
+                
+                return {
+                    min: applyBuffer(min, true, true), // Apply buffer as percentage
+                    max: applyBuffer(max, false, true),
+                    avg: Math.round(avg * 100) / 100,
+                    count: winPreds.length
+                };
+            })(),
+            
+            // TTC (Time to Complete) Analysis
+            ttc: (() => {
+                const ttcs = getValidValues('ttc');
+                if (ttcs.length === 0) return { min: 0, max: 3600, avg: 0, count: 0 };
+                
+                const min = Math.min(...ttcs);
+                const max = Math.max(...ttcs);
+                const avg = ttcs.reduce((sum, t) => sum + t, 0) / ttcs.length;
+                
+                return {
+                    min: Math.round(applyBuffer(min, true)),
+                    max: Math.round(applyBuffer(max, false)),
+                    avg: Math.round(avg),
+                    count: ttcs.length
+                };
+            })(),
+            
+            // Boolean criteria analysis
+            freshDeployer: {
+                trueCount: signals.filter(s => s.freshDeployer === true).length,
+                falseCount: signals.filter(s => s.freshDeployer === false).length,
+                nullCount: signals.filter(s => s.freshDeployer === null || s.freshDeployer === undefined).length,
+                preferredValue: null // Will be determined based on majority
+            },
+            
+            hasDescription: {
+                trueCount: signals.filter(s => s.hasDescription === true).length,
+                falseCount: signals.filter(s => s.hasDescription === false).length,
+                nullCount: signals.filter(s => s.hasDescription === null || s.hasDescription === undefined).length,
+                preferredValue: null
+            },
+            
+            hasSocials: {
+                trueCount: signals.filter(s => s.hasSocials === true).length,
+                falseCount: signals.filter(s => s.hasSocials === false).length,
+                nullCount: signals.filter(s => s.hasSocials === null || s.hasSocials === undefined).length,
+                preferredValue: null
+            }
         };
+        
+        // Determine preferred boolean values based on majority
+        ['freshDeployer', 'hasDescription', 'hasSocials'].forEach(field => {
+            const data = analysis[field];
+            if (data.trueCount > data.falseCount) {
+                data.preferredValue = true;
+            } else if (data.falseCount > data.trueCount) {
+                data.preferredValue = false;
+            } else {
+                data.preferredValue = null; // "Don't Care" for ties
+            }
+        });
         
         return analysis;
     }
@@ -743,6 +1215,12 @@
             }
         };
         
+        // Add cluster information if available
+        if (analysis.clusterInfo) {
+            config.metadata.clusterInfo = analysis.clusterInfo;
+            config.metadata.configType = `Cluster ${analysis.clusterInfo.clusterId} Config`;
+        }
+        
         // Map analysis results to AGCopilot-Enhanced parameter names
         // Basic Settings
         if (analysis.mcap && analysis.mcap.min !== undefined) {
@@ -759,21 +1237,246 @@
             config['Min AG Score'] = analysis.agScore.min;
         }
         
-        // Ages
-        if (analysis.tokenAge && analysis.tokenAge.max !== undefined) {
-            config['Max Token Age (min)'] = analysis.tokenAge.max;
+        // Ages (be careful with Token Age max - don't set if too restrictive)
+        if (analysis.tokenAge && analysis.tokenAge.max !== undefined && analysis.tokenAge.count > 0) {
+            // Only set if max age is reasonable (at least 30 minutes)
+            if (analysis.tokenAge.max >= 30) {
+                config['Max Token Age (min)'] = analysis.tokenAge.max;
+            } else if (analysis.tokenAge.max >= 5) {
+                config['Max Token Age (min)'] = 60; // Set reasonable default (1 hour)
+            }
+            // If very young tokens only, don't set this restriction
         }
-        if (analysis.deployerAge && analysis.deployerAge.min !== undefined) {
+        if (analysis.deployerAge && analysis.deployerAge.min !== undefined && analysis.deployerAge.count > 0) {
             config['Min Deployer Age (min)'] = analysis.deployerAge.min;
         }
         
-        // Add other field mappings as they become available in the analysis
+        // Wallet criteria (check for data availability)
+        if (analysis.uniqueWallets && analysis.uniqueWallets.min !== undefined && analysis.uniqueWallets.count > 0) {
+            config['Min Unique Wallets'] = analysis.uniqueWallets.min;
+        }
+        if (analysis.uniqueWallets && analysis.uniqueWallets.max !== undefined && analysis.uniqueWallets.count > 0) {
+            config['Max Unique Wallets'] = analysis.uniqueWallets.max;
+        }
+        if (analysis.kycWallets && analysis.kycWallets.min !== undefined && analysis.kycWallets.count > 0) {
+            config['Min KYC Wallets'] = analysis.kycWallets.min;
+        }
+        if (analysis.kycWallets && analysis.kycWallets.max !== undefined && analysis.kycWallets.count > 0) {
+            config['Max KYC Wallets'] = analysis.kycWallets.max;
+        }
         
+        // Liquidity criteria (check for data availability)
+        if (analysis.liquidity && analysis.liquidity.min !== undefined && analysis.liquidity.count > 0) {
+            config['Min Liquidity (USD)'] = analysis.liquidity.min;
+        }
+        if (analysis.liquidity && analysis.liquidity.max !== undefined && analysis.liquidity.count > 0) {
+            config['Max Liquidity (USD)'] = analysis.liquidity.max;
+        }
+        if (analysis.liquidityPct && analysis.liquidityPct.max !== undefined && analysis.liquidityPct.count > 0) {
+            // Only set if not too restrictive (at least 20%)
+            if (analysis.liquidityPct.max >= 20) {
+                config['Max Liquidity %'] = analysis.liquidityPct.max;
+            } else if (analysis.liquidityPct.max >= 5) {
+                config['Max Liquidity %'] = 50; // Set reasonable default
+            }
+        }
+        
+        // Trading criteria (be more careful with maximums)
+        if (analysis.buyVolumePct && analysis.buyVolumePct.min !== undefined && analysis.buyVolumePct.count > 0) {
+            config['Min Buy Ratio %'] = analysis.buyVolumePct.min;
+        }
+        if (analysis.buyVolumePct && analysis.buyVolumePct.max !== undefined && analysis.buyVolumePct.count > 0) {
+            // Only set max if it's not too restrictive (at least 80%)
+            if (analysis.buyVolumePct.max >= 80) {
+                config['Max Buy Ratio %'] = analysis.buyVolumePct.max;
+            }
+            // Don't set overly restrictive buy ratio maximums
+        }
+        if (analysis.volMcapPct && analysis.volMcapPct.min !== undefined && analysis.volMcapPct.count > 0) {
+            config['Min Vol MCAP %'] = analysis.volMcapPct.min;
+        }
+        if (analysis.volMcapPct && analysis.volMcapPct.max !== undefined && analysis.volMcapPct.count > 0) {
+            config['Max Vol MCAP %'] = analysis.volMcapPct.max;
+        }
+        
+        // Risk criteria (be careful with maximums - don't set if no data or if too restrictive)
+        if (analysis.bundledPct && analysis.bundledPct.min !== undefined && analysis.bundledPct.count > 0) {
+            config['Min Bundled %'] = analysis.bundledPct.min;
+        }
+        if (analysis.bundledPct && analysis.bundledPct.max !== undefined && analysis.bundledPct.count > 0) {
+            config['Max Bundled %'] = analysis.bundledPct.max;
+        }
+        
+        // Only set Max Drained % if we have actual data AND the max value is reasonable (not too restrictive)
+        if (analysis.drainedPct && analysis.drainedPct.max !== undefined && analysis.drainedPct.count > 0) {
+            // Don't set if max is too low (would be overly restrictive)
+            if (analysis.drainedPct.max >= 5) {
+                config['Max Drained %'] = analysis.drainedPct.max;
+            }
+            // If max is very low (0-5%), consider setting a reasonable limit instead
+            else if (analysis.drainedPct.max < 5 && analysis.drainedPct.max >= 0) {
+                config['Max Drained %'] = 10; // Set a reasonable default maximum
+            }
+            // If no meaningful drained data, don't set this field at all
+        }
+        
+        if (analysis.deployerBalance && analysis.deployerBalance.min !== undefined && analysis.deployerBalance.count > 0) {
+            config['Min Deployer Balance (SOL)'] = analysis.deployerBalance.min;
+        }
+        
+        // Boolean criteria
+        if (analysis.freshDeployer && analysis.freshDeployer.preferredValue !== undefined) {
+            config['Fresh Deployer'] = analysis.freshDeployer.preferredValue;
+        }
+        if (analysis.hasDescription && analysis.hasDescription.preferredValue !== undefined) {
+            config['Description'] = analysis.hasDescription.preferredValue;
+        }
+        
+        // Advanced criteria (check for data availability)
+        if (analysis.winPred && analysis.winPred.min !== undefined && analysis.winPred.count > 0) {
+            config['Min Win Pred %'] = analysis.winPred.min;
+        }
+        if (analysis.ttc && analysis.ttc.min !== undefined && analysis.ttc.count > 0) {
+            config['Min TTC (sec)'] = analysis.ttc.min;
+        }
+        if (analysis.ttc && analysis.ttc.max !== undefined && analysis.ttc.count > 0) {
+            // Only set max TTC if it's not too restrictive (at least 60 seconds)
+            if (analysis.ttc.max >= 60) {
+                config['Max TTC (sec)'] = analysis.ttc.max;
+            } else if (analysis.ttc.max >= 10) {
+                config['Max TTC (sec)'] = 300; // Set reasonable default (5 minutes)
+            }
+        }
+        
+        console.log('Generated config:', config);
         return config;
     }
 
+    // Format config for display or copying (adapted for flat structure)
+    function formatConfigForDisplay(config) {
+        const lines = [];
+        
+        // Check if this is a cluster config
+        const isClusterConfig = config.metadata && config.metadata.clusterInfo;
+        
+        if (isClusterConfig) {
+            lines.push(`🎯 CLUSTER ${config.metadata.clusterInfo.clusterId} CONFIG`);
+            lines.push('═'.repeat(50));
+            lines.push(`🔗 ${config.metadata.clusterInfo.clusterName}: ${config.metadata.clusterInfo.description}`);
+            lines.push(`🎯 Tightness Score: ${config.metadata.clusterInfo.tightness.toFixed(3)} (lower = tighter)`);
+            lines.push(`📏 Distance Threshold: ${config.metadata.clusterInfo.threshold}`);
+        } else {
+            lines.push('🎯 TIGHTEST GENERATED CONFIG');
+            lines.push('═'.repeat(50));
+        }
+        
+        if (config.metadata) {
+            const tokenText = config.metadata.basedOnTokens !== undefined ? `${config.metadata.basedOnTokens} tokens` : 'undefined tokens';
+            lines.push(`📊 Based on: ${config.metadata.basedOnSignals} signals from ${tokenText}`);
+            lines.push(`🛡️ Buffer: ${config.metadata.bufferPercent}%`);
+            lines.push(`🎯 Outlier Filter: ${config.metadata.outlierMethod || 'none'}`);
+            lines.push(`⏰ Generated: ${new Date(config.metadata.generatedAt).toLocaleString()}`);
+        }
+        lines.push('');
+        
+        lines.push('📈 BASIC CRITERIA:');
+        if (config['Min MCAP (USD)'] !== undefined || config['Max MCAP (USD)'] !== undefined) {
+            const min = config['Min MCAP (USD)'] || 0;
+            const max = config['Max MCAP (USD)'] || 'N/A';
+            lines.push(`MCAP: $${min} - $${max}`);
+        }
+        if (config['Min AG Score'] !== undefined) {
+            lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 100}`);
+        }
+        if (config['Max Token Age (min)'] !== undefined) {
+            lines.push(`Token Age: 0 - ${config['Max Token Age (min)']} minutes`);
+        }
+        if (config['Min Deployer Age (min)'] !== undefined) {
+            lines.push(`Deployer Age: ${config['Min Deployer Age (min)']} - ∞ minutes`);
+        }
+        if (config['Min Deployer Balance (SOL)'] !== undefined) {
+            lines.push(`Deployer Balance: ${config['Min Deployer Balance (SOL)']} - ∞ SOL`);
+        }
+        lines.push('');
+        
+        lines.push('👥 WALLET CRITERIA:');
+        if (config['Min Unique Wallets'] !== undefined || config['Max Unique Wallets'] !== undefined) {
+            const min = config['Min Unique Wallets'] || 0;
+            const max = config['Max Unique Wallets'] || '∞';
+            lines.push(`Unique Wallets: ${min} - ${max}`);
+        }
+        if (config['Min KYC Wallets'] !== undefined || config['Max KYC Wallets'] !== undefined) {
+            const min = config['Min KYC Wallets'] || 0;
+            const max = config['Max KYC Wallets'] || '∞';
+            lines.push(`KYC Wallets: ${min} - ${max}`);
+        }
+        lines.push('');
+        
+        lines.push('💧 LIQUIDITY CRITERIA:');
+        if (config['Min Liquidity (USD)'] !== undefined || config['Max Liquidity (USD)'] !== undefined) {
+            const min = config['Min Liquidity (USD)'] || 0;
+            const max = config['Max Liquidity (USD)'] || '∞';
+            lines.push(`Liquidity: $${min} - $${max}`);
+        }
+        if (config['Max Liquidity %'] !== undefined) {
+            lines.push(`Liquidity %: 0% - ${config['Max Liquidity %']}%`);
+        }
+        lines.push('');
+        
+        lines.push('📊 TRADING CRITERIA:');
+        if (config['Min Buy Ratio %'] !== undefined || config['Max Buy Ratio %'] !== undefined) {
+            const min = config['Min Buy Ratio %'] || 0;
+            const max = config['Max Buy Ratio %'] || 100;
+            lines.push(`Buy Volume %: ${min}% - ${max}%`);
+        }
+        if (config['Min Vol MCAP %'] !== undefined || config['Max Vol MCAP %'] !== undefined) {
+            const min = config['Min Vol MCAP %'] || 0;
+            const max = config['Max Vol MCAP %'] || '∞';
+            lines.push(`Vol/MCAP %: ${min}% - ${max}%`);
+        }
+        lines.push('');
+        
+        lines.push('⚠️ RISK CRITERIA:');
+        if (config['Min Bundled %'] !== undefined || config['Max Bundled %'] !== undefined) {
+            const min = config['Min Bundled %'] || 0;
+            const max = config['Max Bundled %'] || 100;
+            lines.push(`Bundled %: ${min}% - ${max}%`);
+        }
+        if (config['Max Drained %'] !== undefined) {
+            lines.push(`Drained %: 0% - ${config['Max Drained %']}%`);
+        }
+        lines.push('');
+        
+        lines.push('🔘 BOOLEAN SETTINGS:');
+        const boolToString = (val) => val === null ? "Don't Care" : (val ? "Required" : "Forbidden");
+        if (config['Fresh Deployer'] !== undefined) {
+            lines.push(`Fresh Deployer: ${boolToString(config['Fresh Deployer'])}`);
+        }
+        if (config['Description'] !== undefined) {
+            lines.push(`Has Description: ${boolToString(config['Description'])}`);
+        }
+        lines.push('');
+        
+        lines.push('� ADVANCED CRITERIA:');
+        if (config['Min Win Pred %'] !== undefined) {
+            lines.push(`Win Prediction: ${config['Min Win Pred %']}% - 100%`);
+        }
+        if (config['Min TTC (sec)'] !== undefined || config['Max TTC (sec)'] !== undefined) {
+            const min = config['Min TTC (sec)'] || 0;
+            const max = config['Max TTC (sec)'] || '∞';
+            lines.push(`Time to Complete: ${min} - ${max} seconds`);
+        }
+        lines.push('');
+        
+        lines.push('�📊 CONFIG SUMMARY:');
+        const paramCount = Object.keys(config).filter(key => key !== 'metadata').length;
+        lines.push(`Total Parameters Set: ${paramCount}`);
+        
+        return lines.join('\n');
+    }
+
     // ========================================
-    // �💾 CONFIG CACHE (keeping original implementation)
+    // 💾 CONFIG CACHE (keeping original implementation)
     // ========================================
     class ConfigCache {
         constructor(maxSize = 1000) {
@@ -855,6 +1558,132 @@
     }
 
     // ========================================
+    // 🧬 ADVANCED OPTIMIZATION COMPONENTS
+    // ========================================
+    
+    // Latin Hypercube Sampler for better parameter space exploration
+    class LatinHypercubeSampler {
+        constructor() {
+            this.samples = new Map();
+        }
+        
+        generateSamples(parameters, numSamples) {
+            const samples = [];
+            
+            for (let i = 0; i < numSamples; i++) {
+                const sample = {};
+                
+                for (const param of parameters) {
+                    const rules = PARAM_RULES[param];
+                    if (rules) {
+                        if (rules.type === 'string') {
+                            sample[param] = Math.floor(Math.random() * 10 + 1).toString();
+                        } else {
+                            // Latin hypercube sampling
+                            const segment = (rules.max - rules.min) / numSamples;
+                            const segmentStart = rules.min + i * segment;
+                            const randomInSegment = Math.random() * segment;
+                            const value = segmentStart + randomInSegment;
+                            sample[param] = Math.round(value / rules.step) * rules.step;
+                        }
+                    }
+                }
+                
+                samples.push(sample);
+            }
+            
+            // Shuffle samples to remove correlation
+            for (let i = samples.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [samples[i], samples[j]] = [samples[j], samples[i]];
+            }
+            
+            return samples;
+        }
+    }
+
+    // Simulated Annealing Optimizer
+    class SimulatedAnnealing {
+        constructor(optimizer) {
+            this.optimizer = optimizer;
+            this.initialTemperature = 100;
+            this.finalTemperature = 0.1;
+            this.coolingRate = 0.95;
+        }
+        
+        async runSimulatedAnnealing() {
+            updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics?.tokensMatched || '--', this.optimizer.startTime);
+            
+            let currentConfig = JSON.parse(JSON.stringify(this.optimizer.bestConfig)); // Deep clone
+            let currentScore = this.optimizer.getCurrentBestScore();
+            let temperature = this.initialTemperature;
+            
+            while (temperature > this.finalTemperature && this.optimizer.getRemainingTime() > 0.05 && !window.STOPPED) {
+                // Generate neighbor configuration
+                const neighbor = this.generateNeighbor(currentConfig);
+                const result = await this.optimizer.testConfig(neighbor, 'Simulated annealing');
+                
+                if (result.success && result.metrics) {
+                    const neighborScore = CONFIG.USE_ROBUST_SCORING ? 
+                        calculateRobustScore(result.metrics)?.score || result.metrics.tpPnlPercent :
+                        result.metrics.tpPnlPercent;
+                    
+                    const deltaE = neighborScore - currentScore;
+                    
+                    // Accept if better, or with probability if worse
+                    if (deltaE > 0 || Math.random() < Math.exp(deltaE / temperature)) {
+                        currentConfig = neighbor;
+                        currentScore = neighborScore;
+                        
+                        updateProgress(`🔥 Annealing T=${temperature.toFixed(1)}`, 
+                            80 + (1 - temperature / this.initialTemperature) * 15, 
+                            this.optimizer.getCurrentBestScore().toFixed(1), 
+                            this.optimizer.testCount, 
+                            this.optimizer.bestMetrics?.tokensMatched || '--', 
+                            this.optimizer.startTime);
+                    }
+                }
+                
+                temperature *= this.coolingRate;
+                
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.optimizer.getCurrentBestScore() >= targetPnl) {
+                    break;
+                }
+            }
+        }
+        
+        generateNeighbor(config) {
+            const neighbor = JSON.parse(JSON.stringify(config)); // Deep clone
+            
+            // Randomly modify 1-2 parameters
+            const paramList = Object.keys(PARAM_RULES);
+            const numModifications = Math.floor(Math.random() * 2) + 1;
+            
+            for (let i = 0; i < numModifications; i++) {
+                const param = paramList[Math.floor(Math.random() * paramList.length)];
+                const section = this.optimizer.getSection(param);
+                const rules = PARAM_RULES[param];
+                
+                if (rules && neighbor[section]) {
+                    if (rules.type === 'string') {
+                        neighbor[section][param] = Math.floor(Math.random() * 10 + 1).toString();
+                    } else {
+                        const currentValue = neighbor[section][param] || (rules.min + rules.max) / 2;
+                        const maxChange = (rules.max - rules.min) * 0.1;
+                        const change = (Math.random() - 0.5) * maxChange;
+                        const newValue = Math.max(rules.min, Math.min(rules.max, currentValue + change));
+                        neighbor[section][param] = Math.round(newValue / rules.step) * rules.step;
+                    }
+                }
+            }
+            
+            return neighbor;
+        }
+    }
+
+    // ========================================
     // 🧬 ENHANCED OPTIMIZER CLASS
     // ========================================
     class EnhancedOptimizer {
@@ -869,6 +1698,13 @@
             
             // Parameter tracking
             this.parameterTests = [];
+            
+            // Advanced optimization components
+            this.latinSampler = new LatinHypercubeSampler();
+            this.simulatedAnnealing = new SimulatedAnnealing(this);
+            
+            // Global stop flag
+            window.STOPPED = false;
         }
 
         getRemainingTime() {
@@ -1211,6 +2047,7 @@
         // Run full optimization
         async runOptimization() {
             this.startTime = Date.now();
+            window.STOPPED = false;
 
             try {
                 // Clear cache at start and force fresh start
@@ -1223,14 +2060,55 @@
                     console.log('💾 Global cache also cleared');
                 }
 
-                // 1. Establish baseline
-                await this.establishBaseline();
+                // Get optimization settings from UI
+                const useSimulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
+                const useMultipleStarts = document.getElementById('multiple-starting-points')?.checked || false;
+                const useLatinHypercube = document.getElementById('latin-hypercube')?.checked || false;
+                const useCorrelatedParams = document.getElementById('correlated-params')?.checked || false;
+                const useDeepDive = document.getElementById('deep-dive')?.checked || false;
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+
+                console.log('🚀 Optimization settings:', {
+                    useSimulatedAnnealing,
+                    useMultipleStarts,
+                    useLatinHypercube,
+                    useCorrelatedParams,
+                    useDeepDive,
+                    targetPnl
+                });
+
+                // 1. Multiple Starting Points (if enabled)
+                if (useMultipleStarts && this.getRemainingTime() > 0.8) {
+                    await this.runMultipleStartingPoints();
+                } else {
+                    // 1. Establish baseline
+                    await this.establishBaseline();
+                }
 
                 // 2. Parameter testing phase
-                await this.runParameterPhase();
+                if (this.getRemainingTime() > 0.6 && !window.STOPPED) {
+                    await this.runParameterPhase();
+                }
 
-                // 3. Additional optimization phases can be added here
-                // (genetic algorithm, simulated annealing, etc.)
+                // 3. Latin Hypercube Sampling (if enabled and we have time and good parameters)
+                if (useLatinHypercube && this.getRemainingTime() > 0.4 && !window.STOPPED && this.parameterTests.length > 0) {
+                    await this.runLatinHypercubePhase();
+                }
+
+                // 4. Correlated Parameter testing (if enabled and we have time)
+                if (useCorrelatedParams && this.getRemainingTime() > 0.3 && !window.STOPPED) {
+                    await this.runCorrelatedParameterPhase();
+                }
+
+                // 5. Simulated Annealing (if enabled and we have time)
+                if (useSimulatedAnnealing && this.getRemainingTime() > 0.15 && !window.STOPPED) {
+                    await this.simulatedAnnealing.runSimulatedAnnealing();
+                }
+
+                // 6. Deep dive on best parameters (if enabled and final optimization)
+                if (useDeepDive && this.getRemainingTime() > 0.05 && !window.STOPPED && this.parameterTests.length > 0) {
+                    await this.runDeepDive();
+                }
 
                 const runtime = Math.floor((Date.now() - this.startTime) / 1000);
 
@@ -1240,7 +2118,7 @@
                     bestMetrics: this.bestMetrics,
                     testCount: this.testCount,
                     runtime: runtime,
-                    targetAchieved: this.bestScore >= CONFIG.TARGET_PNL,
+                    targetAchieved: this.bestScore >= targetPnl,
                     history: this.history,
                     cacheSize: this.configCache.size(),
                     parameterEffectiveness: this.parameterTests.slice(0, 10)
@@ -1250,6 +2128,171 @@
                 console.error('Optimization error:', error);
                 throw error;
             }
+        }
+
+        // Advanced optimization phases
+        async runLatinHypercubePhase() {
+            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+
+            // Focus on top parameters for LHS
+            const topParams = this.parameterTests.slice(0, 6).map(p => p.param);
+            const variations = this.generateLatinHypercubeVariations(this.bestConfig, topParams, 8);
+
+            for (const variation of variations) {
+                if (window.STOPPED || this.getRemainingTime() <= 0.3) break;
+
+                const result = await this.testConfig(variation.config, variation.name);
+                if (!result.success) continue;
+
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.bestScore >= targetPnl) {
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    return;
+                }
+            }
+        }
+
+        async runCorrelatedParameterPhase() {
+            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+
+            const correlatedVariations = this.generateCorrelatedVariations(this.bestConfig);
+
+            for (const variation of correlatedVariations) {
+                if (window.STOPPED || this.getRemainingTime() <= 0.1) break;
+
+                const result = await this.testConfig(variation.config, variation.name);
+                if (!result.success) continue;
+
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.bestScore >= targetPnl) {
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    return;
+                }
+            }
+        }
+
+        async runMultipleStartingPoints() {
+            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+
+            // Use all presets as starting points
+            const startingPoints = Object.entries(PRESETS);
+
+            for (const [presetName, startingPoint] of startingPoints) {
+                if (window.STOPPED) break;
+
+                const result = await this.testConfig(startingPoint, `Starting point: ${presetName}`);
+                if (!result.success) continue;
+
+                // Test variations around this starting point (only if we have reasonable time)
+                if (this.getRemainingTime() > 0.01) {
+                    const topParam = this.parameterTests[0]?.param;
+                    if (topParam) {
+                        const variations = this.generateParameterVariations(startingPoint, topParam, this.getSection(topParam));
+                        if (variations) {
+                            for (const variation of variations.slice(0, 2)) {
+                                if (window.STOPPED) break;
+                                await this.testConfig(variation.config, variation.name);
+                            }
+                        }
+                    }
+                }
+
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.bestScore >= targetPnl) {
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    return;
+                }
+            }
+        }
+
+        async runDeepDive() {
+            updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+
+            // Deep dive on top 3 most effective parameters
+            const topParams = this.parameterTests.slice(0, 3);
+            
+            for (const paramTest of topParams) {
+                if (window.STOPPED || this.getRemainingTime() <= 0.02) break;
+
+                // Generate more fine-grained variations
+                const variations = this.generateParameterVariations(this.bestConfig, paramTest.param, paramTest.section, true);
+                
+                for (const variation of variations) {
+                    if (window.STOPPED) break;
+                    await this.testConfig(variation.config, `Deep dive: ${variation.name}`);
+                }
+            }
+        }
+
+        // Enhanced variation generation using Latin Hypercube Sampling
+        generateLatinHypercubeVariations(baseConfig, parameters, numSamples = 6) {
+            const samples = this.latinSampler.generateSamples(parameters, numSamples);
+            const variations = [];
+            
+            for (const sample of samples) {
+                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
+                let name = 'LHS: ';
+                
+                for (const [param, value] of Object.entries(sample)) {
+                    const section = this.getSection(param);
+                    if (config[section]) {
+                        config[section][param] = value;
+                        name += `${param}=${value} `;
+                    }
+                }
+                
+                variations.push({ config, name: name.trim() });
+            }
+            
+            return variations;
+        }
+
+        // Generate correlated parameter variations (e.g., Min/Max MCAP together)
+        generateCorrelatedVariations(baseConfig) {
+            const variations = [];
+            
+            // MCAP correlation
+            const mcapRanges = [
+                { min: 1000, max: 15000 },
+                { min: 5000, max: 25000 },
+                { min: 10000, max: 40000 },
+                { min: 3000, max: 20000 }
+            ];
+            
+            for (const range of mcapRanges) {
+                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
+                config.basic["Min MCAP (USD)"] = range.min;
+                config.basic["Max MCAP (USD)"] = range.max;
+                variations.push({ 
+                    config, 
+                    name: `MCAP Range: ${range.min}-${range.max}` 
+                });
+            }
+            
+            // Wallet correlation
+            const walletRanges = [
+                { minUnique: 1, maxUnique: 3, minKyc: 1, maxKyc: 3 },
+                { minUnique: 0, maxUnique: 2, minKyc: 0, maxKyc: 2 },
+                { minUnique: 2, maxUnique: 5, minKyc: 2, maxKyc: 5 },
+                { minUnique: 1, maxUnique: 4, minKyc: 1, maxKyc: 4 }
+            ];
+            
+            for (const range of walletRanges) {
+                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
+                config.wallets["Min Unique Wallets"] = range.minUnique;
+                config.wallets["Max Unique Wallets"] = range.maxUnique;
+                config.wallets["Min KYC Wallets"] = range.minKyc;
+                config.wallets["Max KYC Wallets"] = range.maxKyc;
+                variations.push({ 
+                    config, 
+                    name: `Wallets: U${range.minUnique}-${range.maxUnique} K${range.minKyc}-${range.maxKyc}` 
+                });
+            }
+            
+            return variations;
         }
     }
 
@@ -1318,10 +2361,17 @@
             const button = container.querySelector('button');
             if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
                 const currentValue = button.textContent.trim();
+                // Preserve all toggle states including "Don't care"
                 if (currentValue === "Don't care") {
-                    return undefined;
+                    return null; // null represents "Don't care" state
                 }
-                return currentValue;
+                if (currentValue === "Yes") {
+                    return true;
+                }
+                if (currentValue === "No") {
+                    return false;
+                }
+                return currentValue; // Fallback for any other text
             }
 
             return undefined;
@@ -1827,13 +2877,30 @@
                 </p>
             </div>
             
-            <!-- Configuration Management Section -->
+            <!-- Configuration & Optimization Section -->
             <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
-                <h4 style="margin: 0 0 10px 0; font-size: 14px; opacity: 0.9;">📋 Configuration Management</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">⚙️ Configuration & Optimization</h4>
+                    <button id="toggle-config-section" style="
+                        background: rgba(255,255,255,0.1); 
+                        border: 1px solid rgba(255,255,255,0.3); 
+                        border-radius: 4px; 
+                        color: white; 
+                        cursor: pointer; 
+                        padding: 4px 8px; 
+                        font-size: 10px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='rgba(255,255,255,0.2)'" 
+                       onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+                        ➖ Hide
+                    </button>
+                </div>
+                <div id="config-section-content">
                 
+                <!-- Presets -->
                 <div style="margin-bottom: 10px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; font-weight: bold;">Quick Presets:</label>
-                    <select id="preset-dropdown" style="width: 100%; padding: 8px; border: none; border-radius: 5px; font-size: 12px; margin-bottom: 8px; color: black; background: white;">
+                    <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Quick Presets:</label>
+                    <select id="preset-dropdown" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
                         <option value="">-- Select a Preset --</option>
                         <option value="WIP">📊 WIP (Working Config)</option>
                         <option value="ClaudeR6">🤖 Claude R6</option>
@@ -1854,53 +2921,57 @@
                         <option value="aggressive">⚡ Aggressive (High Risk)</option>
                     </select>
                 </div>
-            </div>
-            
-            <!-- Optimization Settings Section -->
-            <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
-                <h4 style="margin: 0 0 10px 0; font-size: 14px; opacity: 0.9;">⚙️ Optimization Settings</h4>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <!-- Optimization settings in compact grid -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                     <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">Target PnL %:</span>
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Target PnL %:</span>
                         <input type="number" id="target-pnl" value="100" min="5" max="50" step="0.5"
-                               style="padding: 6px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                     <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">Min Tokens:</span>
-                        <input type="number" id="min-tokens" value="50" min="1" max="100" step="1"
-                               style="padding: 6px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Min Tokens:</span>
+                        <input type="number" id="min-tokens" value="75" min="1" max="100" step="1"
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                     <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 12px; font-weight: bold; margin-bottom: 4px;">Runtime (min):</span>
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runtime (min):</span>
                         <input type="number" id="runtime-min" value="30" min="5" max="120" step="5"
-                               style="padding: 6px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                 </div>
                 
-                <div style="margin-bottom: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 5px;">
-                    <label style="display: flex; align-items: center; cursor: pointer; margin-bottom: 8px;">
-                        <input type="checkbox" id="robust-scoring" checked style="margin-right: 8px; transform: scale(1.2);">
-                        <span style="font-size: 12px; font-weight: bold;">🛡️ Outlier-Resistant Scoring</span>
-                    </label>
-                    <div style="font-size: 10px; opacity: 0.8; margin-bottom: 10px; line-height: 1.3;">
-                        Combines win rate and sample size for more reliable optimization.
+                <!-- Advanced Optimization Features -->
+                <div style="margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;">
+                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #4ECDC4;">🚀 Optimization Methods:</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 10px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Uses statistical methods to reduce impact of outlier data points">
+                            <input type="checkbox" id="robust-scoring" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">🛡️ Outlier-Resistant</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="simulated-annealing" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">🔥 Simulated Annealing</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="multiple-starting-points" style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">🎯 Multiple Starts</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="latin-hypercube" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">� Latin Hypercube</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="correlated-params" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">🔗 Correlated Params</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="deep-dive" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold;">🔬 Deep Dive</span>
+                        </label>
                     </div>
-                    
-                    <label style="display: flex; align-items: center; cursor: pointer; margin-bottom: 8px;">
-                        <input type="checkbox" id="simulated-annealing" checked style="margin-right: 8px; transform: scale(1.2);">
-                        <span style="font-size: 12px; font-weight: bold;">🔥 Simulated Annealing</span>
-                    </label>
-                    <div style="font-size: 10px; opacity: 0.8; margin-bottom: 10px; line-height: 1.3;">
-                        Escape local maxima by occasionally accepting worse solutions.
-                    </div>
-                    
-                    <label style="display: flex; align-items: center; cursor: pointer;">
-                        <input type="checkbox" id="multiple-starting-points" unchecked style="margin-right: 8px; transform: scale(1.2);">
-                        <span style="font-size: 12px; font-weight: bold;">🎯 Multiple Starting Points</span>
-                    </label>
-                    <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; line-height: 1.3;">
-                        Start from all presets to find globally optimal solutions.
+                    <div style="font-size: 8px; opacity: 0.7; margin-top: 4px; line-height: 1.2;">
+                        💡 Advanced optimization phases for comprehensive parameter exploration. Hover over options for details. Multiple Starts tests all presets.
                     </div>
                 </div>
             </div>
@@ -1955,72 +3026,91 @@
                     <button onclick="applyBestConfigToUI()" style="padding: 8px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">⚙️ Apply to UI</button>
                     <button onclick="copyBestConfigToClipboard()" style="padding: 8px; background: rgba(156, 39, 176, 0.3); border: 1px solid rgba(156, 39, 176, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">📋 Copy Config</button>
                 </div>
+                </div> <!-- End config-section-content -->
             </div>
             
-            <!-- Signal Analysis Section (from AGSignalExtractor) -->
+            <!-- Signal Analysis Section -->
             <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
-                <h4 style="margin: 0 0 10px 0; font-size: 14px; opacity: 0.9;">🔍 Signal Analysis & Config Generation</h4>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">🔍 Signal Analysis</h4>
+                    <button id="toggle-signal-section" style="
+                        background: rgba(255,255,255,0.1); 
+                        border: 1px solid rgba(255,255,255,0.3); 
+                        border-radius: 4px; 
+                        color: white; 
+                        cursor: pointer; 
+                        padding: 4px 8px; 
+                        font-size: 10px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='rgba(255,255,255,0.2)'" 
+                       onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+                        ➖ Hide
+                    </button>
+                </div>
+                <div id="signal-section-content">
                 
-                <div style="margin-bottom: 10px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 12px; font-weight: bold;">Contract Addresses:</label>
-                    <textarea id="signal-contract-input" placeholder="Enter contract addresses (one per line)..." 
-                           style="width: 100%; padding: 6px; border: none; border-radius: 5px; font-size: 12px; height: 60px; resize: vertical; color: black;">
-                    </textarea>
-                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
-                        💡 Analyze successful signals to generate optimal configs
-                    </div>
+                <!-- Contract input more compact -->
+                <textarea id="signal-contract-input" placeholder="Contract addresses (one per line)..." 
+                       style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; height: 50px; resize: vertical; color: black; margin-bottom: 8px;">
+                </textarea>
+                <div style="font-size: 9px; opacity: 0.7; margin-bottom: 8px;">
+                    💡 Analyze successful signals to generate optimal configs
                 </div>
                 
-                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                    <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 2px; font-size: 10px; font-weight: bold;">Signals/Token:</label>
-                        <input type="number" id="signals-per-token" value="3" min="1" max="999" 
-                               style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
+                <!-- Settings in one compact row -->
+                <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; font-size: 10px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 2px; font-weight: bold;">Signals/Token:</label>
+                        <input type="number" id="signals-per-token" value="6" min="1" max="999" 
+                               style="width: 50px; padding: 3px; border: 1px solid white; border-radius: 3px; font-size: 10px; text-align: center;">
                     </div>
-                    <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 2px; font-size: 10px; font-weight: bold;">Buffer %:</label>
+                    <div>
+                        <label style="display: block; margin-bottom: 2px; font-weight: bold;">Buffer %:</label>
                         <input type="number" id="config-buffer" value="10" min="0" max="50" 
-                               style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
+                               style="width: 45px; padding: 3px; border: 1px solid white; border-radius: 3px; font-size: 10px; text-align: center;">
                     </div>
-                </div>
-                
-                <div style="margin-bottom: 10px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Outlier Filtering:</label>
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 5px; padding: 6px; display: flex; gap: 8px; flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 60px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" checked style="margin-right: 3px;">
-                            <span style="font-size: 9px;">None</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 60px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" style="margin-right: 3px;">
-                            <span style="font-size: 9px;">IQR</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 80px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="margin-right: 3px;">
-                            <span style="font-size: 9px;">Percentile</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 60px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="margin-right: 3px;">
-                            <span style="font-size: 9px;">Z-Score</span>
+                    <div>
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="enable-signal-clustering" checked style="margin-right: 4px; transform: scale(0.9);">
+                            <span style="font-size: 10px; font-weight: bold;">🎯 Clustering</span>
                         </label>
                     </div>
-                </div>
-                
-                <div style="margin-bottom: 10px;">
                     <button id="analyze-signals-btn" style="
-                        width: 100%; 
-                        padding: 10px; 
+                        padding: 6px 12px; 
                         background: linear-gradient(45deg, #28a745, #20c997); 
                         border: none; 
-                        border-radius: 8px; 
+                        border-radius: 4px; 
                         color: white; 
                         font-weight: bold; 
                         cursor: pointer;
-                        font-size: 13px;
+                        font-size: 11px;
                         transition: transform 0.2s;
                     " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                        🔍 Analyze Signals & Generate Config
+                        🔍 Analyze
                     </button>
+                </div>
+                
+                <!-- Outlier filtering more compact -->
+                <div style="margin-bottom: 8px;">
+                    <label style="display: block; margin-bottom: 3px; font-weight: bold; font-size: 10px;">Outlier Filter:</label>
+                    <div style="background: rgba(0,0,0,0.2); border-radius: 4px; padding: 4px; display: flex; gap: 5px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
+                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" style="margin-right: 2px;">
+                            <span style="font-size: 9px;">None</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
+                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" checked style="margin-right: 2px;">
+                            <span style="font-size: 9px;">IQR</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 60px;">
+                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="margin-right: 2px;">
+                            <span style="font-size: 9px;">Percentile</span>
+                        </label>
+                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
+                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="margin-right: 2px;">
+                            <span style="font-size: 9px;">Z-Score</span>
+                        </label>
+                    </div>
                 </div>
                 
                 <div id="signal-analysis-results" style="
@@ -2036,9 +3126,19 @@
                     <div style="opacity: 0.8;">Analysis results will appear here...</div>
                 </div>
                 
+                <!-- Cluster Selection Section -->
+                <div id="cluster-selection" style="margin-top: 10px; display: none;">
+                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #4ECDC4;">
+                        🎯 Select Config:
+                    </div>
+                    <div id="cluster-buttons" style="margin-bottom: 8px;">
+                        <!-- Cluster buttons will be added dynamically -->
+                    </div>
+                </div>
+                
                 <div id="generated-config-actions" style="margin-top: 10px; display: none;">
                     <button id="apply-generated-config-btn" style="
-                        width: 48%; 
+                        width: 30%; 
                         padding: 8px; 
                         background: linear-gradient(45deg, #FF6B6B, #FF8E53); 
                         border: none; 
@@ -2047,12 +3147,12 @@
                         font-size: 10px; 
                         cursor: pointer;
                         font-weight: bold;
-                        margin-right: 4%;
+                        margin-right: 2%;
                     ">
-                        ⚙️ Apply to Backtester
+                        ⚙️ Apply
                     </button>
                     <button id="optimize-generated-config-btn" style="
-                        width: 48%; 
+                        width: 30%; 
                         padding: 8px; 
                         background: linear-gradient(45deg, #4ECDC4, #44A08D); 
                         border: none; 
@@ -2061,10 +3161,25 @@
                         font-size: 10px; 
                         cursor: pointer;
                         font-weight: bold;
+                        margin-right: 2%;
                     ">
-                        🚀 Apply & Optimize
+                        🚀 Optimize
+                    </button>
+                    <button id="copy-config-btn" style="
+                        width: 30%; 
+                        padding: 8px; 
+                        background: linear-gradient(45deg, #9B59B6, #8E44AD); 
+                        border: none; 
+                        border-radius: 4px; 
+                        color: white; 
+                        font-size: 10px; 
+                        cursor: pointer;
+                        font-weight: bold;
+                    ">
+                        📋 Copy
                     </button>
                 </div>
+                </div> <!-- End signal-section-content -->
             </div>
             
             <!-- Footer -->
@@ -2177,6 +3292,111 @@
         }
     }
     
+    // Create cluster selection UI
+    function createClusterSelectionUI(clusters, fallbackAnalysis) {
+        const clusterSection = document.getElementById('cluster-selection');
+        const clusterButtonsContainer = document.getElementById('cluster-buttons');
+        
+        if (!clusterSection || !clusterButtonsContainer) return;
+        
+        // Clear existing buttons
+        clusterButtonsContainer.innerHTML = '';
+        
+        // Create button style
+        const buttonStyle = `
+            padding: 4px 8px; 
+            margin: 2px; 
+            border: 1px solid #4ECDC4; 
+            border-radius: 3px; 
+            background: rgba(78, 205, 196, 0.1); 
+            color: #4ECDC4; 
+            font-size: 9px; 
+            cursor: pointer;
+            transition: all 0.2s;
+        `;
+        
+        const activeButtonStyle = `
+            padding: 4px 8px; 
+            margin: 2px; 
+            border: 1px solid #FF6B6B; 
+            border-radius: 3px; 
+            background: rgba(255, 107, 107, 0.2); 
+            color: #FF6B6B; 
+            font-size: 9px; 
+            cursor: pointer;
+            font-weight: bold;
+        `;
+        
+        // Add cluster buttons
+        clusters.forEach((cluster, index) => {
+            const button = document.createElement('button');
+            button.innerHTML = `${cluster.name} (${cluster.tokenCount} CAs)`;
+            button.style.cssText = index === 0 ? activeButtonStyle : buttonStyle;
+            button.onclick = () => selectClusterConfig(cluster.id, clusters, fallbackAnalysis);
+            clusterButtonsContainer.appendChild(button);
+        });
+        
+        // Add fallback button
+        const fallbackButton = document.createElement('button');
+        fallbackButton.innerHTML = `All Signals (${fallbackAnalysis.tokenCount} CAs)`;
+        fallbackButton.style.cssText = buttonStyle;
+        fallbackButton.onclick = () => selectClusterConfig('fallback', clusters, fallbackAnalysis);
+        clusterButtonsContainer.appendChild(fallbackButton);
+        
+        // Show the cluster selection section
+        clusterSection.style.display = 'block';
+    }
+    
+    // Switch to a different cluster config
+    function selectClusterConfig(configId, clusters, fallbackAnalysis) {
+        let selectedConfig;
+        
+        if (configId === 'fallback') {
+            selectedConfig = generateTightestConfig(fallbackAnalysis);
+            window.lastGeneratedConfig = selectedConfig;
+        } else {
+            selectedConfig = window[`clusterConfig_${configId}`];
+            window.lastGeneratedConfig = selectedConfig;
+        }
+        
+        // Update button states
+        const buttons = document.querySelectorAll('#cluster-buttons button');
+        buttons.forEach(btn => {
+            if ((configId === 'fallback' && btn.innerHTML.includes('All Signals')) ||
+                (configId !== 'fallback' && btn.innerHTML.includes(configId.replace('cluster_', 'Cluster ')))) {
+                btn.style.cssText = `
+                    padding: 4px 8px; 
+                    margin: 2px; 
+                    border: 1px solid #FF6B6B; 
+                    border-radius: 3px; 
+                    background: rgba(255, 107, 107, 0.2); 
+                    color: #FF6B6B; 
+                    font-size: 9px; 
+                    cursor: pointer;
+                    font-weight: bold;
+                `;
+            } else {
+                btn.style.cssText = `
+                    padding: 4px 8px; 
+                    margin: 2px; 
+                    border: 1px solid #4ECDC4; 
+                    border-radius: 3px; 
+                    background: rgba(78, 205, 196, 0.1); 
+                    color: #4ECDC4; 
+                    font-size: 9px; 
+                    cursor: pointer;
+                    transition: all 0.2s;
+                `;
+            }
+        });
+        
+        // Show config summary
+        const configType = configId === 'fallback' ? 'All Signals Config' : `Cluster ${configId.replace('cluster_', '')} Config`;
+        updateSignalStatus(`🔄 Switched to: ${configType}`);
+        console.log(`\n=== SELECTED: ${configType} ===`);
+        console.log(formatConfigForDisplay(selectedConfig));
+    }
+    
     // Main signal analysis handler
     async function handleSignalAnalysis() {
         try {
@@ -2218,6 +3438,7 @@
                     const processed = processTokenData(tokenInfo, limitedSwaps);
                     
                     allTokenData.push({
+                        address: address, 
                         processed: processed,
                         swaps: limitedSwaps
                     });
@@ -2238,17 +3459,77 @@
             // Analyze signals and generate config
             updateSignalStatus(`Analyzing ${allTokenData.length} tokens with ${outlierMethod} outlier filtering...`);
             
-            const analysis = analyzeSignalCriteria(allTokenData, bufferPercent, outlierMethod);
-            const generatedConfig = generateTightestConfig(analysis);
+            // Check if clustering is enabled
+            const useClusteringCheckbox = document.getElementById('enable-signal-clustering');
+            const useClustering = useClusteringCheckbox ? useClusteringCheckbox.checked : false;
             
-            // Store config globally for use by apply buttons
-            window.lastGeneratedConfig = generatedConfig;
+            console.log(`🔍 Clustering Debug: checkbox=${!!useClusteringCheckbox}, checked=${useClustering}`);
             
-            // Show results
-            const summary = generateBatchSummary(allTokenData);
-            updateSignalStatus(`✅ Analysis complete! Generated config from ${analysis.totalSignals} signals`);
-            updateSignalStatus(`📊 Average MCAP: $${analysis.mcap.avg}, Signals/Token: ${summary.avgSignalsPerToken}`);
-            updateSignalStatus(`🎯 Config bounds: MCAP $${generatedConfig['Min MCAP (USD)']} - $${generatedConfig['Max MCAP (USD)']}`);
+            const analysis = analyzeSignalCriteria(allTokenData, bufferPercent, outlierMethod, useClustering);
+            
+            if (analysis.type === 'clustered') {
+                // Handle clustered analysis
+                updateSignalStatus(`🎯 Found ${analysis.clusters.length} signal clusters (${analysis.clusteredSignals}/${analysis.totalSignals} signals)`);
+                
+                // Set the best (first) cluster as the main config
+                const bestCluster = analysis.clusters[0];
+                const bestConfig = generateTightestConfig(bestCluster.analysis);
+                window.lastGeneratedConfig = bestConfig;
+                
+                // Display best cluster info
+                updateSignalStatus(`🏆 Best Cluster: ${bestCluster.name} with ${bestCluster.signalCount} signals (tightness: ${bestCluster.tightness.toFixed(3)})`);
+                
+                // Display each cluster
+                analysis.clusters.forEach((cluster, index) => {
+                    const generatedConfig = generateTightestConfig(cluster.analysis);
+                    const formattedConfig = formatConfigForDisplay(generatedConfig);
+                    
+                    console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${cluster.tightness.toFixed(3)}) ===`);
+                    console.log(formattedConfig);
+                    
+                    // Store cluster config
+                    window[`clusterConfig_${cluster.id}`] = generatedConfig;
+                    
+                    // Show cluster summary in UI
+                    if (index < 3) { // Show first 3 clusters in UI
+                        const clusterSummary = `📊 ${cluster.name}: ${cluster.signalCount} signals, MCAP $${generatedConfig['Min MCAP (USD)']} - $${generatedConfig['Max MCAP (USD)']}`;
+                        updateSignalStatus(clusterSummary);
+                    }
+                });
+                
+                // Also generate and display fallback config
+                const fallbackConfig = generateTightestConfig(analysis.fallback);
+                window.fallbackConfig = fallbackConfig;
+                
+                console.log(`\n=== FALLBACK CONFIG (All ${analysis.totalSignals} signals) ===`);
+                console.log(formatConfigForDisplay(fallbackConfig));
+                
+                updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs + 1 fallback - details logged to console`);
+                updateSignalStatus(`🎯 Main config set to best cluster: ${bestCluster.name}`);
+                updateSignalStatus(`💡 Use Copy button for best cluster config, or check console for all configs`);
+                
+                // Create cluster selection UI
+                createClusterSelectionUI(analysis.clusters, analysis.fallback);
+                
+            } else {
+                // Handle standard analysis
+                const generatedConfig = generateTightestConfig(analysis.analysis);
+                
+                // Format and display the generated config
+                const formattedConfig = formatConfigForDisplay(generatedConfig);
+                console.log('\n' + formattedConfig);
+                updateSignalStatus(`📋 Generated config details logged to console`);
+                
+                // Store config globally for use by apply buttons
+                window.lastGeneratedConfig = generatedConfig;
+                
+                // Show results
+                const summary = generateBatchSummary(allTokenData);
+                updateSignalStatus(`✅ Analysis complete! Generated config from ${analysis.analysis.totalSignals} signals`);
+                updateSignalStatus(`📊 Average MCAP: $${analysis.analysis.mcap.avg}, Signals/Token: ${summary.avgSignalsPerToken}`);
+                updateSignalStatus(`🎯 Config bounds: MCAP $${generatedConfig['Min MCAP (USD)']} - $${generatedConfig['Max MCAP (USD)']}`);
+                updateSignalStatus(`📋 Config details available - use Copy button or check console`);
+            }
             
             // Show action buttons
             document.getElementById('generated-config-actions').style.display = 'block';
@@ -2282,6 +3563,9 @@
             const robustScoring = document.getElementById('robust-scoring').checked;
             const simulatedAnnealing = document.getElementById('simulated-annealing').checked;
             const multipleStartingPoints = document.getElementById('multiple-starting-points').checked;
+            const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
+            const correlatedParams = document.getElementById('correlated-params')?.checked || false;
+            const deepDive = document.getElementById('deep-dive')?.checked || false;
             
             // Reset UI background to original color when starting
             updateUIBackground(false);
@@ -2293,11 +3577,17 @@
             CONFIG.USE_ROBUST_SCORING = robustScoring;
             CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
             CONFIG.USE_MULTIPLE_STARTING_POINTS = multipleStartingPoints;
+            CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
+            CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
+            CONFIG.USE_DEEP_DIVE = deepDive;
             
             const features = [];
             if (robustScoring) features.push('outlier-resistant scoring');
             if (simulatedAnnealing) features.push('simulated annealing');
             if (multipleStartingPoints) features.push('multiple starting points');
+            if (latinHypercube) features.push('Latin hypercube sampling');
+            if (correlatedParams) features.push('correlated parameters');
+            if (deepDive) features.push('deep dive analysis');
             
             const featuresStr = features.length > 0 ? ` with ${features.join(', ')}` : '';
             console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
@@ -2336,7 +3626,7 @@
         
         // Stop optimization button
         document.getElementById('stop-optimization').addEventListener('click', () => {
-            STOPPED = true;
+            window.STOPPED = true;
             console.log('⏹️ Optimization stopped by user');
             // Keep original background when manually stopped
             document.getElementById('start-optimization').style.display = 'block';
@@ -2350,14 +3640,14 @@
         
         document.getElementById('apply-generated-config-btn').addEventListener('click', async () => {
             if (window.lastGeneratedConfig) {
-                await applyConfigurationToUI(window.lastGeneratedConfig);
+                await applyConfigToBacktester(window.lastGeneratedConfig);
                 updateStatus('✅ Generated config applied to backtester!');
             }
         });
         
         document.getElementById('optimize-generated-config-btn').addEventListener('click', async () => {
             if (window.lastGeneratedConfig) {
-                await applyConfigurationToUI(window.lastGeneratedConfig);
+                await applyConfigToBacktester(window.lastGeneratedConfig);
                 updateStatus('⚙️ Generated config applied, starting optimization...');
                 // Small delay to let the config apply
                 await sleep(1000);
@@ -2366,10 +3656,163 @@
             }
         });
         
+        document.getElementById('copy-config-btn').addEventListener('click', async () => {
+            if (window.lastGeneratedConfig) {
+                const formattedConfig = formatConfigForDisplay(window.lastGeneratedConfig);
+                try {
+                    await navigator.clipboard.writeText(formattedConfig);
+                    updateStatus('📋 Config copied to clipboard!');
+                } catch (error) {
+                    console.error('Failed to copy to clipboard:', error);
+                    // Fallback: log to console
+                    console.log('\n🎯 GENERATED CONFIG (clipboard copy failed):\n', formattedConfig);
+                    updateStatus('📋 Config logged to console (clipboard failed)');
+                }
+            }
+        });
+        
         // Close button
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('ag-copilot-enhanced-ui').remove();
         });
+
+        // Section toggle handlers
+        document.getElementById('toggle-config-section').addEventListener('click', () => {
+            const content = document.getElementById('config-section-content');
+            const button = document.getElementById('toggle-config-section');
+            const isHidden = content.style.display === 'none';
+            
+            content.style.display = isHidden ? 'block' : 'none';
+            button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+        });
+
+        document.getElementById('toggle-signal-section').addEventListener('click', () => {
+            const content = document.getElementById('signal-section-content');
+            const button = document.getElementById('toggle-signal-section');
+            const isHidden = content.style.display === 'none';
+            
+            content.style.display = isHidden ? 'block' : 'none';
+            button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+        });
+    }
+
+// Apply generated config to backtester UI using correct field mappings
+    async function applyConfigToBacktester(config) {
+        console.log('applyConfigToBacktester received config:', config);
+        let appliedFields = 0;
+        let totalFields = 0;
+        const results = [];        
+        
+        // Helper function to track field setting (without section opening)
+        const trackField = async (fieldName, value) => {
+            totalFields++;
+            try {
+                const success = await setFieldValue(fieldName, value);
+                if (success) {
+                    appliedFields++;
+                    results.push(`✅ ${fieldName}: ${value}`);
+                    return true;
+                } else {
+                    results.push(`❌ ${fieldName}: ${value} (field not found)`);
+                    return false;
+                }
+            } catch (error) {
+                results.push(`❌ ${fieldName}: ${value} (error: ${error.message})`);
+                return false;
+            }
+        };
+        
+        // Helper function to open section and apply fields
+        const applyFieldsToSection = async (sectionName, fieldsToApply) => {
+            try {
+                const sectionOpened = await openSection(sectionName);
+                if (!sectionOpened) {
+                    results.push(`❌ Could not open ${sectionName} section`);
+                    return false;
+                }
+                
+                await sleep(200); // Wait for section to open
+                
+                // Apply all fields for this section
+                for (const [fieldName, value] of fieldsToApply) {
+                    if (value !== undefined && value !== null) {
+                        await trackField(fieldName, value);
+                        await sleep(50); // Small delay between field updates
+                    }
+                }
+                
+                return true;
+            } catch (error) {
+                results.push(`❌ Error with ${sectionName} section: ${error.message}`);
+                return false;
+            }
+        };        
+    
+        const boolToToggleValue = (val) => {
+            if (val === null) return "Don't care";
+            return val ? "Yes" : "Don't care";
+        };
+        
+        // Basic Section Fields
+        await applyFieldsToSection('Basic', [
+            ['Min MCAP (USD)', config['Min MCAP (USD)']],
+            ['Max MCAP (USD)', config['Max MCAP (USD)']],
+            ['Min Liquidity (USD)', config['Min Liquidity (USD)']],
+            ['Max Liquidity (USD)', config['Max Liquidity (USD)']]
+        ]);
+        
+        // Token Details Section Fields  
+        await applyFieldsToSection('Token Details', [
+            ['Min AG Score', config['Min AG Score']],
+            ['Max Token Age (min)', config['Max Token Age (min)']],
+            ['Min Deployer Age (min)', config['Min Deployer Age (min)']]
+        ]);
+        
+        // Wallets Section Fields
+        await applyFieldsToSection('Wallets', [
+            ['Min Unique Wallets', config['Min Unique Wallets']],
+            ['Max Unique Wallets', config['Max Unique Wallets']],
+            ['Min KYC Wallets', config['Min KYC Wallets']],
+            ['Max KYC Wallets', config['Max KYC Wallets']]
+        ]);
+        
+        // Risk Section Fields (including booleans)
+        const riskFields = [
+            ['Min Bundled %', config['Min Bundled %']],
+            ['Max Bundled %', config['Max Bundled %']],
+            ['Min Deployer Balance (SOL)', config['Min Deployer Balance (SOL)']],
+            ['Min Buy Ratio %', config['Min Buy Ratio %']],
+            ['Max Buy Ratio %', config['Max Buy Ratio %']],
+            ['Min Vol MCAP %', config['Min Vol MCAP %']],
+            ['Max Vol MCAP %', config['Max Vol MCAP %']],
+            ['Max Drained %', config['Max Drained %']]
+        ];
+        
+        // Add boolean fields if they have values (check for true/false, not just non-null)
+        if (config['Fresh Deployer'] !== null && config['Fresh Deployer'] !== undefined) {
+            riskFields.push(['Fresh Deployer', boolToToggleValue(config['Fresh Deployer'])]);
+        }
+        if (config['Description'] !== null && config['Description'] !== undefined) {
+            riskFields.push(['Description', boolToToggleValue(config['Description'])]);
+        }
+        
+        await applyFieldsToSection('Risk', riskFields);
+        
+        // Advanced Section Fields
+        await applyFieldsToSection('Advanced', [
+            ['Max Liquidity %', config['Max Liquidity %']],
+            ['Min TTC (sec)', config['Min TTC (sec)']],
+            ['Max TTC (sec)', config['Max TTC (sec)']],
+            ['Min Win Pred %', config['Min Win Pred %']]
+        ]);
+        
+        return {
+            success: appliedFields > 0,
+            appliedFields,
+            totalFields,
+            successRate: totalFields > 0 ? ((appliedFields / totalFields) * 100).toFixed(1) : 0,
+            results
+        };
     }
 
     // ========================================
