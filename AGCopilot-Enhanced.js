@@ -2783,6 +2783,32 @@
     // ========================================
     // 🎨 UI FUNCTIONS
     // ========================================
+    
+    // Generate preset dropdown options dynamically from PRESETS object
+    function generatePresetOptions() {
+        let options = '<option value="">-- Select a Preset --</option>';
+        
+        // Add all presets from PRESETS object
+        Object.keys(PRESETS).forEach(presetKey => {
+            // Create display names with emojis for better UX
+            const displayName = getPresetDisplayName(presetKey);
+            options += `<option value="${presetKey}">${displayName}</option>`;
+        });
+        
+        return options;
+    }
+    
+    function getPresetDisplayName(presetKey) {
+        let displayName = presetKey
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
+            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+            .trim();
+            
+        // Add a default emoji for unmapped presets
+        return `${displayName}`;
+    }
+    
     function createUI() {
         // Remove existing UI
         const existingUI = document.getElementById('ag-copilot-enhanced-ui');
@@ -2864,24 +2890,7 @@
                 <div style="margin-bottom: 10px;">
                     <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Quick Presets:</label>
                     <select id="preset-dropdown" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
-                        <option value="">-- Select a Preset --</option>
-                        <option value="WIP">📊 WIP (Working Config)</option>
-                        <option value="ClaudeR6">🤖 Claude R6</option>
-                        <option value="Turbo2">⚡ Turbo2</option>
-                        <option value="PfMainOld">📈 PF Main Old</option>
-                        <option value="cabalOrRug">🎯 Cabal/Rug Detection</option>
-                        <option value="rolandProduction">🏭 Roland Production</option>
-                        <option value="bonkSuper">💪 Bonk Super</option>
-                        <option value="roland4to6K">📊 Roland 4-6K</option>
-                        <option value="boomerBonk">👴 Boomer Bonk</option>
-                        <option value="boomerBonk1">👴 Boomer Bonk 1</option>
-                        <option value="oldDeployer">⏰ Old Deployer</option>
-                        <option value="alpha97">🎯 Alpha 97</option>
-                        <option value="bundle1_74">📦 Bundle 1.74</option>
-                        <option value="deployerBalance10">💰 Deployer Balance 10</option>
-                        <option value="agScore7">⭐ AG Score 7</option>
-                        <option value="conservative">🛡️ Conservative (Safe)</option>
-                        <option value="aggressive">⚡ Aggressive (High Risk)</option>
+                        ${generatePresetOptions()}
                     </select>
                 </div>
                 
