@@ -71,7 +71,18 @@
                 const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    if (response.status === 429) {
+                        // Rate limited - use exponential backoff with longer delays
+                        const baseDelay = 3000; // 3 seconds base delay for rate limits
+                        const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+                        const maxDelay = 30000; // Cap at 30 seconds
+                        const delay = Math.min(exponentialDelay, maxDelay);
+                        
+                        console.log(`⏳ Rate limited (429), waiting ${delay / 1000}s before retry ${attempt}/${maxRetries}...`);
+                        throw new Error(`Rate limited (HTTP 429). Waiting ${delay / 1000}s before retry.`);
+                    } else {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
                 }
                 
                 const data = await response.json();
@@ -85,14 +96,26 @@
                     throw new Error(`Failed to fetch after ${maxRetries} attempts: ${error.message}`);
                 }
                 
-                await sleep(CONFIG.RETRY_DELAY * attempt);
+                // Determine retry delay based on error type
+                let retryDelay;
+                if (error.message.includes('Rate limited')) {
+                    // For rate limits, use the exponential backoff calculated above
+                    const baseDelay = 3000;
+                    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+                    retryDelay = Math.min(exponentialDelay, 30000);
+                } else {
+                    // For other errors, use standard retry delay
+                    retryDelay = CONFIG.RETRY_DELAY * attempt;
+                }
+                
+                await sleep(retryDelay);
             }
         }
     }
 
     // Get token info by search (contract address)
     async function getTokenInfo(contractAddress) {
-        const url = `${CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
+        const url = `${CONFIG.API_BASE_URL}/swaps?fromDate=2000-01-01&toDate=9999-12-31&search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
         const data = await fetchWithRetry(url);
         
         if (!data.swaps || data.swaps.length === 0) {
@@ -219,13 +242,20 @@
                 'Liquidity Percentage',
                 'Platform',
                 'Wallet Stats',
-                'Recent Swap',
+                'Recent Swap(s)',
                 'Buy Ratio',
                 'Vol2MC',
                 'AG Score',
+                'Holders Count',
                 'Bundle',
                 'Drained%',
+                'Drained Count',
+                'TTC',
+                'Z Score',
+                'Avg Z Score',
+                'Buyer Label',
                 'Deployer Balance',
+                'Fresh Deployer',
                 'Funding Address',
                 'Deployer Age',
                 'Description'
@@ -249,8 +279,8 @@
                      swap.criteria.liquidity >= 1000 ? `$${(swap.criteria.liquidity / 1000).toFixed(2)}K` :
                      `$${swap.criteria.liquidity}`) : '';
                 
-                // Wallet stats (updated format: F: X KYC: Y Unq: Z SM: A)
-                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.kycCount || 0}`;
+                // Wallet stats (updated format: F: X KYC: Y Unq: Z)
+                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.smCount || 0}`;
                 
                 // Platform logic based on CA ending
                 let platform = 'Unknown';
@@ -279,11 +309,12 @@
                 // Drained percentage
                 const drainedPercent = swap.criteria?.drainedPct ? `${swap.criteria.drainedPct.toFixed(1)}%` : '';
                 
-                // Deployer age in readable format
+                // Deployer age in readable format (convert from seconds to minutes/hours/days)
                 const deployerAge = swap.criteria?.deployerAge ? 
-                    (swap.criteria.deployerAge >= 1440 ? `${(swap.criteria.deployerAge / 1440).toFixed(1)}d` :
-                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}h` :
-                     `${swap.criteria.deployerAge}m`) : '';
+                    (swap.criteria.deployerAge >= 86400 ? `${(swap.criteria.deployerAge / 86400).toFixed(1)}d` :
+                     swap.criteria.deployerAge >= 3600 ? `${(swap.criteria.deployerAge / 3600).toFixed(1)}h` :
+                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}m` :
+                     `${swap.criteria.deployerAge}s`) : '';
                 
                 const row = [
                     processed.symbol || '',                                    // Ticker
@@ -297,10 +328,17 @@
                     buyRatio,                                                 // Buy Ratio
                     vol2MC,                                                   // Vol2MC
                     swap.criteria?.agScore || '',                             // AG Score
+                    swap.criteria.holdersCount,                                            // Holders Count
                     bundlePercent,                                            // Bundle
-                    drainedPercent,                                           // Drained%
+                    drainedPercent,                                            // Bundle
+                    swap.criteria.drainedCount,
+                    swap.criteria.ttc,
+                    swap.criteria.zScore,
+                    swap.criteria.avgZScore,
+                    swap.criteria.buyerLabel,
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
-                    '', // Funding Address (not available in current data)
+                    swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Funding Address (not available in current data)
+                    '',
                     deployerAge,                                              // Deployer Age
                     swap.criteria?.hasDescription ? 'Yes' : 'No'             // Description
                 ];
@@ -401,11 +439,16 @@
                     swap.criteria?.liquidityPct || '',
                     swap.criteria?.uniqueCount || '',
                     swap.criteria?.kycCount || '',
+                    swap.criteria?.smCount || '',
+                    swap.criteria?.holdersCount || '',
                     swap.criteria?.bundledPct || '',
                     swap.criteria?.buyVolumePct || '',
                     swap.criteria?.volMcapPct || '',
                     swap.criteria?.drainedPct || '',
                     swap.criteria?.drainedCount || '',
+                    swap.criteria?.zScore || '',
+                    swap.criteria?.avgZscore || '',
+                    swap.criteria?.buyerLabel || '',
                     swap.criteria?.deployerBalance || '',
                     swap.criteria?.freshDeployer ? 'TRUE' : 'FALSE', // Google Sheets boolean format
                     swap.criteria?.hasDescription ? 'TRUE' : 'FALSE',
@@ -538,7 +581,7 @@
             position: fixed;
             top: 20px;
             right: 20px;
-            width: 350px;
+            width: 450px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: 2px solid #fff;
             border-radius: 15px;
@@ -550,81 +593,85 @@
         `;
 
         ui.innerHTML = `
-            <div style="text-align: center; margin-bottom: 20px;">
+            <div style="text-align: center; margin-bottom: 15px;">
                 <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
                     🔍 Signal Extractor
                 </h3>
             </div>
             
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Contract Addresses:</label>
-                <textarea id="contract-input" placeholder="Enter contract addresses (one per line)..." 
-                       style="width: 100%; padding: 8px; border: none; border-radius: 5px; font-size: 14px; height: 80px; resize: vertical;">
-                </textarea>
-                <div style="font-size: 11px; opacity: 0.7; margin-top: 3px;">
-                    💡 Enter one contract address per line for batch processing
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Contract Addresses:</label>
+                    <textarea id="contract-input" placeholder="Enter contract addresses (one per line)..." 
+                           style="width: 100%; padding: 6px; border: none; border-radius: 5px; font-size: 12px; height: 70px; resize: vertical;">
+                    </textarea>
+                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
+                        💡 One per line for batch processing
+                    </div>
+                </div>
+                
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Trigger Modes:</label>
+                    <div style="background: rgba(0,0,0,0.2); border-radius: 5px; padding: 6px; height: 70px; overflow-y: auto;">
+                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
+                            <input type="checkbox" id="trigger-empty" value="" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Bullish Bonding</span>
+                        </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
+                            <input type="checkbox" id="trigger-1" value="1" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">God Mode</span>
+                        </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
+                            <input type="checkbox" id="trigger-3" value="3" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Fomo</span>
+                        </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
+                            <input type="checkbox" id="trigger-4" value="4" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Launchpads</span>
+                        </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
+                            <input type="checkbox" id="trigger-5" value="5" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Smart Tracker</span>
+                        </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 0; cursor: pointer;">
+                            <input type="checkbox" id="trigger-6" value="6" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Moon Finder</span>
+                        </label>
+                    </div>
+                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
+                        📊 Select modes to extract
+                    </div>
                 </div>
             </div>
             
-            <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: bold;">Trigger Modes (select multiple):</label>
-                <div style="background: rgba(0,0,0,0.2); border-radius: 5px; padding: 10px; max-height: 120px; overflow-y: auto;">
-                    <label style="display: flex; align-items: center; margin-bottom: 5px; cursor: pointer;">
-                        <input type="checkbox" id="trigger-empty" value="" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">Bullish Bonding</span>
-                    </label>
-                    <label style="display: flex; align-items: center; margin-bottom: 5px; cursor: pointer;">
-                        <input type="checkbox" id="trigger-1" value="1" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">God Mode</span>
-                    </label>
-                    <label style="display: flex; align-items: center; margin-bottom: 5px; cursor: pointer;">
-                        <input type="checkbox" id="trigger-3" value="3" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">Fomo</span>
-                    </label>
-                    <label style="display: flex; align-items: center; margin-bottom: 5px; cursor: pointer;">
-                        <input type="checkbox" id="trigger-4" value="4" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">Launchpads</span>
-                    </label>
-                    <label style="display: flex; align-items: center; margin-bottom: 5px; cursor: pointer;">
-                        <input type="checkbox" id="trigger-5" value="5" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">Smart Tracker</span>
-                    </label>
-                    <label style="display: flex; align-items: center; margin-bottom: 0; cursor: pointer;">
-                        <input type="checkbox" id="trigger-6" value="6" checked style="margin-right: 8px;">
-                        <span style="font-size: 12px;">Moon Finder</span>
-                    </label>
-                </div>
-                <div style="font-size: 11px; opacity: 0.7; margin-top: 3px;">
-                    📊 Only signals matching selected trigger modes will be extracted
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 5px;">
+            <div style="display: flex; gap: 15px; margin-bottom: 10px; align-items: center;">
                 <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="checkbox" id="remove-headers" checked style="margin-right: 8px;">
-                    <span style="font-size: 12px; font-weight: bold;">Remove Headers from Export</span>
+                    <input type="checkbox" id="remove-headers" checked style="margin-right: 6px;">
+                    <span style="font-size: 11px; font-weight: bold;">Remove Headers</span>
                 </label>
+                <div style="flex: 1; display: flex; gap: 8px;">
+                    <div style="flex: 1;">
+                        <label style="display: block; margin-bottom: 2px; font-size: 10px; font-weight: bold;">Signals/Token:</label>
+                        <input type="number" id="signals-per-token" value="3" min="1" max="999" 
+                               style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
+                    </div>
+
+                </div>
             </div>
             
-            <div style="margin-bottom: 15px;">
-                <label style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 12px; font-weight: bold;">Signals per Token:</span>
-                    <input type="number" id="signals-per-token" value="3" min="1" max="999" 
-                           style="width: 60px; padding: 4px; border: 1px solid white; border-radius: 4px; font-size: 12px; text-align: center;">
-                </label>
-            </div>
+            <div style="margin-bottom: 10px;">
             
-            <div style="margin-bottom: 15px;">
+            <div style="margin-bottom: 10px;">
                 <button id="extract-btn" style="
                     width: 100%; 
-                    padding: 12px; 
+                    padding: 10px; 
                     background: linear-gradient(45deg, #FF6B6B, #4ECDC4); 
                     border: none; 
                     border-radius: 8px; 
                     color: white; 
                     font-weight: bold; 
                     cursor: pointer;
-                    font-size: 14px;
+                    font-size: 13px;
                     transition: transform 0.2s;
                 " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                     🚀 Extract Data
@@ -634,56 +681,54 @@
             <div id="status-area" style="
                 background: rgba(0,0,0,0.2); 
                 border-radius: 5px; 
-                padding: 10px; 
-                font-size: 12px; 
-                min-height: 40px;
-                max-height: 120px;
+                padding: 8px; 
+                font-size: 11px; 
+                min-height: 35px;
+                max-height: 80px;
                 overflow-y: auto;
             ">
                 <div style="opacity: 0.8;">Ready to extract token data...</div>
             </div>
             
-            <div id="action-buttons" style="margin-top: 15px; display: none;">
+            <div id="action-buttons" style="margin-top: 10px; display: none;">
                 <button id="copy-detailed-csv-btn" style="
-                    width: 45%; 
-                    padding: 10px; 
+                    width: 47%; 
+                    padding: 8px; 
                     background: #28a745; 
                     border: none; 
-                    border-radius: 5px; 
+                    border-radius: 4px; 
                     color: white; 
-                    font-size: 12px; 
+                    font-size: 10px; 
                     cursor: pointer;
-                    margin-right: 4%;
+                    margin-right: 2%;
                     font-weight: bold;
                 ">
-                    📊 Custom Format
+                    📊 Custom
                 </button>
                 <button id="copy-full-detailed-btn" style="
-                    width: 45%; 
-                    padding: 10px; 
+                    width: 47%;
+                    padding: 8px; 
                     background: #6f42c1; 
                     border: none; 
-                    border-radius: 5px; 
+                    border-radius: 4px; 
                     color: white; 
-                    font-size: 12px; 
+                    font-size: 10px; 
                     cursor: pointer;
+                    margin-right: 2%;
                     font-weight: bold;
                 ">
-                    📈 Full Detail
+                    📈 Detail
                 </button>
-                <div style="font-size: 10px; opacity: 0.8; margin-top: 8px; text-align: center;">
-                    💡 Copy and paste tab-separated data into Google Sheets
-                </div>
             </div>
             
-            <div style="margin-top: 15px; text-align: center;">
+            <div style="margin-top: 10px; text-align: center;">
                 <button id="close-btn" style="
-                    padding: 5px 15px; 
+                    padding: 4px 12px; 
                     background: rgba(255,255,255,0.2); 
                     border: 1px solid rgba(255,255,255,0.3); 
-                    border-radius: 15px; 
+                    border-radius: 12px; 
                     color: white; 
-                    font-size: 11px; 
+                    font-size: 10px; 
                     cursor: pointer;
                 ">
                     ✕ Close
@@ -709,6 +754,304 @@
         }
     }
 
+    // ========================================
+    // 🚀 MAIN EXTRACTION FUNCTION
+    // ========================================
+    
+    // Get selected trigger modes
+      
+    
+    // ========================================
+    // 🎯 BACKTESTER UI INTERACTION FUNCTIONS
+    // ========================================
+    
+    // Helper function to safely set field value using AGCopilot Enhanced approach
+    async function setFieldValue(labelText, value, maxRetries = 2) {
+        const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Find the label using the AGCopilot Enhanced approach
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const label = labels.find(el => el.textContent.trim() === labelText);
+
+                if (!label) {
+                    console.warn(`Label not found: ${labelText}`);
+                    return false;
+                }
+
+                let container = label.closest('.form-group') || label.parentElement;
+
+                // Navigate up the DOM tree to find the input container
+                if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                    container = container.parentElement;
+                    if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                        container = container.parentElement;
+                    }
+                }
+
+                const button = container.querySelector('button');
+                if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                    const targetValue = value || "Don't care";
+                    const currentValue = button.textContent.trim();
+                    
+                    if (currentValue !== targetValue) {
+                        button.click();
+                        await sleep(100);
+
+                        const newValue = button.textContent.trim();
+                        if (newValue !== targetValue && newValue !== currentValue) {
+                            button.click();
+                            await sleep(100);
+                        }
+                    }
+                    return true;
+                }
+                
+                
+                // Handle toggle buttons FIRST (Description and Fresh Deployer) to avoid number input conflicts
+                const buttons = container.querySelectorAll('button');
+                let toggleButton = null;
+                
+                // Find the actual toggle button (not clear buttons marked with ×)
+                for (const btn of buttons) {
+                    const btnText = btn.textContent.trim();
+                     // Skip clear buttons (×) and find actual toggle buttons
+                    if (btnText !== '×' && (btnText === "Don't care" || btnText === "Yes" || btnText.length === 0)) {
+                        toggleButton = btn;
+                        break;
+                    }
+                }
+                
+                if (toggleButton && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                    const targetValue = value || "Don't care";
+                    let currentValue = toggleButton.textContent.trim();
+                    
+                    // Handle different value formats - convert to button text states
+                    let normalizedTarget = targetValue;
+                    if (targetValue === "Required" || targetValue === "Yes" || targetValue === true) {
+                        normalizedTarget = "Yes";  // Buttons show "Yes" not "Required"
+                    } else {
+                        normalizedTarget = "Don't care";
+                    }
+                    
+                    // Keep clicking until we get to the target state (buttons cycle: Don't care -> Yes -> No)
+                    let attempts = 0;
+                    while (currentValue !== normalizedTarget && attempts < 4) {                        
+                        toggleButton.click();
+                        await sleep(300); // Longer wait for UI to update
+                        currentValue = toggleButton.textContent.trim();
+                        attempts++;
+                    }
+                    
+                    return true;
+                }
+
+                // Handle number inputs (only for non-boolean fields)
+                const input = container.querySelector('input[type="number"]');
+                if (input) {
+                     if (shouldClear) {
+                        // Look for clear button (×)
+                        const relativeContainer = input.closest('.relative');
+                        const clearButton = relativeContainer?.querySelector('button');
+                        if (clearButton && clearButton.textContent.trim() === '×') {
+                            clearButton.click();
+                            await sleep(100);
+                        } else {
+                            // Manual clear
+                            input.focus();
+                            input.value = '';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur();
+                        }
+                    } else {
+                        let processedValue = value;
+
+                        // Type conversion
+                        if (typeof value === 'string' && value.trim() !== '') {
+                            const parsed = parseFloat(value);
+                            if (!isNaN(parsed)) {
+                                processedValue = parsed;
+                            }
+                        }
+
+                        // Force integer rounding for specific parameters
+                        if (labelText.includes('Wallets') || labelText.includes('Count') || labelText.includes('Age') || labelText.includes('Score')) {
+                            processedValue = Math.round(processedValue);
+                        }
+                        
+                        if ((typeof processedValue === 'number' && !isNaN(processedValue)) ||
+                            (typeof processedValue === 'string' && processedValue.trim() !== '')) {
+                            
+                            input.focus();
+                            
+                            // Use React-compatible value setting
+                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(input, processedValue);
+
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur();
+                        }
+                    }
+                    return true;
+                }
+
+                // Handle select dropdowns
+                const select = container.querySelector('select');
+                if (select) {
+                    if (shouldClear) {
+                        select.selectedIndex = 0;
+                    } else {
+                        select.value = value;
+                    }
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+
+                await sleep(200); // Wait before retry
+                
+            } catch (error) {
+                console.warn(`Attempt ${attempt} failed for ${labelText}:`, error.message);
+                if (attempt < maxRetries) {
+                    await sleep(200);
+                }
+            }
+        }
+        return false;
+    }
+    
+    // Open section helper
+    async function openSection(sectionTitle) {
+        const allHeaders = Array.from(document.querySelectorAll('button[type="button"]'));
+        const sectionHeader = allHeaders.find(header =>
+            header.textContent.includes(sectionTitle)
+        );
+
+        if (sectionHeader) {
+            sectionHeader.click();
+            await sleep(200); // Wait for section to open
+            return true;
+        }
+        return false;
+    }
+    
+    // Apply generated config to backtester UI using correct field mappings
+    async function applyConfigToBacktester(config) {
+        let appliedFields = 0;
+        let totalFields = 0;
+        const results = [];        
+        
+        // Helper function to track field setting (without section opening)
+        const trackField = async (fieldName, value) => {
+            totalFields++;
+            try {
+                const success = await setFieldValue(fieldName, value);
+                if (success) {
+                    appliedFields++;
+                    results.push(`✅ ${fieldName}: ${value}`);
+                    return true;
+                } else {
+                    results.push(`❌ ${fieldName}: ${value} (field not found)`);
+                    return false;
+                }
+            } catch (error) {
+                results.push(`❌ ${fieldName}: ${value} (error: ${error.message})`);
+                return false;
+            }
+        };
+        
+        // Helper function to open section and apply fields
+        const applyFieldsToSection = async (sectionName, fieldsToApply) => {
+            try {
+                const sectionOpened = await openSection(sectionName);
+                if (!sectionOpened) {
+                    results.push(`❌ Could not open ${sectionName} section`);
+                    return false;
+                }
+                
+                await sleep(200); // Wait for section to open
+                
+                // Apply all fields for this section
+                for (const [fieldName, value] of fieldsToApply) {
+                    if (value !== undefined && value !== null) {
+                        await trackField(fieldName, value);
+                        await sleep(50); // Small delay between field updates
+                    }
+                }
+                
+                return true;
+            } catch (error) {
+                results.push(`❌ Error with ${sectionName} section: ${error.message}`);
+                return false;
+            }
+        };        
+    
+        const boolToToggleValue = (val) => {
+            if (val === null) return "Don't care";
+            return val ? "Yes" : "Don't care";
+        };
+        
+        // Basic Section Fields
+        await applyFieldsToSection('Basic', [
+            ['Min MCAP (USD)', config.basic.mcapMin],
+            ['Max MCAP (USD)', config.basic.mcapMax],
+            ['Min Liquidity (USD)', config.liquidity.liquidityMin],
+            ['Max Liquidity (USD)', config.liquidity.liquidityMax]
+        ]);
+        
+        // Token Details Section Fields  
+        await applyFieldsToSection('Token Details', [
+            ['Min AG Score', config.basic.agScoreMin],
+            ['Max Token Age (min)', config.basic.tokenAgeMax],
+            ['Min Deployer Age (min)', config.basic.deployerAgeMin]
+        ]);
+        
+        // Wallets Section Fields
+        await applyFieldsToSection('Wallets', [
+            ['Min Unique Wallets', config.wallets.uniqueWalletsMin],
+            ['Max Unique Wallets', config.wallets.uniqueWalletsMax],
+            ['Min KYC Wallets', config.wallets.kycWalletsMin],
+            ['Max KYC Wallets', config.wallets.kycWalletsMax]
+        ]);
+        
+        // Risk Section Fields (including booleans)
+        const riskFields = [
+            ['Min Bundled %', config.risk.bundledPctMin],
+            ['Max Bundled %', config.risk.bundledPctMax],
+            ['Min Deployer Balance (SOL)', config.basic.deployerBalanceMin],
+            ['Min Buy Ratio %', config.trading.buyVolumePctMin],
+            ['Max Buy Ratio %', config.trading.buyVolumePctMax],
+            ['Min Vol MCAP %', config.trading.volMcapPctMin],
+            ['Max Vol MCAP %', config.trading.volMcapPctMax],
+            ['Max Drained %', config.risk.drainedPctMax]
+        ];
+        
+        // Add boolean fields if they have values (check for true/false, not just non-null)
+        if (config.booleans.freshDeployer !== null && config.booleans.freshDeployer !== undefined) {
+            riskFields.push(['Fresh Deployer', boolToToggleValue(config.booleans.freshDeployer)]);
+        }
+        if (config.booleans.hasDescription !== null && config.booleans.hasDescription !== undefined) {
+            riskFields.push(['Description', boolToToggleValue(config.booleans.hasDescription)]);
+        }
+        
+        await applyFieldsToSection('Risk', riskFields);
+        
+        // Advanced Section Fields
+        await applyFieldsToSection('Advanced', [
+            ['Max Liquidity %', config.liquidity.liquidityPctMax]
+        ]);
+        
+        return {
+            success: appliedFields > 0,
+            appliedFields,
+            totalFields,
+            successRate: totalFields > 0 ? ((appliedFields / totalFields) * 100).toFixed(1) : 0,
+            results
+        };
+    }
+    
     // ========================================
     // 🚀 MAIN EXTRACTION FUNCTION
     // ========================================
@@ -753,46 +1096,90 @@
             updateStatus(`Signals per token limit: ${signalsPerToken}`);
             
             // Parse and validate contract addresses
-            const addresses = contractAddresses
+            const rawAddresses = contractAddresses
                 .split('\n')
                 .map(addr => addr.trim())
                 .filter(addr => addr.length > 0);
             
-            if (addresses.length === 0) {
+            if (rawAddresses.length === 0) {
                 throw new Error('Please enter at least one contract address');
             }
             
-            // Validate each address
-            const invalidAddresses = addresses.filter(addr => addr.length < 32);
+            // Remove duplicates while preserving order and tracking duplicates
+            const uniqueAddresses = [];
+            const seenAddresses = new Set();
+            const duplicateCount = {};
+            const malformedAddresses = [];
+            
+            rawAddresses.forEach(addr => {
+                // Check for malformed addresses (non-alphanumeric characters)
+                if (!/^[a-zA-Z0-9]+$/.test(addr)) {
+                    malformedAddresses.push(addr);
+                    return; // Skip malformed addresses
+                }
+                
+                const normalizedAddr = addr.toLowerCase();
+                if (seenAddresses.has(normalizedAddr)) {
+                    duplicateCount[addr] = (duplicateCount[addr] || 1) + 1;
+                } else {
+                    seenAddresses.add(normalizedAddr);
+                    uniqueAddresses.push(addr);
+                }
+            });
+            
+            // Report on malformed addresses if any
+            if (malformedAddresses.length > 0) {
+                updateStatus(`⚠️ Skipped ${malformedAddresses.length} malformed address${malformedAddresses.length > 1 ? 'es' : ''} (contains non-alphanumeric characters)`);
+                malformedAddresses.slice(0, 3).forEach(addr => {
+                    const shortAddr = addr.length > 20 ? `${addr.slice(0, 10)}...${addr.slice(-6)}` : addr;
+                    updateStatus(`  • Invalid: "${shortAddr}"`);
+                });
+                if (malformedAddresses.length > 3) {
+                    updateStatus(`  • ...and ${malformedAddresses.length - 3} more`);
+                }
+            }
+            
+            // Report on duplicates if any
+            const totalDuplicates = Object.keys(duplicateCount).length;
+            if (totalDuplicates > 0) {
+                updateStatus(`⚠️ Removed ${rawAddresses.length - uniqueAddresses.length - malformedAddresses.length} duplicate addresses (${totalDuplicates} unique duplicates found)`);
+                Object.entries(duplicateCount).forEach(([addr, count]) => {
+                    const shortAddr = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+                    updateStatus(`  • ${shortAddr} appeared ${count + 1} times`);
+                });
+            }
+            
+            // Validate each unique address
+            const invalidAddresses = uniqueAddresses.filter(addr => addr.length < 32);
             if (invalidAddresses.length > 0) {
                 throw new Error(`Invalid contract addresses: ${invalidAddresses.slice(0, 3).join(', ')}${invalidAddresses.length > 3 ? '...' : ''}`);
             }
             
-            updateStatus(`Processing ${addresses.length} contract address${addresses.length > 1 ? 'es' : ''}...`);
+            updateStatus(`Processing ${uniqueAddresses.length} unique contract address${uniqueAddresses.length > 1 ? 'es' : ''}...`);
             
             const allTokenData = [];
             const errors = [];
             
-            // Process each contract address
-            for (let i = 0; i < addresses.length; i++) {
-                const address = addresses[i];
+            // Process each unique contract address
+            for (let i = 0; i < uniqueAddresses.length; i++) {
+                const address = uniqueAddresses[i];
                 const shortAddress = `${address.slice(0, 6)}...${address.slice(-4)}`;
                 
                 try {
-                    updateStatus(`[${i + 1}/${addresses.length}] Fetching ${shortAddress}...`);
+                    updateStatus(`[${i + 1}/${uniqueAddresses.length}] Fetching ${shortAddress}...`);
                     
                     const tokenInfo = await getTokenInfo(address);
-                    updateStatus(`[${i + 1}/${addresses.length}] Found: ${tokenInfo.token} (${tokenInfo.symbol})`);
+                    updateStatus(`[${i + 1}/${uniqueAddresses.length}] Found: ${tokenInfo.token} (${tokenInfo.symbol})`);
                     
                     const swaps = await getAllTokenSwaps(address);
-                    updateStatus(`[${i + 1}/${addresses.length}] Retrieved ${swaps.length} total signals for ${tokenInfo.symbol}`);
+                    updateStatus(`[${i + 1}/${uniqueAddresses.length}] Retrieved ${swaps.length} total signals for ${tokenInfo.symbol}`);
                     
                     // Filter swaps by selected trigger modes
                     const filteredSwaps = filterSwapsByTriggerMode(swaps, selectedTriggerModes);
-                    updateStatus(`[${i + 1}/${addresses.length}] Filtered to ${filteredSwaps.length} signals matching selected trigger modes`);
+                    updateStatus(`[${i + 1}/${uniqueAddresses.length}] Filtered to ${filteredSwaps.length} signals matching selected trigger modes`);
                     
                     if (filteredSwaps.length === 0) {
-                        updateStatus(`[${i + 1}/${addresses.length}] ⚠️ No signals match selected trigger modes for ${tokenInfo.symbol}`, true);
+                        updateStatus(`[${i + 1}/${uniqueAddresses.length}] ⚠️ No signals match selected trigger modes for ${tokenInfo.symbol}`, true);
                         continue;
                     }
                     
@@ -801,7 +1188,7 @@
                     const limitedSwaps = filteredSwaps.slice(0, signalsPerToken);
                     
                     if (limitedSwaps.length < filteredSwaps.length) {
-                        updateStatus(`[${i + 1}/${addresses.length}] Limited to first ${limitedSwaps.length} signals (out of ${filteredSwaps.length} filtered)`);
+                        updateStatus(`[${i + 1}/${uniqueAddresses.length}] Limited to first ${limitedSwaps.length} signals (out of ${filteredSwaps.length} filtered)`);
                     }
                     
                     const processedData = processTokenData(tokenInfo, limitedSwaps);
@@ -813,7 +1200,7 @@
                     });
                     
                 } catch (error) {
-                    updateStatus(`[${i + 1}/${addresses.length}] ❌ Error with ${shortAddress}: ${error.message}`, true);
+                    updateStatus(`[${i + 1}/${uniqueAddresses.length}] ❌ Error with ${shortAddress}: ${error.message}`, true);
                     errors.push({
                         address: address,
                         error: error.message
@@ -826,10 +1213,18 @@
             }
             
             updateStatus(`✅ Batch extraction complete!`);
-            updateStatus(`Successfully processed: ${allTokenData.length}/${addresses.length} tokens`);
+            updateStatus(`Successfully processed: ${allTokenData.length}/${uniqueAddresses.length} unique tokens`);
             
             if (errors.length > 0) {
                 updateStatus(`⚠️ Failed: ${errors.length} tokens had errors`);
+            }
+            
+            if (totalDuplicates > 0) {
+                updateStatus(`📊 Data integrity: Each token counted once (${rawAddresses.length - uniqueAddresses.length - malformedAddresses.length} duplicates excluded)`);
+            }
+            
+            if (malformedAddresses.length > 0) {
+                updateStatus(`🛡️ Address validation: ${malformedAddresses.length} malformed addresses excluded`);
             }
             
             // Store data globally for copy functions
@@ -882,7 +1277,7 @@
                 const success = await copyToClipboard(detailedOutput);
                 updateStatus(success ? `📈 Full detailed TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
             }
-        });
+        });      
         
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('signal-extractor-ui').remove();
@@ -911,7 +1306,10 @@
     console.log('✅ Signal Extractor initialized successfully!');
     console.log('📋 Enter contract addresses (one per line) and click "Extract Data" for batch analysis');
     console.log('🔧 Use Ctrl+Enter to start extraction from the text area');
-    console.log('📊 Export formats optimized for Google Sheets: Detailed CSV (all signals) and Summary CSV (overview)');
-    console.log('💡 Copy CSV data and paste directly into Google Sheets for instant analysis!');
+    console.log('📊 Export formats optimized for Google Sheets: Custom TSV and Full Detailed TSV');
+    console.log('⚙️ NEW: Generate tightest backtester config from successful signals!');
+    console.log('🎯 Config generation analyzes MCAP, AG Score, Token Age, Deployer stats, and Wallet criteria');
+    console.log('� Auto-applies generated config directly to backtester UI fields!');
+    console.log('�💡 Copy generated config and apply to backtester for reverse-engineered optimization!');
     
 })();

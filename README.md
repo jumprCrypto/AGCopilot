@@ -1,11 +1,12 @@
-# 🤖 AG Co-Pilot - Advanced Config Optimizer
+# 🤖 AG Co-Pilot - Advanced Config Optimizer + Signal Analysis
 
-AG Co-Pilot is a browser-based optimization engine designed to intelligently tune configuration parameters for token screening and backtesting platforms. It combines multiple advanced search strategies to find high-performing configurations with minimal manual effort.
+AG Co-Pilot is a browser-based optimization engine designed to intelligently tune configuration parameters for token screening and backtesting platforms. It combines multiple advanced search strategies with signal analysis and clustering to find high-performing configurations with minimal manual effort.
 
 ---
 
 ## 🚀 Features
 
+### Core Optimization
 - **Config Caching** – Avoid redundant tests by storing previously evaluated configurations.
 - **Parameter Impact Analysis** – Quantify which parameters influence performance the most.
 - **Genetic Algorithm** – Population-based search with crossover and mutation.
@@ -16,6 +17,28 @@ AG Co-Pilot is a browser-based optimization engine designed to intelligently tun
 - **Correlated Parameter Testing** – Vary related parameters together for smarter exploration.
 - **Progress UI** – Real-time feedback with runtime, score, and test count.
 - **Interactive Popup** – Configure runtime, target PnL, and baseline presets before launch.
+
+### 🎯 Signal Analysis & Clustering (NEW)
+- **Signal Extraction** – Automatically fetches signal data from Alpha Gardeners API
+- **Smart Clustering** – Groups similar signals using Euclidean distance analysis
+- **Multiple Config Generation** – Creates optimized configs for each signal cluster
+- **Tighter Bounds** – Generates more precise parameter ranges from clustered signals
+- **Outlier Filtering** – Removes extreme values for more robust analysis
+- **Time Unit Conversion** – Handles API data conversion (seconds to minutes)
+- **Win Prediction Analysis** – Includes winPredPercent and TTC parameters
+- **Visual Clustering Interface** – Easy-to-use checkbox for enabling clustering mode
+
+#### How Clustering Works
+The clustering system analyzes your signal data to find groups of similar signals, allowing for tighter, more targeted configurations:
+
+1. **Signal Collection** – Extracts all signal criteria from token data
+2. **Parameter Normalization** – Scales all parameters to 0-1 range for fair comparison
+3. **Distance Calculation** – Uses Euclidean distance to measure signal similarity
+4. **Threshold Clustering** – Groups signals within distance thresholds (0.1-0.6)
+5. **Cluster Ranking** – Sorts by tightness (lower average distance) and size
+6. **Config Generation** – Creates separate optimized configs for each cluster plus fallback
+
+Example: If token BOB has signals with market caps [5k, 50k, 200k] and token PAP has [5k, 6k, 7k], clustering will group the 5k signals together for a much tighter configuration.
 
 ---
 
