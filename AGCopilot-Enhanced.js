@@ -110,7 +110,51 @@
     };
 
     // ========================================
-    // 🛠️ UTILITIES
+    // � PRESET CONFIGURATIONS
+    // ========================================
+    // Preset configurations (all original presets restored)
+    const PRESETS = {
+        9747: {
+            risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
+        },
+        oldDeployer: { 
+            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
+        },
+        oldishDeployer: { 
+            tokenDetails: { "Min Deployer Age (min)": 1200, "Min AG Score": "6" },
+            risk: { "Max Bundled %": 5, "Min Buy Ratio %": 20, "Max Vol MCAP %": 40, "Max Drained Count": 6 },
+            advanced: { "Max TTC (sec)": 400 }
+        },
+        minWinPred: { 
+            advanced: { "Min Win Pred %": 28 }
+        },
+        bundle1_74: { 
+            risk: { "Max Bundled %": 1.74 } 
+        },
+        deployerBalance10: { 
+            risk: { "Min Deployer Balance (SOL)": 10 } 
+        },
+        agScore7: { 
+            tokenDetails: { "Min AG Score": "7" } 
+        },
+        conservative: {
+            basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 50000 },
+            tokenDetails: { "Min AG Score": 4, "Min Deployer Age (min)": 60 },
+            wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2, "Max Unique Wallets": 5 },
+            risk: { "Min Bundled %": 0, "Max Bundled %": 25 },
+            advanced: { "Min TTC (sec)": 30, "Max Liquidity %": 70 }
+        },
+        aggressive: {
+            basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 15000 },
+            tokenDetails: { "Min AG Score": 2 },
+            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 10 },
+            risk: { "Max Bundled %": 80, "Max Vol MCAP %": 200 },
+            advanced: { "Min TTC (sec)": 5, "Max Liquidity %": 90 }
+        }
+    };
+
+    // ========================================
+    // �🛠️ UTILITIES
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let STOPPED = false;
@@ -2680,108 +2724,6 @@
         }
     }
     
-    // Preset configurations (all original presets restored)
-    const PRESETS = {
-        WIP: {
-            basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
-            tokenDetails: { "Min AG Score": 3 },
-            wallets: { "Min Unique Wallets": 3, "Min KYC Wallets": 2, "Max Unique Wallets": 3 },
-            risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
-            advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
-        },
-        cabalOrRug: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
-            tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
-            risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
-            advanced: { "Max TTC (sec)": 1, "Min Win Pred %": 3 }
-        },
-        rolandProduction: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
-            tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
-            risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
-            advanced: { "Min Win Pred %": 2 }
-        },
-        bonkSuper: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
-            tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
-            risk: { "Min Deployer Balance (SOL)": 10 },
-            advanced: { "Min Win Pred %": 4 }
-        },
-        roland4to6K: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 6000 },
-            tokenDetails: { "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
-            risk: { "Max Drained %": 10, "Min Deployer Balance (SOL)": 10 },
-            advanced: { "Min Win Pred %": 4 }
-        },
-        alpha97: {
-            risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
-        },
-        boomerBonk: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
-            tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 1, "Min KYC Wallets": 1, "Max KYC Wallets": 1 },
-            risk: { "Min Deployer Balance (SOL)": 10 },
-            advanced: { "Min Win Pred %": 2 }
-        },
-        boomerBonk1: {
-            basic: { "Min MCAP (USD)": 4000, "Max MCAP (USD)": 5000 },
-            tokenDetails: { "Min AG Score": "4", "Min Deployer Age (min)": 1, "Max Token Age (min)": 1 },
-            wallets: { "Min Unique Wallets": 1, "Min KYC Wallets": 1 },
-            risk: { "Max Bundled %": 75, "Min Deployer Balance (SOL)": 7 },
-            advanced: { "Min Win Pred %": 4 }
-        },
-        oldDeployer: { 
-            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
-        },
-        PfMainOld: {
-            basic: { "Min MCAP (USD)": 4999, "Max MCAP (USD)": 29999 },
-            tokenDetails: { "Min AG Score": "3" },
-            wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2 },
-            risk: { "Min Bundled %": 0.1, "Max Vol MCAP %": 33 },
-            advanced: { "Min TTC (sec)": 18, "Max TTC (sec)": 3600, "Max Liquidity %": 65 }
-        },
-        ClaudeR6: {
-            basic: { "Min MCAP (USD)": 6000, "Max MCAP (USD)": 25000 },
-            tokenDetails: { "Min AG Score": "5", "Max Token Age (min)": 52, "Min Deployer Age (min)": 17 },
-            wallets: { "Min Unique Wallets": 0, "Max Unique Wallets": 1, "Min KYC Wallets": 0, "Max KYC Wallets": 2 },
-            risk: { "Max Bundled %": 82, "Min Vol MCAP %": 9, "Max Vol MCAP %": 90, "Min Buy Ratio %": 20, "Max Buy Ratio %": 90, "Min Deployer Balance (SOL)": 0.95, "Fresh Deployer": "Yes", "Description": "Yes" },
-            advanced: { "Max Liquidity %": 66, "Max TTC (sec)": 30 }
-        },
-        Turbo2: {
-            basic: { "Max MCAP (USD)": 40000 },
-            tokenDetails: { "Min Deployer Age (min)": 10, "Min AG Score": "6", "Max Token Age (min)": 180 },
-            risk: { "Min Bundled %": 0.8, "Max Vol MCAP %": 33, "Min Deployer Balance (SOL)": 4.45, "Fresh Deployer": "Yes", "Description": "Yes" },
-            advanced: { "Max Liquidity %": 75, "Min Win Pred %": 30 }
-        },
-        bundle1_74: { 
-            risk: { "Max Bundled %": 1.74 } 
-        },
-        deployerBalance10: { 
-            risk: { "Min Deployer Balance (SOL)": 10 } 
-        },
-        agScore7: { 
-            tokenDetails: { "Min AG Score": "7" } 
-        },
-        conservative: {
-            basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 50000 },
-            tokenDetails: { "Min AG Score": 4, "Min Deployer Age (min)": 60 },
-            wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2, "Max Unique Wallets": 5 },
-            risk: { "Min Bundled %": 0, "Max Bundled %": 25 },
-            advanced: { "Min TTC (sec)": 30, "Max Liquidity %": 70 }
-        },
-        aggressive: {
-            basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 15000 },
-            tokenDetails: { "Min AG Score": 2 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 10 },
-            risk: { "Max Bundled %": 80, "Max Vol MCAP %": 200 },
-            advanced: { "Min TTC (sec)": 5, "Max Liquidity %": 90 }
-        }
-    };
-
     // Apply preset configuration
     async function applyPreset(presetName) {
         const preset = PRESETS[presetName];
@@ -2868,15 +2810,36 @@
         `;
 
         ui.innerHTML = `
-            <div style="text-align: center; margin-bottom: 20px;">
-                <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-                    🤖 AG Co-Pilot Enhanced + Signal Analysis
-                </h3>
-                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
-                    Optimization + Signal Analysis + Config Generation
-                </p>
+            <div id="ui-header" style="margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                    <div style="flex: 1; text-align: center;">
+                        <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+                            🤖 AG Co-Pilot Enhanced + Signal Analysis
+                        </h3>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
+                            Optimization + Signal Analysis + Config Generation
+                        </p>
+                    </div>
+                    <button id="collapse-ui-btn" style="
+                        background: rgba(255,255,255,0.2); 
+                        border: 1px solid rgba(255,255,255,0.4); 
+                        border-radius: 6px; 
+                        color: white; 
+                        cursor: pointer; 
+                        padding: 6px 10px; 
+                        font-size: 12px;
+                        font-weight: bold;
+                        transition: all 0.2s;
+                        margin-left: 10px;
+                    " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
+                       onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+                       title="Collapse to small box">
+                        ➖
+                    </button>
+                </div>
             </div>
             
+            <div id="ui-content">
             <!-- Configuration & Optimization Section -->
             <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -3196,9 +3159,57 @@
                     ✕ Close
                 </button>
             </div>
+            </div> <!-- End ui-content -->
         `;
 
         document.body.appendChild(ui);
+        
+        // Create collapsed state UI
+        const collapsedUI = document.createElement('div');
+        collapsedUI.id = 'ag-copilot-collapsed-ui';
+        collapsedUI.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 120px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 2px solid #fff;
+            border-radius: 12px;
+            padding: 8px;
+            z-index: 10000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            cursor: pointer;
+            display: none;
+            transition: all 0.3s ease;
+        `;
+        
+        collapsedUI.innerHTML = `
+            <div style="text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
+                <div style="font-size: 16px; margin-bottom: 2px;">🤖</div>
+                <div style="font-size: 9px; font-weight: bold; opacity: 0.9;">AG Co-Pilot</div>
+                <div style="font-size: 7px; opacity: 0.7;">Click to expand</div>
+            </div>
+        `;
+        
+        collapsedUI.addEventListener('click', () => {
+            expandUI();
+        });
+        
+        // Add hover effects to collapsed UI
+        collapsedUI.addEventListener('mouseenter', () => {
+            collapsedUI.style.transform = 'scale(1.05)';
+            collapsedUI.style.boxShadow = '0 8px 25px rgba(0,0,0,0.4)';
+        });
+        
+        collapsedUI.addEventListener('mouseleave', () => {
+            collapsedUI.style.transform = 'scale(1)';
+            collapsedUI.style.boxShadow = '0 5px 15px rgba(0,0,0,0.3)';
+        });
+        
+        document.body.appendChild(collapsedUI);
         
         // Make functions globally available for onclick handlers
         window.applyBestConfigToUI = async function() {
@@ -3541,6 +3552,29 @@
     }
 
     // ========================================
+    // 🔄 UI COLLAPSE/EXPAND FUNCTIONS
+    // ========================================
+    function collapseUI() {
+        const mainUI = document.getElementById('ag-copilot-enhanced-ui');
+        const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        
+        if (mainUI && collapsedUI) {
+            mainUI.style.display = 'none';
+            collapsedUI.style.display = 'block';
+        }
+    }
+    
+    function expandUI() {
+        const mainUI = document.getElementById('ag-copilot-enhanced-ui');
+        const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        
+        if (mainUI && collapsedUI) {
+            collapsedUI.style.display = 'none';
+            mainUI.style.display = 'block';
+        }
+    }
+
+    // ========================================
     // 🎮 EVENT HANDLERS
     // ========================================
     function setupEventHandlers() {
@@ -3674,6 +3708,13 @@
         // Close button
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('ag-copilot-enhanced-ui').remove();
+            const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+            if (collapsedUI) collapsedUI.remove();
+        });
+
+        // Collapse button
+        document.getElementById('collapse-ui-btn').addEventListener('click', () => {
+            collapseUI();
         });
 
         // Section toggle handlers
