@@ -13,6 +13,9 @@
         MIN_TOKENS: 50,
         TARGET_PNL: 100.0,
         
+        // NEW: Chained runs settings
+        CHAIN_RUN_COUNT: 3,
+        
         // Feature flags (keeping all original features)
         USE_CONFIG_CACHING: true,  // Re-enabled after fixing cache key generation
         USE_PARAMETER_IMPACT_ANALYSIS: true,
@@ -44,7 +47,7 @@
 
         // Token Details
         'Min Deployer Age (min)': { min: 0, max: 1440, step: 5, type: 'integer' },
-        'Max Token Age (min)': { min: 5, max: 99999, step: 15, type: 'integer' },
+        'Max Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Min AG Score': { min: 1, max: 7, step: 1, type: 'integer' },
 
         // Wallets
@@ -79,7 +82,7 @@
         },
         tokenDetails: {
             "Min Deployer Age (min)": undefined,
-            "Max Token Age (min)": undefined,
+            "Max Token Age (sec)": undefined,
             "Min AG Score": undefined
         },
         wallets: {
@@ -1281,14 +1284,14 @@
             config['Min AG Score'] = analysis.agScore.min;
         }
         
-        // Ages (be careful with Token Age max - don't set if too restrictive)
+        //
         if (analysis.tokenAge && analysis.tokenAge.max !== undefined && analysis.tokenAge.count > 0) {
             // Only set if max age is reasonable (at least 30 minutes)
-            if (analysis.tokenAge.max >= 30) {
-                config['Max Token Age (min)'] = analysis.tokenAge.max;
-            } else if (analysis.tokenAge.max >= 5) {
-                config['Max Token Age (min)'] = 60; // Set reasonable default (1 hour)
-            }
+            // if (analysis.tokenAge.max >= 180) {
+            config['Max Token Age (sec)'] = analysis.tokenAge.max;
+            // } else if (analysis.tokenAge.max >= 5) {
+            //     config['Max Token Age (sec)'] = 3600; // Set reasonable default (1 hour)
+            // }
             // If very young tokens only, don't set this restriction
         }
         if (analysis.deployerAge && analysis.deployerAge.min !== undefined && analysis.deployerAge.count > 0) {
@@ -1320,9 +1323,10 @@
             // Only set if not too restrictive (at least 20%)
             if (analysis.liquidityPct.max >= 20) {
                 config['Max Liquidity %'] = analysis.liquidityPct.max;
-            } else if (analysis.liquidityPct.max >= 5) {
-                config['Max Liquidity %'] = 50; // Set reasonable default
-            }
+            } 
+            // else if (analysis.liquidityPct.max >= 5) {
+            //     config['Max Liquidity %'] = 50; // Set reasonable default
+            // }
         }
         
         // Trading criteria (be more careful with maximums)
@@ -1359,9 +1363,8 @@
             }
             // If max is very low (0-5%), consider setting a reasonable limit instead
             else if (analysis.drainedPct.max < 5 && analysis.drainedPct.max >= 0) {
-                config['Max Drained %'] = 10; // Set a reasonable default maximum
+                config['Max Drained %'] = 5; // Set a reasonable default maximum
             }
-            // If no meaningful drained data, don't set this field at all
         }
         
         if (analysis.deployerBalance && analysis.deployerBalance.min !== undefined && analysis.deployerBalance.count > 0) {
@@ -1387,9 +1390,10 @@
             // Only set max TTC if it's not too restrictive (at least 60 seconds)
             if (analysis.ttc.max >= 60) {
                 config['Max TTC (sec)'] = analysis.ttc.max;
-            } else if (analysis.ttc.max >= 10) {
-                config['Max TTC (sec)'] = 300; // Set reasonable default (5 minutes)
-            }
+            } 
+            // else if (analysis.ttc.max >= 10) {
+            //     config['Max TTC (sec)'] = 300; // Set reasonable default (5 minutes)
+            // }
         }
         
         console.log('Generated config:', config);
@@ -1432,8 +1436,8 @@
         if (config['Min AG Score'] !== undefined) {
             lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 100}`);
         }
-        if (config['Max Token Age (min)'] !== undefined) {
-            lines.push(`Token Age: 0 - ${config['Max Token Age (min)']} minutes`);
+        if (config['Max Token Age (sec)'] !== undefined) {
+            lines.push(`Token Age: 0 - ${config['Max Token Age (sec)']} seconds`);
         }
         if (config['Min Deployer Age (min)'] !== undefined) {
             lines.push(`Deployer Age: ${config['Min Deployer Age (min)']} - ∞ minutes`);
@@ -1618,8 +1622,29 @@
                 const sample = {};
                 
                 for (const param of parameters) {
-                    const rules = PARAM_RULES[param];
-                    if (rules) {
+                    const originalRules = PARAM_RULES[param];
+                    if (originalRules) {
+                        // Check if this is being called from an optimizer context that has bundled constraints
+                        let rules = originalRules;
+                        
+                        // Apply bundled constraints if the UI checkbox is checked
+                        const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+                        if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+                            if (param === 'Min Bundled %') {
+                                rules = {
+                                    ...originalRules,
+                                    min: 0,
+                                    max: Math.min(5, originalRules.max)
+                                };
+                            } else if (param === 'Max Bundled %') {
+                                rules = {
+                                    ...originalRules,
+                                    min: originalRules.min,
+                                    max: Math.min(35, originalRules.max)
+                                };
+                            }
+                        }
+                        
                         if (rules.type === 'string') {
                             sample[param] = Math.floor(Math.random() * 10 + 1).toString();
                         } else {
@@ -1708,7 +1733,10 @@
             for (let i = 0; i < numModifications; i++) {
                 const param = paramList[Math.floor(Math.random() * paramList.length)];
                 const section = this.optimizer.getSection(param);
-                const rules = PARAM_RULES[param];
+                const originalRules = PARAM_RULES[param];
+                
+                // Apply bundled constraints if enabled
+                const rules = this.optimizer.applyBundledConstraints(param, originalRules);
                 
                 if (rules && neighbor[section]) {
                     if (rules.type === 'string') {
@@ -1767,7 +1795,7 @@
         getSection(param) {
             const sectionMap = {
                 'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
-                'Min AG Score': 'tokenDetails', 'Max Token Age (min)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+                'Min AG Score': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
                 'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
                 'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
                 'Max Drained %': 'risk', 'Max Drained Count': 'risk',
@@ -1924,11 +1952,17 @@
                 // Use a simple default configuration when preset is selected
                 baselineConfig = {
                     basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                    tokenDetails: { "Min AG Score": 3, "Max Token Age (min)": 300 },
+                    tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
                     wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
                     risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
                     advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
                 };
+                
+                // Apply bundled constraints if enabled
+                if (this.isLowBundledConstraintEnabled()) {
+                    console.log('🛡️ Applying low bundled % constraints to baseline');
+                    baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
+                }
             } else {
                 console.log('📖 Reading current page settings as baseline');
                 // Read current configuration from the UI
@@ -1943,11 +1977,17 @@
                     console.log('⚠️ No configuration found on page, using default baseline');
                     baselineConfig = {
                         basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                        tokenDetails: { "Min AG Score": 3, "Max Token Age (min)": 300 },
+                        tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
                         wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
                         risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
                         advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
                     };
+                    
+                    // Apply bundled constraints if enabled
+                    if (this.isLowBundledConstraintEnabled()) {
+                        console.log('🛡️ Applying low bundled % constraints to fallback baseline');
+                        baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
+                    }
                 } else {
                     console.log('✅ Using current page settings as baseline configuration');
                 }
@@ -1971,10 +2011,45 @@
             updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
         }
 
+        // Helper function to check if low bundled constraint is enabled
+        isLowBundledConstraintEnabled() {
+            const checkbox = document.getElementById('low-bundled-constraint');
+            return checkbox && checkbox.checked;
+        }
+
+        // Apply bundled % constraints if enabled
+        applyBundledConstraints(param, rules) {
+            if (!this.isLowBundledConstraintEnabled()) {
+                return rules; // Return original rules if constraint is disabled
+            }
+
+            // Apply constraints for bundled % parameters
+            if (param === 'Min Bundled %') {
+                return {
+                    ...rules,
+                    min: 0,
+                    max: Math.min(5, rules.max), // Force max to be 5% or original max, whichever is lower
+                    step: rules.step
+                };
+            } else if (param === 'Max Bundled %') {
+                return {
+                    ...rules,
+                    min: rules.min,
+                    max: Math.min(35, rules.max), // Force max to be 35% or original max, whichever is lower
+                    step: rules.step
+                };
+            }
+            
+            return rules; // Return original rules for other parameters
+        }
+
         // Generate parameter variations (keeping original logic)
         generateParameterVariations(config, param, section) {
-            const rules = PARAM_RULES[param];
-            if (!rules) return [];
+            const originalRules = PARAM_RULES[param];
+            if (!originalRules) return [];
+
+            // Apply bundled constraints if enabled
+            const rules = this.applyBundledConstraints(param, originalRules);
 
             // Check if config is valid
             if (!config || !config[section]) {
@@ -2340,6 +2415,214 @@
         }
     }
 
+    // ========================================
+    // 🔗 CHAINED OPTIMIZER CLASS
+    // ========================================
+    class ChainedOptimizer {
+        constructor() {
+            this.chainResults = [];
+            this.globalBestConfig = null;
+            this.globalBestScore = -Infinity;
+            this.globalBestMetrics = null;
+            this.totalTestCount = 0;
+            this.chainStartTime = Date.now();
+            this.currentRun = 0;
+            this.totalRuns = 3;
+            this.timePerRun = 15;
+        }
+
+        async runChainedOptimization(runCount = 3, timePerRunMin = 15) {
+            this.totalRuns = runCount;
+            this.timePerRun = timePerRunMin;
+            this.chainStartTime = Date.now();
+            
+            console.log(`🔗 Starting chained optimization: ${runCount} runs × ${timePerRunMin} minutes each`);
+            updateProgress(`🔗 Chained Optimization: Run 0/${runCount}`, 0, 0, 0, '--', this.chainStartTime);
+            
+            for (let run = 1; run <= runCount; run++) {
+                if (STOPPED) {
+                    console.log(`⏹️ Chained optimization stopped at run ${run}/${runCount}`);
+                    break;
+                }
+
+                this.currentRun = run;
+                const runStartTime = Date.now();
+                
+                console.log(`\n🔗 === CHAIN RUN ${run}/${runCount} ===`);
+                updateProgress(`🔗 Chain Run ${run}/${runCount} Starting`, 
+                    ((run - 1) / runCount) * 100, 
+                    this.globalBestScore === -Infinity ? 0 : this.globalBestScore.toFixed(1), 
+                    this.totalTestCount, 
+                    this.globalBestMetrics?.tokensMatched || '--', 
+                    this.chainStartTime
+                );
+
+                try {
+                    // Create new optimizer for this run
+                    const optimizer = new EnhancedOptimizer();
+                    
+                    // Override the runtime for this individual run
+                    const originalRuntime = CONFIG.MAX_RUNTIME_MIN;
+                    CONFIG.MAX_RUNTIME_MIN = timePerRunMin;
+                    
+                    // Run optimization
+                    const runResults = await optimizer.runOptimization();
+                    
+                    // Restore original runtime setting
+                    CONFIG.MAX_RUNTIME_MIN = originalRuntime;
+                    
+                    // Track this run's results
+                    const runDuration = Math.floor((Date.now() - runStartTime) / 1000);
+                    const runResult = {
+                        runNumber: run,
+                        config: runResults.bestConfig,
+                        score: runResults.bestScore,
+                        metrics: runResults.bestMetrics,
+                        testCount: runResults.testCount,
+                        runtime: runDuration,
+                        targetAchieved: runResults.targetAchieved,
+                        parameterEffectiveness: runResults.parameterEffectiveness?.slice(0, 3) || []
+                    };
+                    
+                    this.chainResults.push(runResult);
+                    this.totalTestCount += runResults.testCount;
+                    
+                    // Update global best if this run found something better
+                    if (runResults.bestScore > this.globalBestScore) {
+                        this.globalBestConfig = runResults.bestConfig;
+                        this.globalBestScore = runResults.bestScore;
+                        this.globalBestMetrics = runResults.bestMetrics;
+                        
+                        // Update the global window reference
+                        window.currentBestConfig = this.globalBestConfig;
+                        
+                        console.log(`🎉 New global best from Run ${run}! Score: ${this.globalBestScore.toFixed(1)}%`);
+                    }
+                    
+                    const chainProgress = (run / runCount) * 100;
+                    console.log(`✅ Run ${run} completed: ${runResults.bestScore.toFixed(1)}% (${runResults.testCount} tests in ${runDuration}s)`);
+                    updateProgress(`🔗 Run ${run}/${runCount} Complete`, 
+                        chainProgress, 
+                        this.globalBestScore.toFixed(1), 
+                        this.totalTestCount, 
+                        this.globalBestMetrics?.tokensMatched || '--', 
+                        this.chainStartTime
+                    );
+                    
+                    // Early termination if target achieved
+                    const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                    if (this.globalBestScore >= targetPnl) {
+                        console.log(`🎯 Target ${targetPnl}% achieved in run ${run}! Stopping chain early.`);
+                        break;
+                    }
+                    
+                    // Brief pause between runs (let UI update)
+                    if (run < runCount && !window.STOPPED) {
+                        await sleep(1000);
+                    }
+                    
+                } catch (error) {
+                    console.error(`❌ Run ${run} failed:`, error);
+                    this.chainResults.push({
+                        runNumber: run,
+                        error: error.message,
+                        runtime: Math.floor((Date.now() - runStartTime) / 1000)
+                    });
+                }
+            }
+            
+            const totalDuration = Math.floor((Date.now() - this.chainStartTime) / 1000);
+            return this.generateChainSummary(totalDuration);
+        }
+
+        generateChainSummary(totalDuration) {
+            console.log(`\n🔗 === CHAINED OPTIMIZATION SUMMARY ===`);
+            console.log(`📊 Completed ${this.chainResults.length} runs in ${totalDuration}s (${this.totalTestCount} total tests)`);
+            
+            // Sort runs by score for analysis
+            const successfulRuns = this.chainResults.filter(r => !r.error);
+            const sortedRuns = [...successfulRuns].sort((a, b) => b.score - a.score);
+            
+            if (sortedRuns.length > 0) {
+                console.log(`\n🏆 TOP RESULTS:`);
+                sortedRuns.slice(0, 3).forEach((run, index) => {
+                    const rank = index + 1;
+                    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
+                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${run.metrics.tokensMatched} tokens, ${run.testCount} tests)`);
+                });
+                
+                // Show score progression across runs
+                const scoreProgression = successfulRuns.map(r => r.score.toFixed(1));
+                console.log(`\n📈 Score progression: [${scoreProgression.join('% → ')}%]`);
+                
+                // Parameter effectiveness analysis
+                const allParams = new Map();
+                successfulRuns.forEach(run => {
+                    run.parameterEffectiveness?.forEach(param => {
+                        const existing = allParams.get(param.param) || { totalImprovement: 0, occurrences: 0 };
+                        allParams.set(param.param, {
+                            totalImprovement: existing.totalImprovement + param.improvement,
+                            occurrences: existing.occurrences + 1
+                        });
+                    });
+                });
+                
+                const avgParamEffectiveness = Array.from(allParams.entries())
+                    .map(([param, data]) => ({
+                        param,
+                        avgImprovement: data.totalImprovement / data.occurrences,
+                        frequency: data.occurrences
+                    }))
+                    .sort((a, b) => b.avgImprovement - a.avgImprovement)
+                    .slice(0, 5);
+                    
+                if (avgParamEffectiveness.length > 0) {
+                    console.log(`\n🎯 Most effective parameters across all runs:`);
+                    avgParamEffectiveness.forEach((param, index) => {
+                        console.log(`${index + 1}. ${param.param}: +${param.avgImprovement.toFixed(1)}% avg (appeared in ${param.frequency}/${successfulRuns.length} runs)`);
+                    });
+                }
+            }
+            
+            return {
+                chainResults: this.chainResults,
+                globalBestConfig: this.globalBestConfig,
+                globalBestScore: this.globalBestScore,
+                globalBestMetrics: this.globalBestMetrics,
+                totalTestCount: this.totalTestCount,
+                totalRuntime: totalDuration,
+                successfulRuns: successfulRuns.length,
+                failedRuns: this.chainResults.length - successfulRuns.length,
+                targetAchieved: this.globalBestScore >= (parseFloat(document.getElementById('target-pnl')?.value) || 100)
+            };
+        }
+
+        updateBestConfigDisplay() {
+            const display = document.getElementById('best-config-display');
+            const stats = document.getElementById('best-config-stats');
+            
+            if (display && stats && this.globalBestMetrics) {
+                display.style.display = 'block';
+                
+                let scoreDisplay = this.globalBestScore.toFixed(1);
+                let methodDisplay = '';
+                
+                // Show robust scoring details if available
+                if (CONFIG.USE_ROBUST_SCORING && this.globalBestMetrics.robustScoring) {
+                    const rs = this.globalBestMetrics.robustScoring;
+                    scoreDisplay = `${this.globalBestScore.toFixed(1)} (Robust)`;
+                    methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+                }
+                
+                stats.innerHTML = `
+                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.globalBestMetrics.tokensMatched} | <strong>Win Rate:</strong> ${this.globalBestMetrics.winRate?.toFixed(1)}%</div>
+                    ${methodDisplay}
+                    <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.chainStartTime) / 1000)}s</div>
+                `;
+            }
+        }
+    }
+
     // Simple connectivity test (no longer needed)
     async function testConnectivity() {
         // Just test that we can interact with the UI
@@ -2445,7 +2728,7 @@
             },
             tokenDetails: {
                 sectionTitle: 'Token Details',
-                params: ['Min AG Score', 'Max Token Age (min)', 'Min Deployer Age (min)']
+                params: ['Min AG Score', 'Max Token Age (sec)', 'Min Deployer Age (min)']
             },
             wallets: {
                 sectionTitle: 'Wallets',
@@ -2895,7 +3178,7 @@
                 </div>
                 
                 <!-- Optimization settings in compact grid -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Target PnL %:</span>
                         <input type="number" id="target-pnl" value="100" min="5" max="50" step="0.5"
@@ -2908,7 +3191,12 @@
                     </label>
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runtime (min):</span>
-                        <input type="number" id="runtime-min" value="30" min="5" max="120" step="5"
+                        <input type="number" id="runtime-min" value="15" min="5" max="120" step="5"
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
+                    </label>
+                    <label style="display: flex; flex-direction: column;">
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runs:</span>
+                        <input type="number" id="chain-run-count" value="3" min="1" max="10" step="1"
                                style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                 </div>
@@ -2921,29 +3209,40 @@
                             <input type="checkbox" id="robust-scoring" checked style="margin-right: 5px; transform: scale(1.0);">
                             <span style="font-weight: bold;">🛡️ Outlier-Resistant</span>
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
                             <input type="checkbox" id="simulated-annealing" checked style="margin-right: 5px; transform: scale(1.0);">
                             <span style="font-weight: bold;">🔥 Simulated Annealing</span>
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Tests all available presets as starting points for comprehensive coverage">
                             <input type="checkbox" id="multiple-starting-points" style="margin-right: 5px; transform: scale(1.0);">
                             <span style="font-weight: bold;">🎯 Multiple Starts</span>
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Statistical sampling method that ensures even distribution across parameter space">
                             <input type="checkbox" id="latin-hypercube" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">� Latin Hypercube</span>
+                            <span style="font-weight: bold;">📐 Latin Hypercube</span>
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
                             <input type="checkbox" id="correlated-params" checked style="margin-right: 5px; transform: scale(1.0);">
                             <span style="font-weight: bold;">🔗 Correlated Params</span>
                         </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Fine-grained testing of the most effective parameters with smaller increments">
                             <input type="checkbox" id="deep-dive" checked style="margin-right: 5px; transform: scale(1.0);">
                             <span style="font-weight: bold;">🔬 Deep Dive</span>
                         </label>
                     </div>
                     <div style="font-size: 8px; opacity: 0.7; margin-top: 4px; line-height: 1.2;">
-                        💡 Advanced optimization phases for comprehensive parameter exploration. Hover over options for details. Multiple Starts tests all presets.
+                        💡 Advanced optimization phases for parameter exploration. Hover over options for details.
+                    </div>
+                    
+                    <!-- Low Bundled % Constraint -->
+                    <div style="margin-top: 8px; padding: 6px; background: rgba(255,215,0,0.15); border: 1px solid rgba(255,215,0,0.3); border-radius: 4px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;" title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
+                            <input type="checkbox" id="low-bundled-constraint" checked style="margin-right: 5px; transform: scale(1.0);">
+                            <span style="font-weight: bold; font-size: 11px; color: #FFD700;">🛡️ Low Bundled % Constraint</span>
+                        </label>
+                        <div style="font-size: 8px; opacity: 0.8; margin-top: 2px; line-height: 1.2;">
+                            Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3598,11 +3897,17 @@
             }
         });
 
+        // Chain run count handler
+        document.getElementById('chain-run-count').addEventListener('change', (e) => {
+            CONFIG.CHAIN_RUN_COUNT = parseInt(e.target.value) || 3;
+        });
+
         // Start optimization button
         document.getElementById('start-optimization').addEventListener('click', async () => {
             const targetPnl = parseFloat(document.getElementById('target-pnl').value) || 100;
             const minTokens = parseInt(document.getElementById('min-tokens').value) || 50;
             const runtimeMin = parseInt(document.getElementById('runtime-min').value) || 30;
+            const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 1;
             const robustScoring = document.getElementById('robust-scoring').checked;
             const simulatedAnnealing = document.getElementById('simulated-annealing').checked;
             const multipleStartingPoints = document.getElementById('multiple-starting-points').checked;
@@ -3623,6 +3928,7 @@
             CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
             CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
             CONFIG.USE_DEEP_DIVE = deepDive;
+            CONFIG.CHAIN_RUN_COUNT = chainRunCount;
             
             const features = [];
             if (robustScoring) features.push('outlier-resistant scoring');
@@ -3633,7 +3939,15 @@
             if (deepDive) features.push('deep dive analysis');
             
             const featuresStr = features.length > 0 ? ` with ${features.join(', ')}` : '';
-            console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
+            
+            // Determine if we should use chained runs (when runs > 1)
+            const useChainedRuns = chainRunCount > 1;
+            
+            if (useChainedRuns) {
+                console.log(`🔗 Starting chained optimization: ${chainRunCount} runs of ${runtimeMin} min each, Target ${targetPnl}% PnL, Min ${minTokens} tokens${featuresStr}`);
+            } else {
+                console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
+            }
             
             // UI state
             document.getElementById('start-optimization').style.display = 'none';
@@ -3644,11 +3958,24 @@
             
             // Start optimization
             try {
-                const optimizer = new EnhancedOptimizer();
-                const results = await optimizer.runOptimization();
+                let results;
+                
+                if (useChainedRuns) {
+                    // Use ChainedOptimizer for multiple runs
+                    const chainedOptimizer = new ChainedOptimizer();
+                    results = await chainedOptimizer.runChainedOptimization(chainRunCount, runtimeMin);
+                } else {
+                    // Use single EnhancedOptimizer run
+                    const optimizer = new EnhancedOptimizer();
+                    results = await optimizer.runOptimization();
+                }
                 
                 if (results && results.bestConfig) {
-                    console.log(`🎉 Optimization completed! Best score: ${results.bestScore.toFixed(1)}% after ${results.testCount} tests`);
+                    if (useChainedRuns) {
+                        console.log(`🎉 Chained optimization completed! Best score: ${results.bestScore.toFixed(1)}% across ${chainRunCount} runs (${results.totalTestCount} total tests)`);
+                    } else {
+                        console.log(`🎉 Optimization completed! Best score: ${results.bestScore.toFixed(1)}% after ${results.testCount} tests`);
+                    }
                     window.currentBestConfig = results.bestConfig;
                     // Change background to green for successful completion
                     updateUIBackground(true);
@@ -3814,7 +4141,7 @@
         // Token Details Section Fields  
         await applyFieldsToSection('Token Details', [
             ['Min AG Score', config['Min AG Score']],
-            ['Max Token Age (min)', config['Max Token Age (min)']],
+            ['Max Token Age (sec)', config['Max Token Age (sec)']],
             ['Min Deployer Age (min)', config['Min Deployer Age (min)']]
         ]);
         
