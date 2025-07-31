@@ -47,10 +47,13 @@
 
         // Token Details
         'Min Deployer Age (min)': { min: 0, max: 1440, step: 5, type: 'integer' },
+        'Min Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Max Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Min AG Score': { min: 1, max: 7, step: 1, type: 'integer' },
 
         // Wallets
+        'Min Holders': { min: 1, max: 5, step: 1, type: 'integer' },
+        'Max Holders': { min: 1, max: 50, step: 5, type: 'integer' },
         'Min Unique Wallets': { min: 1, max: 3, step: 1, type: 'integer' },
         'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
@@ -82,6 +85,7 @@
         },
         tokenDetails: {
             "Min Deployer Age (min)": undefined,
+            "Min Token Age (sec)": undefined,
             "Max Token Age (sec)": undefined,
             "Min AG Score": undefined
         },
@@ -89,7 +93,9 @@
             "Min Unique Wallets": undefined,
             "Min KYC Wallets": undefined,
             "Max KYC Wallets": undefined,
-            "Max Unique Wallets": undefined
+            "Max Unique Wallets": undefined,
+            "Min Holders": undefined,
+            "Max Holders": undefined
         },
         risk: {
             "Min Bundled %": undefined,
@@ -1096,6 +1102,23 @@
                 };
             })(),
             
+            // Holders Analysis
+            holders: (() => {
+                const counts = getValidValues('holdersCount');
+                if (counts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
+                
+                const min = Math.min(...counts);
+                const max = Math.max(...counts);
+                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
+                
+                return {
+                    min: Math.round(applyBuffer(min, true)),
+                    max: Math.round(applyBuffer(max, false)),
+                    avg: Math.round(avg),
+                    count: counts.length
+                };
+            })(),
+            
             // Liquidity Analysis
             liquidity: (() => {
                 const liquids = getValidValues('liquidity');
@@ -1294,6 +1317,9 @@
             // }
             // If very young tokens only, don't set this restriction
         }
+        if (analysis.tokenAge && analysis.tokenAge.min !== undefined && analysis.tokenAge.count > 0) {
+            config['Min Token Age (sec)'] = analysis.tokenAge.min;
+        }
         if (analysis.deployerAge && analysis.deployerAge.min !== undefined && analysis.deployerAge.count > 0) {
             config['Min Deployer Age (min)'] = analysis.deployerAge.min;
         }
@@ -1310,6 +1336,12 @@
         }
         if (analysis.kycWallets && analysis.kycWallets.max !== undefined && analysis.kycWallets.count > 0) {
             config['Max KYC Wallets'] = analysis.kycWallets.max;
+        }
+        if (analysis.holders && analysis.holders.min !== undefined && analysis.holders.count > 0) {
+            config['Min Holders'] = analysis.holders.min;
+        }
+        if (analysis.holders && analysis.holders.max !== undefined && analysis.holders.count > 0) {
+            config['Max Holders'] = analysis.holders.max;
         }
         
         // Liquidity criteria (check for data availability)
@@ -1436,8 +1468,10 @@
         if (config['Min AG Score'] !== undefined) {
             lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 100}`);
         }
-        if (config['Max Token Age (sec)'] !== undefined) {
-            lines.push(`Token Age: 0 - ${config['Max Token Age (sec)']} seconds`);
+        if (config['Min Token Age (sec)'] !== undefined || config['Max Token Age (sec)'] !== undefined) {
+            const min = config['Min Token Age (sec)'] || 0;
+            const max = config['Max Token Age (sec)'] || '∞';
+            lines.push(`Token Age: ${min} - ${max} seconds`);
         }
         if (config['Min Deployer Age (min)'] !== undefined) {
             lines.push(`Deployer Age: ${config['Min Deployer Age (min)']} - ∞ minutes`);
@@ -1448,6 +1482,11 @@
         lines.push('');
         
         lines.push('👥 WALLET CRITERIA:');
+        if (config['Min Holders'] !== undefined || config['Max Holders'] !== undefined) {
+            const min = config['Min Holders'] || 0;
+            const max = config['Max Holders'] || '∞';
+            lines.push(`Holders: ${min} - ${max}`);
+        }
         if (config['Min Unique Wallets'] !== undefined || config['Max Unique Wallets'] !== undefined) {
             const min = config['Min Unique Wallets'] || 0;
             const max = config['Max Unique Wallets'] || '∞';
@@ -1795,11 +1834,12 @@
         getSection(param) {
             const sectionMap = {
                 'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
-                'Min AG Score': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+                'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
                 'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
                 'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
                 'Max Drained %': 'risk', 'Max Drained Count': 'risk',
                 'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
                 'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
             };
             return sectionMap[param] || 'basic';
@@ -2401,10 +2441,12 @@
             
             for (const range of walletRanges) {
                 const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
-                config.wallets["Min Unique Wallets"] = range.minUnique;
-                config.wallets["Max Unique Wallets"] = range.maxUnique;
                 config.wallets["Min KYC Wallets"] = range.minKyc;
                 config.wallets["Max KYC Wallets"] = range.maxKyc;
+                config.wallets["Min Unique Wallets"] = range.minUnique;
+                config.wallets["Max Unique Wallets"] = range.maxUnique;
+                config.wallets["Min Holders"] = range.minHolders;
+                config.wallets["Max Holders"] = range.maxHolders;
                 variations.push({ 
                     config, 
                     name: `Wallets: U${range.minUnique}-${range.maxUnique} K${range.minKyc}-${range.maxKyc}` 
@@ -2728,11 +2770,11 @@
             },
             tokenDetails: {
                 sectionTitle: 'Token Details',
-                params: ['Min AG Score', 'Max Token Age (sec)', 'Min Deployer Age (min)']
+                params: ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)']
             },
             wallets: {
                 sectionTitle: 'Wallets',
-                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets']
+                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders']
             },
             risk: {
                 sectionTitle: 'Risk',
@@ -4141,6 +4183,7 @@
         // Token Details Section Fields  
         await applyFieldsToSection('Token Details', [
             ['Min AG Score', config['Min AG Score']],
+            ['Min Token Age (sec)', config['Min Token Age (sec)']],
             ['Max Token Age (sec)', config['Max Token Age (sec)']],
             ['Min Deployer Age (min)', config['Min Deployer Age (min)']]
         ]);
@@ -4150,7 +4193,9 @@
             ['Min Unique Wallets', config['Min Unique Wallets']],
             ['Max Unique Wallets', config['Max Unique Wallets']],
             ['Min KYC Wallets', config['Min KYC Wallets']],
-            ['Max KYC Wallets', config['Max KYC Wallets']]
+            ['Max KYC Wallets', config['Max KYC Wallets']],
+            ['Min Holders', config['Min Holders']],
+            ['Max Holders', config['Max Holders']],
         ]);
         
         // Risk Section Fields (including booleans)
