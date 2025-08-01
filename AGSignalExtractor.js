@@ -621,6 +621,10 @@
                             <input type="checkbox" id="trigger-1" value="1" checked style="margin-right: 4px;">
                             <span style="font-size: 10px;">God Mode</span>
                         </label>
+                        <label style="display: flex; align-items: center; margin-bottom: 0; cursor: pointer;">
+                            <input type="checkbox" id="trigger-6" value="2" checked style="margin-right: 4px;">
+                            <span style="font-size: 10px;">Moon Finder</span>
+                        </label>
                         <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
                             <input type="checkbox" id="trigger-3" value="3" checked style="margin-right: 4px;">
                             <span style="font-size: 10px;">Fomo</span>
@@ -632,10 +636,6 @@
                         <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
                             <input type="checkbox" id="trigger-5" value="5" checked style="margin-right: 4px;">
                             <span style="font-size: 10px;">Smart Tracker</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 0; cursor: pointer;">
-                            <input type="checkbox" id="trigger-6" value="6" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Moon Finder</span>
                         </label>
                     </div>
                     <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">

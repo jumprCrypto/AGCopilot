@@ -1,7 +1,7 @@
 (async function () {
     console.clear();
     console.log('%c🤖 AG Co-Pilot Enhanced + Signal Analysis v2.0 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
-    console.log('%c🔍 Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
+    console.log('%c🔍 Direct API Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
 
     // ========================================
     // 🎯 CONFIGURATION
@@ -9,7 +9,7 @@
     const CONFIG = {
         // Original AGCopilot Optimization Settings (no API needed)
         MAX_RUNTIME_MIN: 30,
-        BACKTEST_WAIT: 3000, // Wait for UI to update after applying config
+        BACKTEST_WAIT: 20000, // Based on rate limit recovery test (20s)
         MIN_TOKENS: 50,
         TARGET_PNL: 100.0,
         
@@ -17,7 +17,7 @@
         CHAIN_RUN_COUNT: 3,
         
         // Feature flags (keeping all original features)
-        USE_CONFIG_CACHING: true,  // Re-enabled after fixing cache key generation
+        USE_CONFIG_CACHING: true,
         USE_PARAMETER_IMPACT_ANALYSIS: true,
         USE_GENETIC_ALGORITHM: true,
         USE_SIMULATED_ANNEALING: true,
@@ -36,7 +36,31 @@
         API_BASE_URL: 'https://backtester.alphagardeners.xyz/api',
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
-        REQUEST_DELAY: 500, // Delay between API requests to prevent rate limiting
+        REQUEST_DELAY: 9360, // For signal analysis API (60% of BACKTEST_WAIT)
+        
+        // Backtester API Settings
+        DEFAULT_BUYING_AMOUNT: 0.25, // Default buying amount for API calls
+        
+        // Take Profit (TP) configuration for accurate PnL calculations
+        TP_CONFIGURATIONS: [
+            { size: 20, gain: 300 },
+            { size: 20, gain: 650 },
+            { size: 20, gain: 1400 },
+            { size: 20, gain: 3000 },
+            { size: 20, gain: 10000 }
+        ],
+        
+        // Rate limiting - BALANCED MODE with 90 req/min hard cap
+        RATE_LIMIT_THRESHOLD: 65,    // Increased from 60 to 65 for better performance
+        RATE_LIMIT_RECOVERY: 8500,   // 8.5s recovery (balanced - was 10s)
+        RATE_LIMIT_SAFETY_MARGIN: 1.1, // 10% safety margin (reduced from 20%)
+        INTRA_BURST_DELAY: 8,        // 8ms delay for ~75-85 req/min target
+        MAX_REQUESTS_PER_MINUTE: 65, // Hard cap at 65 req/min
+        USE_BURST_RATE_LIMITING: true, // Use burst mode for maximum speed
+        ADAPTIVE_RATE_LIMITING: true,  // Speed up when no rate limits are detected
+        AGGRESSIVE_RECOVERY: true,     // Enable moderate recovery (was false)
+        RESILIENT_MODE: true,          // Don't reduce burst limit as much on first 429
+        SMART_BURST_SIZE: true        // Dynamically adjust burst size based on API behavior
     };
 
     // Parameter validation rules (same as original AGCopilot)
@@ -49,7 +73,7 @@
         'Min Deployer Age (min)': { min: 0, max: 1440, step: 5, type: 'integer' },
         'Min Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Max Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
-        'Min AG Score': { min: 1, max: 7, step: 1, type: 'integer' },
+        'Min AG Score': { min: 0, max: 10, step: 1, type: 'integer' },
 
         // Wallets
         'Min Holders': { min: 1, max: 5, step: 1, type: 'integer' },
@@ -166,9 +190,270 @@
     // �🛠️ UTILITIES
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-    let STOPPED = false;
+    // Initialize window.STOPPED for global access
+    window.STOPPED = false;
 
-    // Rate limiter for API requests (from AGSignalExtractor)
+    // Burst Rate Limiter - Enhanced for maximum safe speed with intelligent learning
+    class BurstRateLimiter {
+        constructor(burstLimit = CONFIG.RATE_LIMIT_THRESHOLD, recoveryTime = CONFIG.RATE_LIMIT_RECOVERY, safetyMargin = CONFIG.RATE_LIMIT_SAFETY_MARGIN) {
+            this.originalBurstLimit = burstLimit;
+            this.burstLimit = burstLimit;
+            this.baseRecoveryTime = recoveryTime;
+            this.recoveryTime = recoveryTime * safetyMargin;
+            this.callCount = 0;
+            this.burstStartTime = 0;
+            this.sessionStartTime = 0; // Track overall session start for rate calculation
+            this.lastBurstTime = 0;
+            this.lastCallTime = 0;
+            this.totalCalls = 0;
+            this.rateLimitHits = 0;
+            this.successfulBursts = 0;
+            this.intraBurstDelay = CONFIG.INTRA_BURST_DELAY || 0;
+            
+            // Smart burst learning
+            this.rateLimitPositions = []; // Track where in bursts we hit rate limits
+            this.optimalBurstSize = burstLimit; // Learned optimal size
+            this.consecutiveSuccesses = 0;
+            
+            // Rolling window for accurate rate tracking (last 60 seconds)
+            this.recentCalls = []; // Array of timestamps for recent calls
+            
+            console.log(`🚀 Enhanced BurstRateLimiter: ${burstLimit} calls/burst, ${(recoveryTime * safetyMargin / 1000).toFixed(1)}s recovery, ${this.intraBurstDelay}ms intra-burst delay`);
+            console.log(`🛑 Hard rate cap: ${CONFIG.MAX_REQUESTS_PER_MINUTE} requests/minute maximum`);
+        }
+
+        // Adaptive adjustment when we hit unexpected rate limits (intelligent learning)
+        adaptToBurstLimit() {
+            this.rateLimitHits++;
+            this.rateLimitPositions.push(this.callCount); // Record where the 429 occurred
+            this.consecutiveSuccesses = 0; // Reset success counter
+            
+            console.log(`⚠️ Rate limit hit at position ${this.callCount} in burst (hit #${this.rateLimitHits})`);
+            
+            if (CONFIG.SMART_BURST_SIZE) {
+                // Learn the optimal burst size from where rate limits actually occur
+                const avgRateLimitPosition = this.rateLimitPositions.reduce((a, b) => a + b, 0) / this.rateLimitPositions.length;
+                const safetyBuffer = 5; // 5-call safety buffer
+                this.optimalBurstSize = Math.max(15, Math.floor(avgRateLimitPosition - safetyBuffer));
+                
+                console.log(`🧠 Learning: Rate limits occur around position ${avgRateLimitPosition.toFixed(1)}, setting optimal burst size to ${this.optimalBurstSize}`);
+                this.burstLimit = this.optimalBurstSize;
+            } else {
+                // Original logic with resilient mode
+                let reductionFactor, minLimit;
+                
+                if (CONFIG.RESILIENT_MODE) {
+                    if (this.rateLimitHits === 1) {
+                        reductionFactor = 0.95; // Only 5% reduction
+                        minLimit = 60;
+                        console.log(`⚠️ First rate limit hit - minimal adaptation (5% reduction)`);
+                    } else if (this.rateLimitHits === 2) {
+                        reductionFactor = 0.90; // 10% reduction
+                        minLimit = 45;
+                        console.log(`⚠️ Second rate limit hit - moderate adaptation (10% reduction)`);
+                    } else {
+                        reductionFactor = 0.80; // 20% reduction
+                        minLimit = 30;
+                        console.log(`⚠️ Multiple rate limits - aggressive adaptation (20% reduction)`);
+                    }
+                } else {
+                    reductionFactor = 0.90;
+                    minLimit = 20;
+                }
+                
+                const newLimit = Math.max(minLimit, Math.floor(this.callCount * reductionFactor));
+                this.burstLimit = newLimit;
+            }
+            
+            // Minimal recovery time adjustment
+            const recoveryMultiplier = CONFIG.RESILIENT_MODE ? 1.01 : 1.02; // Almost no increase
+            this.recoveryTime = Math.min(15000, this.recoveryTime * recoveryMultiplier);
+            
+            console.log(`📉 Burst limit: ${this.burstLimit}, Recovery: ${(this.recoveryTime/1000).toFixed(1)}s`);
+        }
+
+        // Speed up when things are going well (enhanced with learning)
+        adaptToSuccess() {
+            this.successfulBursts++;
+            this.consecutiveSuccesses++;
+            
+            const successThreshold = CONFIG.AGGRESSIVE_RECOVERY ? 1 : 2; // Very aggressive success threshold
+            
+            if (this.consecutiveSuccesses >= successThreshold && CONFIG.ADAPTIVE_RATE_LIMITING) {
+                
+                if (CONFIG.SMART_BURST_SIZE && this.rateLimitPositions.length > 0) {
+                    // Intelligently increase towards learned optimal, but cautiously
+                    const learnedOptimal = this.optimalBurstSize;
+                    const currentGap = learnedOptimal - this.burstLimit;
+                    
+                    if (currentGap > 0) {
+                        const increaseAmount = Math.min(3, Math.ceil(currentGap * 0.3)); // Gradual increase
+                        const newLimit = Math.min(learnedOptimal, this.burstLimit + increaseAmount);
+                        
+                        if (newLimit > this.burstLimit) {
+                            console.log(`📈 Smart increase: ${this.burstLimit} → ${newLimit} (towards learned optimal ${learnedOptimal})`);
+                            this.burstLimit = newLimit;
+                        }
+                    }
+                } else {
+                    // Original logic
+                    if (this.burstLimit < this.originalBurstLimit) {
+                        const increaseAmount = CONFIG.AGGRESSIVE_RECOVERY ? 8 : 5;
+                        const newLimit = Math.min(this.originalBurstLimit, this.burstLimit + increaseAmount);
+                        console.log(`📈 Increasing burst limit: ${this.burstLimit} → ${newLimit} (${this.successfulBursts} successful bursts)`);
+                        this.burstLimit = newLimit;
+                    }
+                }
+                
+                // Aggressively reduce recovery time
+                if (this.recoveryTime > this.baseRecoveryTime * CONFIG.RATE_LIMIT_SAFETY_MARGIN) {
+                    const reductionFactor = CONFIG.AGGRESSIVE_RECOVERY ? 0.8 : 0.9; // Faster reduction
+                    this.recoveryTime = Math.max(
+                        this.baseRecoveryTime * CONFIG.RATE_LIMIT_SAFETY_MARGIN, 
+                        this.recoveryTime * reductionFactor
+                    );
+                    console.log(`⏩ Reduced recovery time to ${(this.recoveryTime/1000).toFixed(1)}s`);
+                }
+            }
+        }
+
+        async throttle() {
+            const now = Date.now();
+            
+            // HARD CAP: Enforce maximum requests per minute using rolling window
+            const rollingRate = this.getRollingWindowRate();
+            const sessionRate = this.getRequestsPerMinute();
+            
+            // Use the higher of the two rates for safety
+            const currentRate = Math.max(rollingRate, sessionRate);
+            
+            if (currentRate >= CONFIG.MAX_REQUESTS_PER_MINUTE && this.totalCalls > 5) {
+                const rateCap = CONFIG.MAX_REQUESTS_PER_MINUTE;
+                const excessRate = currentRate - rateCap;
+                
+                // Calculate delay needed to bring rate back under cap
+                // More aggressive delay calculation based on excess
+                const baseDelay = Math.max(1000, 60000 / rateCap); // Minimum interval between requests
+                const excessMultiplier = 1 + (excessRate / rateCap); // Scale delay based on how much we're over
+                const requiredDelay = Math.min(10000, baseDelay * excessMultiplier); // Cap at 10 seconds
+                
+                console.log(`🛑 HARD CAP ENFORCED: Rolling=${rollingRate}, Session=${sessionRate.toFixed(1)} >= ${rateCap} req/min`);
+                console.log(`🛑 Adding ${Math.round(requiredDelay)}ms delay (excess: ${excessRate.toFixed(1)} req/min)`);
+                
+                await sleep(requiredDelay);
+                
+                // Log the rate after delay
+                const newRollingRate = this.getRollingWindowRate();
+                console.log(`🛑 Rate after delay: Rolling=${newRollingRate} req/min`);
+            }
+            
+            // Add small delay between requests within a burst to be respectful
+            if (this.intraBurstDelay > 0 && this.lastCallTime > 0) {
+                const timeSinceLastCall = now - this.lastCallTime;
+                if (timeSinceLastCall < this.intraBurstDelay) {
+                    await sleep(this.intraBurstDelay - timeSinceLastCall);
+                }
+            }
+            
+            // Reset burst count if enough time has passed since last burst
+            if (now - this.lastBurstTime > this.recoveryTime) {
+                if (this.callCount > 0) {
+                    console.log(`🔄 Burst limit reset (${((now - this.lastBurstTime) / 1000).toFixed(1)}s elapsed)`);
+                    this.adaptToSuccess(); // Reward successful completion
+                }
+                this.callCount = 0;
+            }
+            
+            // If we're at the start of a new burst
+            if (this.callCount === 0) {
+                this.burstStartTime = now;
+                // Set session start time on very first call
+                if (this.sessionStartTime === 0) {
+                    this.sessionStartTime = now;
+                }
+            }
+            
+            // If we've hit the burst limit, wait for recovery
+            if (this.callCount >= this.burstLimit) {
+                const timeSinceBurst = now - this.burstStartTime;
+                const waitTime = Math.max(0, this.recoveryTime - timeSinceBurst);
+                
+                if (waitTime > 0) {
+                    console.log(`⏳ Burst limit reached (${this.callCount}/${this.burstLimit}), waiting ${(waitTime/1000).toFixed(1)}s...`);
+                    console.log(`📊 Current rate: ~${this.getRequestsPerMinute()} requests/minute`);
+                    await sleep(waitTime);
+                }
+                
+                // Reset for next burst
+                this.callCount = 0;
+                this.burstStartTime = Date.now();
+            }
+            
+            this.callCount++;
+            this.totalCalls++;
+            this.lastBurstTime = now;
+            this.lastCallTime = now;
+            
+            // Track this call in rolling window
+            this.recentCalls.push(now);
+            
+            if (this.callCount === 1) {
+                console.log(`📡 Starting new burst (${this.totalCalls} total calls)`);
+            } else if (this.callCount % 15 === 0 || this.callCount >= this.burstLimit - 5) {
+                console.log(`📡 Burst progress: ${this.callCount}/${this.burstLimit} | ${this.getRequestsPerMinute()} req/min | Rolling: ${this.getRollingWindowRate()} req/min`);
+            }
+        }
+
+        // Get requests per minute using a rolling 60-second window (more accurate for hard cap)
+        getRollingWindowRate() {
+            const now = Date.now();
+            const oneMinuteAgo = now - 60000;
+            
+            // Clean old calls and count recent ones
+            this.recentCalls = this.recentCalls.filter(timestamp => timestamp > oneMinuteAgo);
+            
+            return this.recentCalls.length;
+        }
+
+        getRequestsPerMinute() {
+            if (this.totalCalls < 2) return 0;
+            
+            // Use session start time for overall rate calculation (more accurate for rate limiting)
+            const startTime = this.sessionStartTime || this.burstStartTime;
+            const elapsedMs = Date.now() - startTime;
+            const elapsedMinutes = elapsedMs / 60000;
+            
+            if (elapsedMinutes <= 0) return 0;
+            
+            // For very short durations, use a minimum elapsed time to prevent inflated rates
+            const minElapsedMinutes = Math.max(elapsedMinutes, 0.1); // At least 6 seconds
+            const rate = this.totalCalls / minElapsedMinutes;
+            
+            // Cap the rate calculation for early session anomalies
+            return Math.min(Math.round(rate), 500); // Cap at 500 to prevent crazy early numbers
+        }
+
+        getStats() {
+            return {
+                currentBurstCount: this.callCount,
+                burstLimit: this.burstLimit,
+                originalBurstLimit: this.originalBurstLimit,
+                optimalBurstSize: this.optimalBurstSize || this.burstLimit,
+                totalCalls: this.totalCalls,
+                rateLimitHits: this.rateLimitHits,
+                rateLimitPositions: this.rateLimitPositions,
+                successfulBursts: this.successfulBursts,
+                consecutiveSuccesses: this.consecutiveSuccesses,
+                timeSinceLastCall: Date.now() - this.lastBurstTime,
+                requestsPerMinute: this.getRequestsPerMinute(),
+                rollingWindowRate: this.getRollingWindowRate(),
+                recoveryTime: this.recoveryTime,
+                intraBurstDelay: this.intraBurstDelay
+            };
+        }
+    }
+
+    // Legacy APIRateLimiter for signal analysis (still uses simple delay)
     class APIRateLimiter {
         constructor(delay = 500) {
             this.delay = delay;
@@ -187,7 +472,13 @@
         }
     }
 
-    const rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY);
+    // Create rate limiter instances
+    const rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // For signal analysis
+    const burstRateLimiter = new BurstRateLimiter(
+        CONFIG.RATE_LIMIT_THRESHOLD, 
+        CONFIG.RATE_LIMIT_RECOVERY, 
+        CONFIG.RATE_LIMIT_SAFETY_MARGIN
+    ); // For backtester API - Enhanced with adaptive behavior
 
     // Format functions for signal analysis
     function formatTimestamp(timestamp) {
@@ -234,6 +525,137 @@
         }
         return completeConfig;
     }
+
+    // Get selected trigger mode from UI
+    function getTriggerMode() {
+        const triggerSelect = document.getElementById('trigger-mode-select');
+        if (triggerSelect) {
+            const value = triggerSelect.value;
+            return value === '' ? null : parseInt(value); // Handle empty string for "Bullish Bonding"
+        }
+        return 4; // Default to Launchpads if no selection
+    }
+
+    // ========================================
+    // 🖥️ BEST CONFIG DISPLAY SYSTEM - Updates existing UI section
+    // ========================================
+    class OptimizationTracker {
+        constructor() {
+            this.currentBest = null;
+            this.totalTests = 0;
+            this.failedTests = 0;
+            this.startTime = null;
+            this.isRunning = false;
+        }
+
+        startOptimization() {
+            this.isRunning = true;
+            this.startTime = Date.now();
+            this.totalTests = 0;
+            this.failedTests = 0;
+            this.currentBest = null;
+            this.updateBestConfigDisplay();
+        }
+
+        stopOptimization() {
+            this.isRunning = false;
+            // Keep display showing final results
+        }
+
+        updateProgress(testCount, failedCount, currentBest = null) {
+            this.totalTests = testCount;
+            this.failedTests = failedCount;
+            if (currentBest) this.currentBest = currentBest;
+            
+            this.updateBestConfigDisplay();
+        }
+
+        setCurrentBest(result, method = 'Unknown') {
+            if (result && result.metrics) {
+                this.currentBest = {
+                    metrics: result.metrics,
+                    config: result.config,
+                    method: method,
+                    timestamp: Date.now()
+                };
+                this.updateBestConfigDisplay();
+            }
+        }
+
+        updateBestConfigDisplay() {
+            const displayElement = document.getElementById('best-config-display');
+            const statsElement = document.getElementById('best-config-stats');
+            
+            if (!displayElement || !statsElement) return;
+
+            // Show the section
+            displayElement.style.display = 'block';
+
+            const runtime = this.startTime ? (Date.now() - this.startTime) / 1000 : 0;
+            const runtimeMin = Math.floor(runtime / 60);
+            const runtimeSec = Math.floor(runtime % 60);
+            const testsPerMin = runtime > 0 ? (this.totalTests / (runtime / 60)).toFixed(1) : '0';
+            
+            // Get burst rate limiter stats
+            const burstStats = burstRateLimiter.getStats();
+
+            let content = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 10px;">
+                    <div>Tests: <span style="color: #4CAF50; font-weight: bold;">${this.totalTests}</span></div>
+                    <div>Failed: <span style="color: ${this.failedTests > 0 ? '#ff9800' : '#666'};">${this.failedTests}</span></div>
+                    <div>Runtime: <span style="color: #4CAF50;">${runtimeMin}m ${runtimeSec}s</span></div>
+                    <div>Rate: <span style="color: #4CAF50;">${testsPerMin}/min</span></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 9px; opacity: 0.8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
+                    <div>🚀 Burst: <span style="color: #4ECDC4;">${burstStats.currentBurstCount}/${burstStats.burstLimit}</span></div>
+                    <div>📡 Total: <span style="color: #4ECDC4;">${burstStats.totalCalls}</span></div>
+                    <div>📊 Session: <span style="color: #4ECDC4;">${burstStats.requestsPerMinute}/min</span></div>
+                    <div>⏱️ Rolling: <span style="color: ${burstStats.rollingWindowRate >= CONFIG.MAX_REQUESTS_PER_MINUTE ? '#ff9800' : '#4ECDC4'};">${burstStats.rollingWindowRate}/min</span></div>
+                    ${burstStats.rateLimitHits > 0 ? `<div>⚠️ Rate Hits: <span style="color: #ff9800;">${burstStats.rateLimitHits}</span></div>` : ''}
+                </div>
+            `;
+
+            if (this.currentBest && this.currentBest.metrics) {
+                const metrics = this.currentBest.metrics;
+                
+                content += `
+                    <div style="border-top: 1px solid rgba(76, 175, 80, 0.3); padding-top: 8px; margin-bottom: 8px;">
+                        <div style="font-size: 11px; font-weight: bold; color: #4CAF50; margin-bottom: 4px;">🏆 Current Best:</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
+                            <div>Score: <span style="color: #4CAF50; font-weight: bold;">${metrics.score?.toFixed(1) || 'N/A'}</span></div>
+                            <div>Tokens: <span style="color: #fff;">${metrics.tokensMatched || 0}</span></div>
+                            <div>TP PnL: <span style="color: ${(metrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(metrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
+                            <div>Win Rate: <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
+                        </div>
+                        <div style="font-size: 9px; color: #aaa; margin-top: 4px;">Method: ${this.currentBest.method}</div>
+                    </div>
+                `;
+
+                // Update global reference for the apply buttons
+                window.currentBestConfig = this.currentBest.config;
+            } else if (this.isRunning) {
+                content += `
+                    <div style="text-align: center; padding: 8px; font-size: 10px; color: #aaa;">
+                        🔍 Searching for optimal configuration...
+                    </div>
+                `;
+            }
+
+            // Add rate limiting warning if many failures
+            if (this.failedTests > this.totalTests * 0.3 && this.totalTests > 5) {
+                content += `
+                    <div style="margin-top: 8px; margin-bottom: 8px; padding: 6px; background: rgba(255, 152, 0, 0.1); border: 1px solid #ff9800; border-radius: 4px; font-size: 9px; color: #ff9800;">
+                        ⚠️ High failure rate detected. Burst rate limiter may need adjustment - check console for details.
+                    </div>
+                `;
+            }
+
+            statsElement.innerHTML = content;
+        }
+    }
+
+    // Global optimization tracker instance
+    window.optimizationTracker = new OptimizationTracker();
 
     // ========================================
     // 🌐 API FUNCTIONS (from AGSignalExtractor)
@@ -314,7 +736,365 @@
     }
 
     // ========================================
-    // 📊 UI METRICS EXTRACTOR (Enhanced from original AGCopilot)
+    // � BACKTESTER API INTEGRATION (New: Direct API calls instead of UI scraping)
+    // ========================================
+    class BacktesterAPI {
+        constructor() {
+            this.baseUrl = 'https://backtester.alphagardeners.xyz/api/stats';
+        }
+
+        // Map AGCopilot parameter names to API parameter names
+        mapParametersToAPI(config) {
+            const apiParams = {};
+            
+            // Flatten the config structure first
+            const flatConfig = this.flattenConfig(config);
+            
+            // Parameter mapping from AGCopilot names to API names
+            const parameterMap = {
+                // Basic parameters
+                'Min MCAP (USD)': 'minMcap',
+                'Max MCAP (USD)': 'maxMcap',
+                
+                // Token Details
+                'Min Deployer Age (min)': 'minDeployerAge',
+                'Min Token Age (sec)': 'minTokenAge',
+                'Max Token Age (sec)': 'maxTokenAge', 
+                'Min AG Score': 'minAgScore',
+                
+                // Wallets
+                'Min Holders': 'minHolders',
+                'Max Holders': 'maxHolders',
+                'Min Unique Wallets': 'minUniqueWallets',
+                'Max Unique Wallets': 'maxUniqueWallets',
+                'Min KYC Wallets': 'minKycWallets',
+                'Max KYC Wallets': 'maxKycWallets',
+                
+                // Risk
+                'Min Bundled %': 'minBundledPercent',
+                'Max Bundled %': 'maxBundledPercent',
+                'Min Deployer Balance (SOL)': 'minDeployerBalance',
+                'Min Buy Ratio %': 'minBuyRatio',
+                'Max Buy Ratio %': 'maxBuyRatio',
+                'Min Vol MCAP %': 'minVolMcapPercent',
+                'Max Vol MCAP %': 'maxVolMcapPercent',
+                'Max Drained %': 'maxDrainedPercent',
+                'Max Drained Count': 'maxDrainedCount',
+                
+                // Advanced
+                'Min TTC (sec)': 'minTtc',
+                'Max TTC (sec)': 'maxTtc',
+                'Max Liquidity %': 'maxLiquidityPct',
+                'Min Win Pred %': 'minWinPred',
+                
+                // Boolean fields
+                'Description': 'needsDescription',
+                'Fresh Deployer': 'needsFreshDeployer'
+            };
+            
+            // Map parameters
+            Object.entries(parameterMap).forEach(([agCopilotName, apiName]) => {
+                const value = flatConfig[agCopilotName];
+                if (value !== undefined && value !== null && value !== '') {
+                    // Handle boolean conversions
+                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer') {
+                        if (value === true || value === 'Yes') {
+                            apiParams[apiName] = true;
+                        } else if (value === false || value === 'No') {
+                            apiParams[apiName] = false;
+                        }
+                        // "Don't care" or undefined -> don't include parameter
+                    } else {
+                        // Handle numeric parameters - validate and convert
+                        const numericValue = parseFloat(value);
+                        
+                        // Skip if value is NaN, Infinity, or not a valid number
+                        if (isNaN(numericValue) || !isFinite(numericValue)) {
+                            console.log(`⚠️ Skipping invalid ${apiName}: ${value} (NaN or invalid)`);
+                            return; // Skip this parameter
+                        }
+                        
+                        // Special handling for AG Score (must be integer 0-10)
+                        if (apiName === 'minAgScore') {
+                            const agScore = Math.round(numericValue);
+                            if (agScore < 0 || agScore > 10) {
+                                console.log(`⚠️ AG Score out of range: ${agScore}, clamping to 0-10`);
+                                apiParams[apiName] = Math.max(0, Math.min(10, agScore));
+                            } else {
+                                apiParams[apiName] = agScore;
+                            }
+                        } else {
+                            // For other numeric parameters, use the validated number
+                            apiParams[apiName] = numericValue;
+                        }
+                    }
+                }
+            });
+            
+            // Add default parameters that are usually present
+            const triggerMode = getTriggerMode();
+            if (triggerMode !== null) {
+                apiParams.triggerMode = triggerMode; // Use selected trigger mode (skip if null for Bullish Bonding)
+            }
+            apiParams.excludeSpoofedTokens = true;
+            apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
+            // Note: Multiple TP parameters (tpSize/tpGain) are added directly in buildApiUrl()
+            
+            return apiParams;
+        }
+        
+        // Flatten nested config structure
+        flattenConfig(config) {
+            const flat = {};
+            
+            if (typeof config === 'object' && config !== null) {
+                Object.values(config).forEach(section => {
+                    if (typeof section === 'object' && section !== null) {
+                        Object.assign(flat, section);
+                    }
+                });
+            }
+            
+            return flat;
+        }
+        
+        // Validate min/max parameter pairs
+        validateConfig(apiParams) {
+            const validationErrors = [];
+            
+            const minMaxPairs = [
+                ['minMcap', 'maxMcap'],
+                ['minAgScore', 'maxAgScore'],
+                ['minTokenAge', 'maxTokenAge'],
+                ['minTtc', 'maxTtc'],
+                ['minLiquidity', 'maxLiquidity'],
+                ['minLiquidityPct', 'maxLiquidityPct'],
+                ['minUniqueWallets', 'maxUniqueWallets'],
+                ['minKycWallets', 'maxKycWallets'],
+                ['minHolders', 'maxHolders'],
+                ['minBundledPercent', 'maxBundledPercent'],
+                ['minBuyRatio', 'maxBuyRatio'],
+                ['minVolMcapPercent', 'maxVolMcapPercent'],
+                ['minDrainedPercent', 'maxDrainedPercent']
+            ];
+            
+            minMaxPairs.forEach(([minKey, maxKey]) => {
+                const minVal = apiParams[minKey];
+                const maxVal = apiParams[maxKey];
+                
+                if (minVal !== undefined && maxVal !== undefined && 
+                    !isNaN(minVal) && !isNaN(maxVal) && 
+                    parseFloat(minVal) > parseFloat(maxVal)) {
+                    validationErrors.push(`${minKey}(${minVal}) > ${maxKey}(${maxVal})`);
+                }
+            });
+            
+            return {
+                isValid: validationErrors.length === 0,
+                errors: validationErrors
+            };
+        }
+        
+        // Build API URL from parameters
+        buildApiUrl(apiParams) {
+            const params = new URLSearchParams();
+            
+            Object.entries(apiParams).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && value !== '') {
+                    // Additional validation before adding to URL
+                    if (typeof value === 'number') {
+                        // Skip NaN or infinite numbers
+                        if (isNaN(value) || !isFinite(value)) {
+                            console.log(`⚠️ Skipping invalid numeric parameter ${key}: ${value}`);
+                            return;
+                        }
+                    }
+                    
+                    // Convert value to string and validate
+                    const stringValue = String(value);
+                    if (stringValue === 'NaN' || stringValue === 'undefined' || stringValue === 'null') {
+                        console.log(`⚠️ Skipping invalid string parameter ${key}: ${stringValue}`);
+                        return;
+                    }
+                    
+                    params.append(key, stringValue);
+                }
+            });
+            
+            // Add multiple TP (Take Profit) parameters for accurate pnlSolTp calculations
+            const tpParams = CONFIG.TP_CONFIGURATIONS
+                .map(tp => `tpSize=${tp.size}&tpGain=${tp.gain}`)
+                .join('&');
+            
+            return `${this.baseUrl}?${params.toString()}&${tpParams}`;
+        }
+        
+        // Fetch results from API
+        async fetchResults(config, retries = 3) {
+            try {
+                // Use burst rate limiting for optimal performance
+                await burstRateLimiter.throttle();
+                
+                // Map AGCopilot config to API parameters
+                const apiParams = this.mapParametersToAPI(config);
+                
+                // Validate parameters
+                const validation = this.validateConfig(apiParams);
+                if (!validation.isValid) {
+                    return { 
+                        success: true, 
+                        error: 'Skipping Invalid configuration: ' + validation.errors.join(', '),
+                        validation: validation.errors
+                    };
+                }
+                
+                const url = this.buildApiUrl(apiParams);
+                
+                // Debug logging for problematic parameters
+                const problematicParams = [];
+                Object.entries(apiParams).forEach(([key, value]) => {
+                    if (value === null || value === undefined || String(value) === 'NaN' || !isFinite(Number(value))) {
+                        problematicParams.push(`${key}=${value}`);
+                    }
+                });
+                
+                if (problematicParams.length > 0) {
+                    console.warn(`⚠️ Potential problematic parameters detected: ${problematicParams.join(', ')}`);
+                }
+                
+                console.log(`🔗 API URL: ${url.substring(0, 150)}...${url.includes('tpSize') ? ' (with multiple TPs)' : ''}`);
+                
+                // Additional validation for AG Score in URL
+                if (url.includes('minAgScore=NaN') || url.includes('minAgScore=undefined')) {
+                    console.error(`❌ CRITICAL: NaN/undefined AG Score detected in URL! This will cause 500 error.`);
+                    return { 
+                        success: false, 
+                        error: 'Invalid AG Score parameter (NaN/undefined) detected in API URL',
+                        source: 'URL_VALIDATION'
+                    };
+                }
+                
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'GET',
+                            credentials: 'include',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            if (response.status === 429) {
+                                // Rate limited - adapt the burst limiter and handle gracefully
+                                console.warn(`⚠️ Rate limit hit (429) on attempt ${attempt}/${retries}`);
+                                burstRateLimiter.adaptToBurstLimit();
+                                
+                                const retryAfter = response.headers.get('Retry-After');
+                                let waitTime = retryAfter ? parseInt(retryAfter) * 1000 : CONFIG.RATE_LIMIT_RECOVERY;
+                                
+                                // For subsequent retries, use exponential backoff
+                                if (attempt > 1) {
+                                    waitTime *= Math.pow(1.5, attempt - 1);
+                                }
+                                
+                                console.warn(`⏳ Waiting ${(waitTime/1000).toFixed(1)}s before retry...`);
+                                console.warn(`📊 Burst limiter adapted: ${burstRateLimiter.burstLimit} calls/burst, ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s recovery`);
+                                
+                                if (attempt < retries) {
+                                    await sleep(waitTime);
+                                    continue;
+                                } else {
+                                    // On final retry failure, return a special result to continue optimization
+                                    return {
+                                        success: false,
+                                        error: 'Rate limit exceeded after all retries',
+                                        isRateLimit: true,
+                                        retryable: true
+                                    };
+                                }
+                            }
+                            
+                            // Handle 500 errors specifically (often caused by invalid parameters)
+                            if (response.status === 500) {
+                                console.error(`❌ Server Error (500) - likely invalid parameters`);
+                                console.error(`🔍 Full API URL: ${url}`);
+                                
+                                // Extract and show potentially problematic parameters
+                                const urlParams = new URLSearchParams(url.split('?')[1]);
+                                const suspiciousParams = [];
+                                for (const [key, value] of urlParams.entries()) {
+                                    if (value === 'NaN' || value === 'undefined' || value === 'null' || value === '') {
+                                        suspiciousParams.push(`${key}=${value}`);
+                                    }
+                                }
+                                
+                                if (suspiciousParams.length > 0) {
+                                    console.error(`🐛 Suspicious parameters found: ${suspiciousParams.join(', ')}`);
+                                }
+                                
+                                throw new Error(`Server Error (500) - Invalid parameters detected: ${suspiciousParams.join(', ') || 'Unknown cause'}`);
+                            }
+                            
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const data = await response.json();
+                        
+                        // Transform to AGCopilot expected format
+                        const transformedMetrics = {
+                            tokensMatched: data.totalTokens || 0,
+                            tpPnlPercent: data.averageTpGain || 0,
+                            tpPnlSOL: data.pnlSolTp || 0,
+                            athPnlPercent: data.averageAthGain || 0,
+                            athPnlSOL: data.pnlSolAth || 0,
+                            totalSpent: data.totalSolSpent || 0,
+                            winRate: data.winRate || 0,
+                            cleanPnL: data.cleanPnL || 0,
+                            totalSignals: data.totalAvailableSignals || 0
+                        };
+                        
+                        return {
+                            success: true,
+                            metrics: transformedMetrics,
+                            rawResponse: data,
+                            source: 'API'
+                        };
+                        
+                    } catch (error) {
+                        console.warn(`❌ API attempt ${attempt} failed: ${error.message}`);
+                        
+                        if (attempt === retries) {
+                            return {
+                                success: false,
+                                error: error.message,
+                                source: 'API'
+                            };
+                        }
+                        
+                        // For 429 errors, we already slept above; for other errors, use shorter backoff
+                        if (!error.message.includes('429')) {
+                            await sleep(1000 * attempt);
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                return {
+                    success: false,
+                    error: error.message,
+                    source: 'API'
+                };
+            }
+        }
+    }
+
+    // Initialize the API client
+    const backtesterAPI = new BacktesterAPI();
+
+    // ========================================
+    // �📊 UI METRICS EXTRACTOR (Enhanced from original AGCopilot)
     // ========================================
     async function extractMetricsFromUI() {
         try {
@@ -453,7 +1233,94 @@
         };
     }
 
-    // Test configuration via UI interaction (like original AGCopilot but with enhanced metrics)
+    // Clean and validate configuration values before API calls
+    function cleanConfiguration(config) {
+        const cleanedConfig = deepClone(config);
+        
+        // Recursively clean all values in the configuration
+        function cleanValue(obj) {
+            if (typeof obj === 'object' && obj !== null) {
+                for (const [key, value] of Object.entries(obj)) {
+                    if (typeof value === 'object' && value !== null) {
+                        cleanValue(value); // Recurse into nested objects
+                    } else {
+                        // Clean individual values
+                        if (value === null || value === undefined || value === '') {
+                            delete obj[key]; // Remove empty values
+                        } else if (typeof value === 'string') {
+                            // Handle string representations of numbers
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && isFinite(numValue)) {
+                                // Special handling for AG Score
+                                if (key === 'Min AG Score') {
+                                    const agScore = Math.round(numValue);
+                                    obj[key] = Math.max(0, Math.min(10, agScore)); // Clamp to 0-10
+                                } else {
+                                    obj[key] = numValue; // Convert valid numeric strings to numbers
+                                }
+                            } else if (value === 'NaN' || value === 'undefined' || value === 'null') {
+                                delete obj[key]; // Remove invalid string values
+                            }
+                        } else if (typeof value === 'number') {
+                            // Handle numeric values
+                            if (isNaN(value) || !isFinite(value)) {
+                                delete obj[key]; // Remove NaN or infinite numbers
+                            } else if (key === 'Min AG Score') {
+                                const agScore = Math.round(value);
+                                obj[key] = Math.max(0, Math.min(10, agScore)); // Clamp AG Score to 0-10
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        cleanValue(cleanedConfig);
+        return cleanedConfig;
+    }
+
+    // Test configuration via API call (New: Direct API instead of UI scraping)
+    async function testConfigurationAPI(config, testName = 'API Test') {
+        try {
+            console.log(`🧪 Testing via API: ${testName}`);
+            
+            // Clean the configuration before testing
+            const cleanedConfig = cleanConfiguration(config);
+            
+            // Use the new API to get results directly
+            const result = await backtesterAPI.fetchResults(cleanedConfig);
+            
+            if (!result.success) {
+                console.warn(`❌ ${testName} failed: ${result.error}`);
+                return result;
+            }
+            
+            const metrics = result.metrics;
+            
+            // Calculate robust score for logging
+            const robustScoring = calculateRobustScore(metrics);
+            if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
+                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+            } else {
+                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+            }
+
+            return {
+                success: true,
+                metrics,
+                source: 'API'
+            };
+            
+        } catch (error) {
+            console.warn(`❌ ${testName} failed: ${error.message}`);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // Test configuration via UI interaction (Legacy: kept as fallback)
     async function testConfigurationUI(config, testName = 'UI Test') {
         try {
             console.log(`🧪 Testing: ${testName}`);
@@ -466,8 +1333,20 @@
                 return { success: false, error: 'Failed to apply configuration' };
             }
 
-            // 2. Wait for UI to update (same as original AGCopilot)
-            await sleep(CONFIG.BACKTEST_WAIT);
+            // 2. Wait for UI to update (same as original AGCopilot) - with stop check
+            const waitTime = CONFIG.BACKTEST_WAIT;
+            const checkInterval = 500; // Check stop flag every 500ms
+            let elapsed = 0;
+            
+            while (elapsed < waitTime) {
+                if (window.STOPPED) {
+                    console.log('⏹️ Optimization stopped during UI wait');
+                    return { success: false, error: 'Stopped by user' };
+                }
+                const sleepTime = Math.min(checkInterval, waitTime - elapsed);
+                await sleep(sleepTime);
+                elapsed += sleepTime;
+            }
 
             // 3. Extract metrics from UI (enhanced to get accurate TP PnL %)
             const metrics = await extractMetricsFromUI();
@@ -1646,6 +2525,7 @@
 
     // ========================================
     // 🧬 ADVANCED OPTIMIZATION COMPONENTS
+    // Latin Hypercube Sampling, Simulated Annealing, and Genetic Algorithms
     // ========================================
     
     // Latin Hypercube Sampler for better parameter space exploration
@@ -1798,7 +2678,7 @@
     // 🧬 ENHANCED OPTIMIZER CLASS
     // ========================================
     class EnhancedOptimizer {
-        constructor() {
+        constructor(initialConfig = null) {
             this.configCache = new ConfigCache(1000);
             this.bestConfig = null;
             this.bestScore = -Infinity;
@@ -1806,6 +2686,9 @@
             this.testCount = 0;
             this.startTime = Date.now();
             this.history = [];
+            
+            // Store initial configuration to start from
+            this.initialConfig = initialConfig;
             
             // Parameter tracking
             this.parameterTests = [];
@@ -1871,12 +2754,16 @@
             }
         }
 
-        // Main test function - uses UI interaction (like original) with enhanced metrics
+        // Main test function - uses API call (New: Direct API instead of UI interaction)
         async testConfig(config, testName) {
-            if (STOPPED) return { success: false };
+            if (window.STOPPED) return { success: false };
 
             try {
                 this.testCount++;
+                let failedCount = this.history.filter(h => !h.success).length;
+                
+                // Update optimization tracker
+                window.optimizationTracker.updateProgress(this.testCount, failedCount);
                 
                 // Ensure config is complete before testing
                 const completeConfig = ensureCompleteConfig(config);
@@ -1888,10 +2775,20 @@
                     return cachedResult;
                 }
                 
-                // Test via UI interaction (like original AGCopilot)
-                const result = await testConfigurationUI(completeConfig, testName);
+                // Test via API call (New: much faster and more reliable)
+                const result = await testConfigurationAPI(completeConfig, testName);
                 
                 if (!result.success) {
+                    // Track failed test
+                    this.history.push({
+                        testName,
+                        config: completeConfig,
+                        success: false,
+                        error: result.error,
+                        testNumber: this.testCount,
+                        timestamp: new Date().toISOString()
+                    });
+                    
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, result);
                     }
@@ -1903,6 +2800,17 @@
                 // Validate metrics
                 if (metrics.tpPnlPercent === undefined || metrics.tokensMatched < CONFIG.MIN_TOKENS) {
                     const failResult = { success: false, reason: 'insufficient_tokens' };
+                    
+                    // Track failed test
+                    this.history.push({
+                        testName,
+                        config: completeConfig,
+                        success: false,
+                        reason: 'insufficient_tokens',
+                        testNumber: this.testCount,
+                        timestamp: new Date().toISOString()
+                    });
+                    
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, failResult);
                     }
@@ -1913,6 +2821,17 @@
                 const robustScoring = calculateRobustScore(metrics);
                 if (!robustScoring) {
                     const failResult = { success: false, reason: 'scoring_failed' };
+                    
+                    // Track failed test
+                    this.history.push({
+                        testName,
+                        config: completeConfig,
+                        success: false,
+                        reason: 'scoring_failed',
+                        testNumber: this.testCount,
+                        timestamp: new Date().toISOString()
+                    });
+                    
                     if (CONFIG.USE_CONFIG_CACHING) {
                         this.configCache.set(completeConfig, failResult);
                     }
@@ -1936,6 +2855,12 @@
                     this.bestScore = currentScore;
                     this.bestMetrics = metrics;
                     
+                    // Update optimization tracker with current best
+                    window.optimizationTracker.setCurrentBest({
+                        metrics: { ...metrics, score: currentScore },
+                        config: completeConfig
+                    }, testName);
+                    
                     // Enhanced logging with robust scoring details
                     if (CONFIG.USE_ROBUST_SCORING && metrics.robustScoring) {
                         const rs = metrics.robustScoring;
@@ -1958,7 +2883,19 @@
                         testName,
                         config: completeConfig,
                         metrics,
+                        success: true,
                         improvement: improvement.toFixed(1),
+                        testNumber: this.testCount,
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    // Track successful test (even if not improvement)
+                    this.history.push({
+                        testName,
+                        config: completeConfig,
+                        metrics,
+                        success: true,
+                        improvement: 0,
                         testNumber: this.testCount,
                         timestamp: new Date().toISOString()
                     });
@@ -1981,40 +2918,21 @@
         async establishBaseline() {
             console.log('📊 Establishing baseline configuration...');
             
-            // Check if a preset was selected
-            const presetDropdown = document.getElementById('preset-dropdown');
-            const hasPresetSelected = presetDropdown && presetDropdown.value && presetDropdown.value !== '';
-            
             let baselineConfig;
             
-            if (hasPresetSelected) {
-                console.log('📦 Using selected preset as baseline');
-                // Use a simple default configuration when preset is selected
-                baselineConfig = {
-                    basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                    tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
-                    wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
-                    risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
-                    advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
-                };
-                
-                // Apply bundled constraints if enabled
-                if (this.isLowBundledConstraintEnabled()) {
-                    console.log('🛡️ Applying low bundled % constraints to baseline');
-                    baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
-                }
+            // Check if we have an initial configuration from a previous run
+            if (this.initialConfig) {
+                console.log('🔄 Using previous run\'s best configuration as baseline');
+                console.log('🏆 Starting from inherited best config - building on previous progress!');
+                baselineConfig = this.initialConfig;
             } else {
-                console.log('📖 Reading current page settings as baseline');
-                // Read current configuration from the UI
-                baselineConfig = await getCurrentConfigFromUI();
+                // Check if a preset was selected
+                const presetDropdown = document.getElementById('preset-dropdown');
+                const hasPresetSelected = presetDropdown && presetDropdown.value && presetDropdown.value !== '';
                 
-                // If no meaningful config is found on the page, use default
-                const hasAnyValues = Object.values(baselineConfig).some(section => 
-                    Object.values(section).some(value => value !== undefined)
-                );
-                
-                if (!hasAnyValues) {
-                    console.log('⚠️ No configuration found on page, using default baseline');
+                if (hasPresetSelected) {
+                    console.log('📦 Using selected preset as baseline');
+                    // Use a simple default configuration when preset is selected
                     baselineConfig = {
                         basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
                         tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
@@ -2025,11 +2943,37 @@
                     
                     // Apply bundled constraints if enabled
                     if (this.isLowBundledConstraintEnabled()) {
-                        console.log('🛡️ Applying low bundled % constraints to fallback baseline');
+                        console.log('🛡️ Applying low bundled % constraints to baseline');
                         baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
                     }
                 } else {
-                    console.log('✅ Using current page settings as baseline configuration');
+                    console.log('📖 Reading current page settings as baseline');
+                    // Read current configuration from the UI
+                    baselineConfig = await getCurrentConfigFromUI();
+                    
+                    // If no meaningful config is found on the page, use default
+                    const hasAnyValues = Object.values(baselineConfig).some(section => 
+                        Object.values(section).some(value => value !== undefined)
+                    );
+                    
+                    if (!hasAnyValues) {
+                        console.log('⚠️ No configuration found on page, using default baseline');
+                        baselineConfig = {
+                            basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
+                            tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
+                            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
+                            risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
+                            advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
+                        };
+                        
+                        // Apply bundled constraints if enabled
+                        if (this.isLowBundledConstraintEnabled()) {
+                            console.log('🛡️ Applying low bundled % constraints to fallback baseline');
+                            baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
+                        }
+                    } else {
+                        console.log('✅ Using current page settings as baseline configuration');
+                    }
                 }
             }
             
@@ -2039,6 +2983,14 @@
                 console.log(`✅ Baseline established: ${this.bestScore.toFixed(1)}% PnL with ${this.bestMetrics.tokensMatched} tokens`);
                 // Save the baseline config as the current best config
                 window.currentBestConfig = this.bestConfig;
+                
+                // Ensure optimization tracker shows the baseline as current best
+                if (window.optimizationTracker) {
+                    window.optimizationTracker.setCurrentBest({
+                        metrics: { ...this.bestMetrics, score: this.bestScore },
+                        config: this.bestConfig
+                    }, this.initialConfig ? 'Inherited Baseline' : 'Baseline');
+                }
             } else {
                 console.log('❌ Failed to establish baseline - using fallback configuration');
                 // Set a fallback baseline if testing failed
@@ -2046,6 +2998,14 @@
                 this.bestScore = -999; // Very low score to ensure any real result is better
                 this.bestMetrics = { tokensMatched: 0, tpPnlPercent: -999, winRate: 0 };
                 window.currentBestConfig = this.bestConfig;
+                
+                // Set fallback in optimization tracker too
+                if (window.optimizationTracker) {
+                    window.optimizationTracker.setCurrentBest({
+                        metrics: { ...this.bestMetrics, score: this.bestScore },
+                        config: this.bestConfig
+                    }, this.initialConfig ? 'Inherited Baseline (Fallback)' : 'Baseline (Fallback)');
+                }
             }
             
             updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
@@ -2083,7 +3043,52 @@
             return rules; // Return original rules for other parameters
         }
 
-        // Generate parameter variations (keeping original logic)
+        // Validate configuration for min/max conflicts (New: prevents invalid configs)
+        validateConfigMinMax(config) {
+            const errors = [];
+            
+            // Define min/max parameter pairs to validate
+            const minMaxPairs = [
+                ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                ['Min Token Age (sec)', 'Max Token Age (sec)'],
+                ['Min TTC (sec)', 'Max TTC (sec)'],
+                ['Min Unique Wallets', 'Max Unique Wallets'],
+                ['Min KYC Wallets', 'Max KYC Wallets'],
+                ['Min Holders', 'Max Holders'],
+                ['Min Bundled %', 'Max Bundled %'],
+                ['Min Buy Ratio %', 'Max Buy Ratio %'],
+                ['Min Vol MCAP %', 'Max Vol MCAP %'],
+                ['Min Drained %', 'Max Drained %']
+            ];
+            
+            minMaxPairs.forEach(([minParam, maxParam]) => {
+                const minVal = this.getParamValue(config, minParam);
+                const maxVal = this.getParamValue(config, maxParam);
+                
+                if (minVal !== undefined && maxVal !== undefined && 
+                    !isNaN(minVal) && !isNaN(maxVal) && 
+                    parseFloat(minVal) > parseFloat(maxVal)) {
+                    errors.push(`${minParam}(${minVal}) > ${maxParam}(${maxVal})`);
+                }
+            });
+            
+            return {
+                isValid: errors.length === 0,
+                errors
+            };
+        }
+        
+        // Helper function to get parameter value from nested config
+        getParamValue(config, paramName) {
+            for (const section of Object.values(config)) {
+                if (section && typeof section === 'object' && section[paramName] !== undefined) {
+                    return section[paramName];
+                }
+            }
+            return undefined;
+        }
+
+        // Generate parameter variations (Enhanced: with validation)
         generateParameterVariations(config, param, section) {
             const originalRules = PARAM_RULES[param];
             if (!originalRules) return [];
@@ -2134,8 +3139,16 @@
                     val = Math.round(val);
                 }
                 newConfig[section][param] = val;
+                
+                // Validate the new configuration for min/max conflicts
+                const validation = this.validateConfigMinMax(newConfig);
+                if (!validation.isValid) {
+                    console.warn(`⚠️ Skipping invalid variation ${param}: ${val} - ${validation.errors.join(', ')}`);
+                    return null; // Mark as invalid
+                }
+                
                 return { config: newConfig, name: `${param}: ${val}` };
-            });
+            }).filter(variation => variation !== null); // Remove invalid variations
         }
 
         // Main parameter testing phase
@@ -2152,7 +3165,7 @@
             console.log(`🔍 Testing ${parameters.length} parameters:`, parameters.slice(0, 5));
             
             for (const param of parameters) {
-                if (STOPPED || this.getRemainingTime() <= 0.2) break;
+                if (window.STOPPED || this.getRemainingTime() <= 0.2) break;
 
                 const section = this.getSection(param);
                 const variations = this.generateParameterVariations(this.bestConfig, param, section);
@@ -2167,7 +3180,7 @@
                 let testedCount = 0;
                 
                 for (const variation of variations) {
-                    if (STOPPED || this.getRemainingTime() <= 0.2) break;
+                    if (window.STOPPED || this.getRemainingTime() <= 0.2) break;
 
                     const result = await this.testConfig(variation.config, variation.name);
                     testedCount++;
@@ -2207,6 +3220,9 @@
         async runOptimization() {
             this.startTime = Date.now();
             window.STOPPED = false;
+
+            // Start optimization tracking
+            window.optimizationTracker.startOptimization();
 
             try {
                 // Clear cache at start and force fresh start
@@ -2478,11 +3494,14 @@
             this.timePerRun = timePerRunMin;
             this.chainStartTime = Date.now();
             
+            // Start optimization tracking
+            window.optimizationTracker.startOptimization();
+            
             console.log(`🔗 Starting chained optimization: ${runCount} runs × ${timePerRunMin} minutes each`);
             updateProgress(`🔗 Chained Optimization: Run 0/${runCount}`, 0, 0, 0, '--', this.chainStartTime);
             
             for (let run = 1; run <= runCount; run++) {
-                if (STOPPED) {
+                if (window.STOPPED) {
                     console.log(`⏹️ Chained optimization stopped at run ${run}/${runCount}`);
                     break;
                 }
@@ -2501,7 +3520,17 @@
 
                 try {
                     // Create new optimizer for this run
-                    const optimizer = new EnhancedOptimizer();
+                    // For run 1, start fresh (no initial config)
+                    // For run 2+, start from the best config found so far
+                    const initialConfig = run === 1 ? null : this.globalBestConfig;
+                    const optimizer = new EnhancedOptimizer(initialConfig);
+                    
+                    if (initialConfig) {
+                        console.log(`🔄 Run ${run} starting from previous best config (Score: ${this.globalBestScore.toFixed(1)}%)`);
+                        console.log(`🚀 Building on accumulated knowledge from ${run-1} previous run${run > 2 ? 's' : ''}!`);
+                    } else {
+                        console.log(`🆕 Run ${run} starting fresh with baseline discovery`);
+                    }
                     
                     // Override the runtime for this individual run
                     const originalRuntime = CONFIG.MAX_RUNTIME_MIN;
@@ -2585,6 +3614,19 @@
             const successfulRuns = this.chainResults.filter(r => !r.error);
             const sortedRuns = [...successfulRuns].sort((a, b) => b.score - a.score);
             
+            if (successfulRuns.length > 1) {
+                // Show knowledge accumulation benefits
+                const firstRunScore = successfulRuns[0].score;
+                const finalScore = this.globalBestScore;
+                const improvement = finalScore - firstRunScore;
+                
+                if (improvement > 0) {
+                    console.log(`🚀 Knowledge Accumulation: Started at ${firstRunScore.toFixed(1)}%, ended at ${finalScore.toFixed(1)}% (+${improvement.toFixed(1)}% improvement through chaining)`);
+                } else {
+                    console.log(`📊 Knowledge Accumulation: Each run started from best known config (${finalScore.toFixed(1)}% maintained)`);
+                }
+            }
+            
             if (sortedRuns.length > 0) {
                 console.log(`\n🏆 TOP RESULTS:`);
                 sortedRuns.slice(0, 3).forEach((run, index) => {
@@ -2596,6 +3638,7 @@
                 // Show score progression across runs
                 const scoreProgression = successfulRuns.map(r => r.score.toFixed(1));
                 console.log(`\n📈 Score progression: [${scoreProgression.join('% → ')}%]`);
+                console.log(`🔄 Runs 2+ started from previous best configuration instead of baseline discovery`);
                 
                 // Parameter effectiveness analysis
                 const allParams = new Map();
@@ -2983,7 +4026,7 @@
     }
 
     // Apply configuration to the backtester UI (based on original AGCopilot)
-    async function applyConfigToUI(config) {
+    async function applyConfigToUI(config, skipStopCheck = false) {
         if (!config) {
             updateStatus('❌ No configuration to apply', true);
             return false;
@@ -3005,6 +4048,12 @@
         try {
             // Apply each section of the configuration
             for (const [section, sectionConfig] of Object.entries(config)) {
+                // Only check stop flag if we're in optimization mode (not manual apply)
+                if (!skipStopCheck && window.STOPPED) {
+                    console.log('⏹️ Optimization stopped during config application');
+                    return false;
+                }
+                
                 if (sectionConfig && typeof sectionConfig === 'object') {
                     const sectionName = sectionMap[section];
                     
@@ -3016,6 +4065,11 @@
 
                     // Apply each field in the section
                     for (const [param, value] of Object.entries(sectionConfig)) {
+                        if (window.STOPPED) {
+                            console.log('⏹️ Optimization stopped during field application');
+                            return false;
+                        }
+                        
                         // Apply ALL fields, including undefined ones (for clearing)
                         totalFields++;
                         const success = await setFieldValue(param, value);
@@ -3059,13 +4113,13 @@
 
         updateStatus(`📦 Applying preset: ${presetName}...`);
         const completePreset = ensureCompleteConfig(preset);
-        const success = await applyConfigToUI(completePreset);
+        const success = await applyConfigToUI(completePreset, true); // Skip stop check for manual preset application
         
         if (success) {
             updateStatus(`✅ Preset ${presetName} applied to UI successfully!`);
             // Test it to show the results
             updateStatus('📊 Testing preset configuration...');
-            const result = await testConfigurationUI(preset, `Preset: ${presetName}`);
+            const result = await testConfigurationAPI(preset, `Preset: ${presetName}`);
             if (result.success) {
                 updateStatus(`📊 Preset results: ${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
             }
@@ -3084,13 +4138,13 @@
             if (config && typeof config === 'object' && (config.basic || config.tokenDetails || config.wallets || config.risk || config.advanced)) {
                 updateStatus('📋 Applying configuration from clipboard to UI...');
                 const completeConfig = ensureCompleteConfig(config);
-                const success = await applyConfigToUI(completeConfig);
+                const success = await applyConfigToUI(completeConfig, true); // Skip stop check for manual clipboard application
                 
                 if (success) {
                     updateStatus('✅ Clipboard configuration applied to UI successfully!');
                     // Test it to show the results
                     updateStatus('📊 Testing clipboard configuration...');
-                    const result = await testConfigurationUI(config, 'Clipboard Config');
+                    const result = await testConfigurationAPI(config, 'Clipboard Config');
                     if (result.success) {
                         updateStatus(`📊 Clipboard config results: ${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
                     }
@@ -3211,12 +4265,25 @@
                 </div>
                 <div id="config-section-content">
                 
-                <!-- Presets -->
-                <div style="margin-bottom: 10px;">
-                    <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Quick Presets:</label>
-                    <select id="preset-dropdown" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
-                        ${generatePresetOptions()}
-                    </select>
+                <!-- Presets and Trigger Mode -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Quick Presets:</label>
+                        <select id="preset-dropdown" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
+                            ${generatePresetOptions()}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Trigger Mode:</label>
+                        <select id="trigger-mode-select" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
+                            <option value="0">Bullish Bonding</option>
+                            <option value="1">God Mode</option>
+                            <option value="2">Moon Finder</option>
+                            <option value="3">Fomo</option>
+                            <option value="4" selected>Launchpads</option>
+                            <option value="5">Smart Tracker</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <!-- Optimization settings in compact grid -->
@@ -3565,7 +4632,7 @@
         window.applyBestConfigToUI = async function() {
             if (window.currentBestConfig) {
                 console.log('⚙️ Applying best configuration to UI...');
-                const success = await applyConfigToUI(window.currentBestConfig);
+                const success = await applyConfigToUI(window.currentBestConfig, true); // Skip stop check for manual best config application
                 if (success) {
                     console.log('✅ Best configuration applied to UI successfully!');
                 } else {
@@ -3928,8 +4995,18 @@
     // 🎮 EVENT HANDLERS
     // ========================================
     function setupEventHandlers() {
+        // Helper function to safely add event listener
+        const safeAddEventListener = (elementId, event, handler) => {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.addEventListener(event, handler);
+            } else {
+                console.warn(`⚠️ Element with ID '${elementId}' not found, skipping event listener`);
+            }
+        };
+
         // Auto-apply preset when selected
-        document.getElementById('preset-dropdown').addEventListener('change', async () => {
+        safeAddEventListener('preset-dropdown', 'change', async () => {
             const selectedPreset = document.getElementById('preset-dropdown').value;
             if (selectedPreset) {
                 console.log(`📦 Applying preset: ${selectedPreset}...`);
@@ -3940,19 +5017,19 @@
         });
 
         // Chain run count handler
-        document.getElementById('chain-run-count').addEventListener('change', (e) => {
+        safeAddEventListener('chain-run-count', 'change', (e) => {
             CONFIG.CHAIN_RUN_COUNT = parseInt(e.target.value) || 3;
         });
 
         // Start optimization button
-        document.getElementById('start-optimization').addEventListener('click', async () => {
-            const targetPnl = parseFloat(document.getElementById('target-pnl').value) || 100;
-            const minTokens = parseInt(document.getElementById('min-tokens').value) || 50;
-            const runtimeMin = parseInt(document.getElementById('runtime-min').value) || 30;
+        safeAddEventListener('start-optimization', 'click', async () => {
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            const minTokens = parseInt(document.getElementById('min-tokens')?.value) || 50;
+            const runtimeMin = parseInt(document.getElementById('runtime-min')?.value) || 30;
             const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 1;
-            const robustScoring = document.getElementById('robust-scoring').checked;
-            const simulatedAnnealing = document.getElementById('simulated-annealing').checked;
-            const multipleStartingPoints = document.getElementById('multiple-starting-points').checked;
+            const robustScoring = document.getElementById('robust-scoring')?.checked || false;
+            const simulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
+            const multipleStartingPoints = document.getElementById('multiple-starting-points')?.checked || false;
             const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
             const correlatedParams = document.getElementById('correlated-params')?.checked || false;
             const deepDive = document.getElementById('deep-dive')?.checked || false;
@@ -3991,9 +5068,23 @@
                 console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
             }
             
-            // UI state
-            document.getElementById('start-optimization').style.display = 'none';
-            document.getElementById('stop-optimization').style.display = 'block';
+            // UI state changes
+            const startBtn = document.getElementById('start-optimization');
+            const stopBtn = document.getElementById('stop-optimization');
+            if (startBtn) startBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = 'block';
+            
+            // Auto-hide the Configuration & Optimization section when starting
+            console.log('📱 Auto-hiding Configuration & Optimization section...');
+            const toggleConfigButton = document.getElementById('toggle-config-section');
+            if (toggleConfigButton && toggleConfigButton.textContent.includes('Hide')) {
+                toggleConfigButton.click();
+            }
+
+            const toggleSignalButton = document.getElementById('toggle-signal-section');
+            if (toggleSignalButton && toggleSignalButton.textContent.includes('Hide')) {
+                toggleSignalButton.click();
+            }
             
             // Reset stopped flag
             STOPPED = false;
@@ -4030,45 +5121,65 @@
                 console.log(`❌ Optimization failed: ${error.message}`);
                 // Keep original background color for failed optimization
             } finally {
-                // Reset UI state
-                document.getElementById('start-optimization').style.display = 'block';
-                document.getElementById('stop-optimization').style.display = 'none';
+                // Stop optimization tracking when complete
+                if (window.optimizationTracker) {
+                    window.optimizationTracker.stopOptimization();
+                }
+                
+                // Reset UI state safely
+                const startBtn = document.getElementById('start-optimization');
+                const stopBtn = document.getElementById('stop-optimization');
+                if (startBtn) startBtn.style.display = 'block';
+                if (stopBtn) stopBtn.style.display = 'none';
             }
         });
         
         // Stop optimization button
-        document.getElementById('stop-optimization').addEventListener('click', () => {
+        safeAddEventListener('stop-optimization', 'click', () => {
             window.STOPPED = true;
-            console.log('⏹️ Optimization stopped by user');
+            console.log('⏹️ Optimization stopped by user - STOPPED flag set to:', window.STOPPED);
+            
+            // Stop optimization tracking immediately when stopped
+            if (window.optimizationTracker) {
+                window.optimizationTracker.stopOptimization();
+            }
+            
             // Keep original background when manually stopped
-            document.getElementById('start-optimization').style.display = 'block';
-            document.getElementById('stop-optimization').style.display = 'none';
+            const startBtn = document.getElementById('start-optimization');
+            const stopBtn = document.getElementById('stop-optimization');
+            if (startBtn) startBtn.style.display = 'block';
+            if (stopBtn) stopBtn.style.display = 'none';
+            // Update status to confirm stop action
+            updateStatus('⏹️ Optimization stopped by user', false);
         });
         
         // Signal Analysis event handlers
-        document.getElementById('analyze-signals-btn').addEventListener('click', async () => {
+        safeAddEventListener('analyze-signals-btn', 'click', async () => {
             await handleSignalAnalysis();
         });
         
-        document.getElementById('apply-generated-config-btn').addEventListener('click', async () => {
+        safeAddEventListener('apply-generated-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
                 await applyConfigToBacktester(window.lastGeneratedConfig);
                 updateStatus('✅ Generated config applied to backtester!');
             }
         });
         
-        document.getElementById('optimize-generated-config-btn').addEventListener('click', async () => {
+        safeAddEventListener('optimize-generated-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
                 await applyConfigToBacktester(window.lastGeneratedConfig);
                 updateStatus('⚙️ Generated config applied, starting optimization...');
-                // Small delay to let the config apply
-                await sleep(1000);
-                // Trigger optimization with current settings
-                document.getElementById('start-optimization').click();
+                // Small delay to let the config apply - with stop check
+                if (!window.STOPPED) {
+                    await sleep(1000);
+                    // Trigger optimization with current settings
+                    const startBtn = document.getElementById('start-optimization');
+                    if (startBtn) startBtn.click();
+                }
             }
         });
         
-        document.getElementById('copy-config-btn').addEventListener('click', async () => {
+        safeAddEventListener('copy-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
                 const formattedConfig = formatConfigForDisplay(window.lastGeneratedConfig);
                 try {
@@ -4084,34 +5195,37 @@
         });
         
         // Close button
-        document.getElementById('close-btn').addEventListener('click', () => {
-            document.getElementById('ag-copilot-enhanced-ui').remove();
+        safeAddEventListener('close-btn', 'click', () => {
+            const mainUI = document.getElementById('ag-copilot-enhanced-ui');
             const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+            if (mainUI) mainUI.remove();
             if (collapsedUI) collapsedUI.remove();
         });
 
         // Collapse button
-        document.getElementById('collapse-ui-btn').addEventListener('click', () => {
+        safeAddEventListener('collapse-ui-btn', 'click', () => {
             collapseUI();
         });
 
         // Section toggle handlers
-        document.getElementById('toggle-config-section').addEventListener('click', () => {
+        safeAddEventListener('toggle-config-section', 'click', () => {
             const content = document.getElementById('config-section-content');
             const button = document.getElementById('toggle-config-section');
-            const isHidden = content.style.display === 'none';
-            
-            content.style.display = isHidden ? 'block' : 'none';
-            button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+            if (content && button) {
+                const isHidden = content.style.display === 'none';
+                content.style.display = isHidden ? 'block' : 'none';
+                button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+            }
         });
 
-        document.getElementById('toggle-signal-section').addEventListener('click', () => {
+        safeAddEventListener('toggle-signal-section', 'click', () => {
             const content = document.getElementById('signal-section-content');
             const button = document.getElementById('toggle-signal-section');
-            const isHidden = content.style.display === 'none';
-            
-            content.style.display = isHidden ? 'block' : 'none';
-            button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+            if (content && button) {
+                const isHidden = content.style.display === 'none';
+                content.style.display = isHidden ? 'block' : 'none';
+                button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+            }
         });
     }
 
@@ -4243,13 +5357,372 @@
     console.log('🔧 Initializing AG Co-Pilot Enhanced + Signal Analysis...');
     
     // Create and setup UI
-    const ui = createUI();
-    setupEventHandlers();
+    try {
+        const ui = createUI();
+        console.log('✅ UI created successfully');
+        
+        setupEventHandlers();
+        console.log('✅ Event handlers setup completed');
+        
+    } catch (error) {
+        console.error('❌ Initialization error:', error);
+        throw error;
+    }
     
     console.log('✅ AG Co-Pilot Enhanced + Signal Analysis ready!');
-    console.log('🚀 Features: UI-based testing, signal analysis, config generation, all original optimizations');
+    console.log('🚀 Features: Direct API optimization, signal analysis, config generation');
     console.log('🔍 NEW: Analyze successful signals from contract addresses to generate optimal configs');
     console.log('⚙️ NEW: Auto-apply generated configs and start optimization in one click');
+    console.log('� NEW: Intelligent chained runs - each run starts from previous best configuration!');
+    console.log('�🚀 NEW: Enhanced hard cap system with rolling window rate tracking!');
+    console.log('📊 Advanced rate limiting optimizations (BALANCED MODE with ENHANCED HARD CAP):');
+    console.log('   • Recovery time: 8.5s (balanced)');
+    console.log('   • Safety margin: 1.1x (10% safety buffer)');
+    console.log('   • Intra-burst delay: 8ms (balanced)');
+    console.log('   • Hard cap: 70 requests/minute enforced with rolling window tracking');
+    console.log('   • Expected performance: 60-70 requests/minute');
+    console.log('   • Enhanced monitoring: both session and 60-second rolling window rates');
+    console.log('   • Dynamic throttling: proportional delays based on excess rate');
+    console.log('🔗 Chained optimization benefits:');
+    console.log('   • Run 1: Discovers baseline configuration');
+    console.log('   • Run 2+: Start from best config found so far (no time wasted rediscovering)');
+    console.log('   • Knowledge accumulation: Each run builds on previous discoveries');
+    console.log('   • Faster convergence: More time spent optimizing, less time on baseline');
+    console.log('🛠️ Performance tools:');
+    console.log('   • window.getRateLimitStats() - Current performance metrics');
+    console.log('   • window.testBurstRateLimit() - Comprehensive test (75 calls)');
+    console.log('   • window.resetRateLimiting() - Reset to optimal settings');
+    console.log('   • window.optimizeRateLimiting() - Smart optimization');
+    console.log('   • window.enableTurboMode() - Maximum speed mode (⚠️ aggressive)');
+    
+    // ========================================
+    // 🛠️ UTILITY FUNCTIONS - Global Access
+    // ========================================
+    
+    // Manual UI controls for debugging/testing
+    window.showOptimizationTracker = () => {
+        const display = document.getElementById('best-config-display');
+        if (display) {
+            display.style.display = 'block';
+            console.log('🖥️ Optimization tracker shown manually');
+        }
+    };
+    
+    window.hideOptimizationTracker = () => {
+        const display = document.getElementById('best-config-display');
+        if (display) {
+            display.style.display = 'none';
+            console.log('🖥️ Optimization tracker hidden manually');
+        }
+    };
+    
+    // Enhanced rate limiting performance monitoring
+    window.getRateLimitStats = () => {
+        const stats = burstRateLimiter.getStats();
+        console.log('📊 Current Rate Limiting Performance:');
+        console.log(`   • Requests per minute: ${stats.requestsPerMinute}`);
+        console.log(`   • Current burst: ${stats.currentBurstCount}/${stats.burstLimit}`);
+        console.log(`   • Total requests: ${stats.totalCalls}`);
+        console.log(`   • Rate limit hits: ${stats.rateLimitHits}`);
+        console.log(`   • Successful bursts: ${stats.successfulBursts}`);
+        console.log(`   • Recovery time: ${(stats.recoveryTime/1000).toFixed(1)}s`);
+        console.log(`   • Intra-burst delay: ${stats.intraBurstDelay}ms`);
+        return stats;
+    };
+    
+    // Force rate limit adaptation for testing
+    window.forceRateLimitAdaptation = () => {
+        console.log('🔧 Forcing rate limit adaptation...');
+        burstRateLimiter.adaptToBurstLimit();
+        return burstRateLimiter.getStats();
+    };
+    
+    // Smart reset that uses learned optimal burst size
+    window.smartResetRateLimiting = () => {
+        const stats = burstRateLimiter.getStats();
+        console.log('🧠 Smart reset using learned optimal burst size...');
+        
+        if (stats.rateLimitPositions && stats.rateLimitPositions.length > 0) {
+            const avgPosition = stats.rateLimitPositions.reduce((a, b) => a + b, 0) / stats.rateLimitPositions.length;
+            const optimalSize = Math.max(20, Math.floor(avgPosition - 3)); // 3-call safety buffer
+            
+            console.log(`📊 Learned data: Rate limits occurred at positions ${stats.rateLimitPositions.join(', ')}`);
+            console.log(`📊 Average position: ${avgPosition.toFixed(1)}, Optimal burst size: ${optimalSize}`);
+            
+            burstRateLimiter.burstLimit = optimalSize;
+            burstRateLimiter.optimalBurstSize = optimalSize;
+        } else {
+            console.log('📊 No learning data available, using conservative reset');
+            burstRateLimiter.burstLimit = Math.min(50, burstRateLimiter.originalBurstLimit);
+        }
+        
+        burstRateLimiter.recoveryTime = CONFIG.RATE_LIMIT_RECOVERY * CONFIG.RATE_LIMIT_SAFETY_MARGIN;
+        burstRateLimiter.rateLimitHits = 0;
+        burstRateLimiter.successfulBursts = 0;
+        burstRateLimiter.consecutiveSuccesses = 0;
+        burstRateLimiter.callCount = 0;
+        burstRateLimiter.lastBurstTime = 0;
+        
+        console.log(`✅ Smart reset complete: ${burstRateLimiter.burstLimit} calls/burst, ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s recovery`);
+        return burstRateLimiter.getStats();
+    };
+    
+    // Reset rate limiting to original settings
+    window.resetRateLimiting = () => {
+        console.log('🔄 Resetting rate limiter to original settings...');
+        const oldLimit = burstRateLimiter.burstLimit;
+        const oldRecovery = burstRateLimiter.recoveryTime;
+        
+        burstRateLimiter.burstLimit = burstRateLimiter.originalBurstLimit;
+        burstRateLimiter.recoveryTime = CONFIG.RATE_LIMIT_RECOVERY * CONFIG.RATE_LIMIT_SAFETY_MARGIN;
+        burstRateLimiter.rateLimitHits = 0;
+        burstRateLimiter.successfulBursts = 0;
+        burstRateLimiter.consecutiveSuccesses = 0;
+        burstRateLimiter.callCount = 0;
+        burstRateLimiter.lastBurstTime = 0;
+        burstRateLimiter.rateLimitPositions = []; // Clear learning data
+        
+        console.log(`✅ Rate limiter reset:`);
+        console.log(`   • Burst limit: ${oldLimit} → ${burstRateLimiter.burstLimit}`);
+        console.log(`   • Recovery time: ${(oldRecovery/1000).toFixed(1)}s → ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s`);
+        console.log(`   • Learning data cleared`);
+        
+        return burstRateLimiter.getStats();
+    };
+    
+    // Smart rate limit optimization based on recent performance
+    window.optimizeRateLimiting = () => {
+        const stats = burstRateLimiter.getStats();
+        console.log('🔧 Optimizing rate limiting based on performance...');
+        
+        if (stats.rateLimitHits === 0 && stats.successfulBursts > 2) {
+            // No rate limits hit recently, we can be more aggressive
+            console.log('✅ No recent rate limits - enabling aggressive mode');
+            burstRateLimiter.burstLimit = Math.min(burstRateLimiter.originalBurstLimit, burstRateLimiter.burstLimit + 10);
+            burstRateLimiter.recoveryTime = Math.max(8000, burstRateLimiter.recoveryTime * 0.85);
+            burstRateLimiter.intraBurstDelay = Math.max(5, burstRateLimiter.intraBurstDelay * 0.7);
+        } else if (stats.rateLimitHits > 2) {
+            // Multiple rate limit hits, be more conservative
+            console.log('⚠️ Multiple rate limits detected - enabling conservative mode');
+            burstRateLimiter.recoveryTime = Math.min(25000, burstRateLimiter.recoveryTime * 1.15);
+            burstRateLimiter.intraBurstDelay = Math.min(50, burstRateLimiter.intraBurstDelay * 1.3);
+        }
+        
+        console.log('🎯 Optimization complete:', burstRateLimiter.getStats());
+        return burstRateLimiter.getStats();
+    };
+    
+    // Turbo mode: Maximum speed settings (use at your own risk)
+    window.enableTurboMode = () => {
+        console.log('🚀 Enabling TURBO MODE - Maximum speed settings!');
+        console.log('⚠️ Warning: This pushes limits and may cause more 429s');
+        
+        const oldSettings = {
+            burstLimit: burstRateLimiter.burstLimit,
+            recoveryTime: burstRateLimiter.recoveryTime,
+            intraBurstDelay: burstRateLimiter.intraBurstDelay
+        };
+        
+        // Turbo settings
+        burstRateLimiter.burstLimit = burstRateLimiter.originalBurstLimit; // Full burst
+        burstRateLimiter.recoveryTime = 8000; // 8 second recovery
+        burstRateLimiter.intraBurstDelay = 5; // 5ms between calls
+        burstRateLimiter.rateLimitHits = 0; // Reset hits
+        burstRateLimiter.successfulBursts = 0; // Reset success count
+        
+        console.log('🔥 TURBO MODE ENABLED:');
+        console.log(`   • Burst limit: ${oldSettings.burstLimit} → ${burstRateLimiter.burstLimit}`);
+        console.log(`   • Recovery time: ${(oldSettings.recoveryTime/1000).toFixed(1)}s → ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s`);
+        console.log(`   • Intra-burst delay: ${oldSettings.intraBurstDelay}ms → ${burstRateLimiter.intraBurstDelay}ms`);
+        console.log('📊 Expected: 200-400 requests/minute (if API allows)');
+        
+        return burstRateLimiter.getStats();
+    };
+    
+    // Test the API with current UI config (enhanced with performance monitoring)
+    window.testCurrentConfig = async () => {
+        console.log('🧪 Testing current UI configuration...');
+        const startTime = Date.now();
+        const initialStats = burstRateLimiter.getStats();
+        
+        try {
+            // Extract current config from UI
+            const currentConfig = await extractCurrentConfig();
+            const result = await testConfigurationAPI(currentConfig, 'Manual Test');
+            
+            const duration = Date.now() - startTime;
+            const finalStats = burstRateLimiter.getStats();
+            
+            console.log('✅ Test completed in', (duration/1000).toFixed(1), 'seconds');
+            console.log('📊 Performance impact:');
+            console.log(`   • Requests made: ${finalStats.totalCalls - initialStats.totalCalls}`);
+            console.log(`   • Current rate: ${finalStats.requestsPerMinute} req/min`);
+            
+            if (result.success) {
+                console.log('✅ Test successful:', result.metrics);
+                
+                // Update tracker with test result
+                if (window.optimizationTracker) {
+                    window.optimizationTracker.setCurrentBest({
+                        metrics: result.metrics,
+                        config: currentConfig
+                    }, 'Manual Test');
+                }
+                
+                return result;
+            } else {
+                console.log('❌ Test failed:', result.error);
+                return result;
+            }
+        } catch (error) {
+            console.log('❌ Test error:', error.message);
+            return { success: false, error: error.message };
+        }
+    };
+    
+    // Test burst rate limiting performance (enhanced for better demonstration)
+    window.testBurstRateLimit = async () => {
+        console.log('🚀 Testing Enhanced Burst Rate Limiting Performance...');
+        console.log('📊 This will test multiple bursts to demonstrate the speed improvement');
+        
+        const simpleConfig = { basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 15000 } };
+        const initialStats = burstRateLimiter.getStats();
+        
+        console.log(`📊 Initial burst limiter: ${initialStats.burstLimit} calls/burst, ${(initialStats.recoveryTime/1000).toFixed(1)}s recovery`);
+        console.log(`📊 Expected performance: ~${Math.round((initialStats.burstLimit / (initialStats.recoveryTime/1000 + initialStats.burstLimit * 0.1)) * 60)} requests/minute\n`);
+        
+        let totalSuccessCount = 0;
+        let totalFailureCount = 0;
+        const overallStartTime = Date.now();
+        
+        // Test 3 full bursts to demonstrate the pattern
+        const burstCount = 3;
+        const callsPerBurst = Math.min(25, initialStats.burstLimit); // Test 25 calls per burst or burst limit, whichever is smaller
+        
+        for (let burstNum = 1; burstNum <= burstCount; burstNum++) {
+            console.log(`\n🔥 === BURST ${burstNum}/${burstCount} === (${callsPerBurst} calls)`);
+            const burstStartTime = Date.now();
+            let burstSuccess = 0;
+            let burstFailure = 0;
+            
+            for (let i = 1; i <= callsPerBurst; i++) {
+                const callStartTime = Date.now();
+                const result = await testConfigurationAPI(simpleConfig, `Burst ${burstNum}-${i}`);
+                const callDuration = Date.now() - callStartTime;
+                
+                if (result.success) {
+                    burstSuccess++;
+                    totalSuccessCount++;
+                    if (i % 10 === 0 || i === callsPerBurst) {
+                        console.log(`   ✅ Call ${i}/${callsPerBurst}: ${callDuration}ms (${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% PnL)`);
+                    }
+                } else {
+                    burstFailure++;
+                    totalFailureCount++;
+                    console.log(`   ❌ Call ${i}/${callsPerBurst}: ${callDuration}ms - ${result.error}`);
+                    
+                    // If it's a rate limit, show adaptation
+                    if (result.isRateLimit) {
+                        const adaptedStats = burstRateLimiter.getStats();
+                        console.log(`   📉 Rate limiter adapted: ${adaptedStats.burstLimit} calls/burst, ${(adaptedStats.recoveryTime/1000).toFixed(1)}s recovery`);
+                    }
+                }
+                
+                // Show progress every 10 calls
+                if (i % 10 === 0) {
+                    const currentStats = burstRateLimiter.getStats();
+                    const elapsedBurstTime = Date.now() - burstStartTime;
+                    const currentRate = Math.round((i / (elapsedBurstTime/1000)) * 60);
+                    console.log(`   📊 Progress: ${i}/${callsPerBurst} | Burst: ${currentStats.currentBurstCount}/${currentStats.burstLimit} | Rate: ${currentRate} req/min`);
+                }
+            }
+            
+            const burstDuration = Date.now() - burstStartTime;
+            const burstRate = Math.round((callsPerBurst / (burstDuration/1000)) * 60);
+            console.log(`\n   🎯 Burst ${burstNum} Results:`);
+            console.log(`      • Duration: ${(burstDuration/1000).toFixed(1)}s`);
+            console.log(`      • Success: ${burstSuccess}/${callsPerBurst} (${(burstSuccess/callsPerBurst*100).toFixed(1)}%)`);
+            console.log(`      • Rate: ${burstRate} requests/minute`);
+            
+            // If not the last burst, show recovery time
+            if (burstNum < burstCount) {
+                const stats = burstRateLimiter.getStats();
+                if (stats.currentBurstCount >= stats.burstLimit) {
+                    console.log(`   ⏳ Waiting for recovery (${(stats.recoveryTime/1000).toFixed(1)}s)...`);
+                }
+            }
+        }
+        
+        const totalDuration = Date.now() - overallStartTime;
+        const totalCalls = burstCount * callsPerBurst;
+        const overallRate = Math.round((totalCalls / (totalDuration/1000)) * 60);
+        const finalStats = burstRateLimiter.getStats();
+        
+        console.log(`\n🎉 === OVERALL BURST TEST RESULTS ===`);
+        console.log(`📊 Test Summary:`);
+        console.log(`   • Total time: ${(totalDuration/1000).toFixed(1)}s`);
+        console.log(`   • Total calls: ${totalCalls} (${burstCount} bursts × ${callsPerBurst} calls)`);
+        console.log(`   • Success rate: ${totalSuccessCount}/${totalCalls} (${(totalSuccessCount/totalCalls*100).toFixed(1)}%)`);
+        console.log(`   • Overall rate: ${overallRate} requests/minute`);
+        console.log(`   • Average per call: ${(totalDuration/totalCalls).toFixed(0)}ms`);
+        
+        console.log(`\n📈 Rate Limiter Performance:`);
+        console.log(`   • Current burst capacity: ${finalStats.burstLimit}/${finalStats.originalBurstLimit} calls/burst`);
+        console.log(`   • Recovery time: ${(finalStats.recoveryTime/1000).toFixed(1)}s`);
+        console.log(`   • Rate limit hits: ${finalStats.rateLimitHits}`);
+        console.log(`   • Successful bursts: ${finalStats.successfulBursts}`);
+        console.log(`   • Intra-burst delay: ${finalStats.intraBurstDelay}ms`);
+        
+        console.log(`\n💡 Performance Analysis:`);
+        if (overallRate > 150) {
+            console.log(`🎉 EXCELLENT! Achieving ${overallRate} req/min - This is ~${Math.round(overallRate/26)}x faster than the original 26 req/min!`);
+        } else if (overallRate > 100) {
+            console.log(`✅ GREAT! Achieving ${overallRate} req/min - This is ~${Math.round(overallRate/26)}x faster than the original 26 req/min!`);
+        } else if (overallRate > 60) {
+            console.log(`👍 GOOD! Achieving ${overallRate} req/min - This is ~${Math.round(overallRate/26)}x faster than the original 26 req/min!`);
+        } else {
+            console.log(`⚠️ Rate could be improved. Current: ${overallRate} req/min vs target >100 req/min`);
+            console.log(`   Consider checking for 429 errors or network latency issues.`);
+        }
+        
+        // Provide optimization recommendations
+        if (finalStats.rateLimitHits > 0) {
+            console.log(`\n🔧 Optimization Recommendations:`);
+            console.log(`   • Rate limit hits detected (${finalStats.rateLimitHits})`);
+            console.log(`   • Burst limit was adapted from ${finalStats.originalBurstLimit} to ${finalStats.burstLimit}`);
+            console.log(`   • Consider running window.resetRateLimiting() to reset to optimal settings`);
+        } else {
+            console.log(`\n✅ No rate limiting issues detected - system is performing optimally!`);
+        }
+        
+        return {
+            totalDuration,
+            totalCalls,
+            overallRate,
+            successRate: (totalSuccessCount/totalCalls*100).toFixed(1),
+            burstStats: finalStats,
+            improvementFactor: Math.round(overallRate/26)
+        };
+    };
+    
+    // Quick rate limit check
+    window.checkRateLimit = async () => {
+        console.log('⏱️ Checking rate limiting with simple config...');
+        const simpleConfig = {
+            basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 20000 }
+        };
+        
+        const start = Date.now();
+        const result = await testConfigurationAPI(simpleConfig, 'Rate Limit Test');
+        const duration = Date.now() - start;
+        
+        console.log(`⏱️ API call took ${duration}ms. Success: ${result.success}`);
+        if (!result.success && result.error.includes('429')) {
+            console.log('⚠️ Rate limited! Burst limiter may need adjustment');
+        }
+        
+        return { duration, success: result.success, rateLimited: result.error?.includes('429') };
+    };
     
     // Test connectivity
     console.log('Testing UI connectivity...');
