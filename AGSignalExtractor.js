@@ -258,6 +258,7 @@
                 'Fresh Deployer',
                 'Funding Address',
                 'Deployer Age',
+                'Token Age',
                 'Description'
             ].join('\t'));
         }
@@ -309,12 +310,26 @@
                 // Drained percentage
                 const drainedPercent = swap.criteria?.drainedPct ? `${swap.criteria.drainedPct.toFixed(1)}%` : '';
                 
-                // Deployer age in readable format (convert from seconds to minutes/hours/days)
+                // Deployer age in readable format (API provides minutes as base unit)
                 const deployerAge = swap.criteria?.deployerAge ? 
-                    (swap.criteria.deployerAge >= 86400 ? `${(swap.criteria.deployerAge / 86400).toFixed(1)}d` :
-                     swap.criteria.deployerAge >= 3600 ? `${(swap.criteria.deployerAge / 3600).toFixed(1)}h` :
-                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}m` :
-                     `${swap.criteria.deployerAge}s`) : '';
+                    (swap.criteria.deployerAge >= 1440 ? `${(swap.criteria.deployerAge / 1440).toFixed(1)}d` :
+                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}h` :
+                     `${swap.criteria.deployerAge}m`) : '';
+                
+                // Token age in readable format (handle seconds vs minutes based on API flag)
+                const tokenAge = swap.criteria?.tokenAge ? (() => {
+                    let ageInMinutes = swap.criteria.tokenAge;
+                    
+                    // Convert from seconds to minutes if the API indicates the value is in seconds
+                    if (swap.criteria.tokenAgeInSeconds) {
+                        ageInMinutes = Math.floor(swap.criteria.tokenAge / 60);
+                    }
+                    
+                    // Format the age in minutes
+                    return ageInMinutes >= 1440 ? `${(ageInMinutes / 1440).toFixed(1)}d` :
+                           ageInMinutes >= 60 ? `${(ageInMinutes / 60).toFixed(1)}h` :
+                           `${ageInMinutes}m`;
+                })() : '';
                 
                 const row = [
                     processed.symbol || '',                                    // Ticker
@@ -337,9 +352,10 @@
                     swap.criteria.avgZScore,
                     swap.criteria.buyerLabel,
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
-                    swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Funding Address (not available in current data)
-                    '',
+                    swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Fresh Deployer
+                    '',                                                       // Funding Address (not available in current data)
                     deployerAge,                                              // Deployer Age
+                    tokenAge,                                                 // Token Age
                     swap.criteria?.hasDescription ? 'Yes' : 'No'             // Description
                 ];
                 csvLines.push(row.join('\t'));
