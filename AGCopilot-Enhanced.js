@@ -51,11 +51,11 @@
         ],
         
         // Rate limiting - BALANCED MODE with 90 req/min hard cap
-        RATE_LIMIT_THRESHOLD: 65,    // Increased from 60 to 65 for better performance
+        RATE_LIMIT_THRESHOLD: 35,    // Increased from 60 to 65 for better performance
         RATE_LIMIT_RECOVERY: 8500,   // 8.5s recovery (balanced - was 10s)
         RATE_LIMIT_SAFETY_MARGIN: 1.1, // 10% safety margin (reduced from 20%)
         INTRA_BURST_DELAY: 8,        // 8ms delay for ~75-85 req/min target
-        MAX_REQUESTS_PER_MINUTE: 65, // Hard cap at 65 req/min
+        MAX_REQUESTS_PER_MINUTE: 60, // Hard cap at 60 req/min
         USE_BURST_RATE_LIMITING: true, // Use burst mode for maximum speed
         ADAPTIVE_RATE_LIMITING: true,  // Speed up when no rate limits are detected
         AGGRESSIVE_RECOVERY: true,     // Enable moderate recovery (was false)
@@ -600,13 +600,13 @@
             const burstStats = burstRateLimiter.getStats();
 
             let content = `
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: bold;">
                     <div>Tests: <span style="color: #4CAF50; font-weight: bold;">${this.totalTests}</span></div>
                     <div>Failed: <span style="color: ${this.failedTests > 0 ? '#ff9800' : '#666'};">${this.failedTests}</span></div>
                     <div>Runtime: <span style="color: #4CAF50;">${runtimeMin}m ${runtimeSec}s</span></div>
                     <div>Rate: <span style="color: #4CAF50;">${testsPerMin}/min</span></div>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 9px; opacity: 0.8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: bold; opacity: 0.8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                     <div>🚀 Burst: <span style="color: #4ECDC4;">${burstStats.currentBurstCount}/${burstStats.burstLimit}</span></div>
                     <div>📡 Total: <span style="color: #4ECDC4;">${burstStats.totalCalls}</span></div>
                     <div>📊 Session: <span style="color: #4ECDC4;">${burstStats.requestsPerMinute}/min</span></div>
@@ -619,11 +619,11 @@
                 const metrics = this.currentBest.metrics;
                 
                 content += `
-                    <div style="border-top: 1px solid rgba(76, 175, 80, 0.3); padding-top: 8px; margin-bottom: 8px;">
+                    <div style="border-top: 1px solid rgba(76, 175, 80, 0.3); padding-top: 8px; margin-bottom: 8px; font-weight: bold;">
                         <div style="font-size: 11px; font-weight: bold; color: #4CAF50; margin-bottom: 4px;">🏆 Current Best:</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
                             <div>Score: <span style="color: #4CAF50; font-weight: bold;">${metrics.score?.toFixed(1) || 'N/A'}</span></div>
-                            <div>Tokens: <span style="color: #fff;">${metrics.tokensMatched || 0}</span></div>
+                            <div>Tokens: <span style="color: #fff;">${metrics.totalTokens || 0}</span></div>
                             <div>TP PnL: <span style="color: ${(metrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(metrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
                             <div>Win Rate: <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
                         </div>
@@ -1044,7 +1044,7 @@
                         
                         // Transform to AGCopilot expected format
                         const transformedMetrics = {
-                            tokensMatched: data.totalTokens || 0,
+                            totalTokens: data.totalTokens || 0,
                             tpPnlPercent: data.averageTpGain || 0,
                             tpPnlSOL: data.pnlSolTp || 0,
                             athPnlPercent: data.averageAthGain || 0,
@@ -1111,7 +1111,7 @@
                         case 'tokens matched':
                             const tokenMatch = value.match(/(\d{1,3}(?:,\d{3})*)/);
                             if (tokenMatch) {
-                                metrics.tokensMatched = parseInt(tokenMatch[1].replace(/,/g, ''));
+                                metrics.totalTokens = parseInt(tokenMatch[1].replace(/,/g, ''));
                             }
                             break;
                         case 'tp pnl %':
@@ -1150,7 +1150,7 @@
             }
 
             // Validate required metrics
-            if (metrics.tpPnlPercent === undefined || metrics.tokensMatched === undefined) {
+            if (metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
                 console.warn('⚠️ Missing required metrics in UI extraction');
                 return null;
             }
@@ -1166,7 +1166,7 @@
     // 📊 ROBUST SCORING SYSTEM (Outlier-Resistant)
     // ========================================
     function calculateRobustScore(metrics) {
-        if (!metrics || metrics.tpPnlPercent === undefined || metrics.tokensMatched === undefined) {
+        if (!metrics || metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
             return null;
         }
 
@@ -1192,7 +1192,8 @@
         
         // Reliability factor based on sample size (more tokens = more reliable)
         // Uses logarithmic scaling: log(tokens)/log(100) capped at 1.0
-        const reliabilityFactor = Math.min(1.0, Math.log(metrics.tokensMatched) / Math.log(100));
+        const tokensCount = metrics.totalTokens || 1; // Default to 1 to avoid log(0)
+        const reliabilityFactor = Math.min(1.0, Math.log(tokensCount) / Math.log(100));
         
         // Early exit for low win rate configs (likely unreliable)
         if (winRate < CONFIG.MIN_WIN_RATE) {
@@ -1300,9 +1301,9 @@
             // Calculate robust score for logging
             const robustScoring = calculateRobustScore(metrics);
             if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
-                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
             } else {
-                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
             }
 
             return {
@@ -1358,9 +1359,9 @@
             // Calculate robust score for logging (but don't fail if it doesn't work)
             const robustScoring = calculateRobustScore(metrics);
             if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
-                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
             } else {
-                console.log(`✅ ${testName}: ${metrics.tokensMatched} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
             }
 
             return {
@@ -2600,7 +2601,7 @@
         }
         
         async runSimulatedAnnealing() {
-            updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics?.tokensMatched || '--', this.optimizer.startTime);
+            updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics?.totalTokens || '--', this.optimizer.startTime);
             
             let currentConfig = JSON.parse(JSON.stringify(this.optimizer.bestConfig)); // Deep clone
             let currentScore = this.optimizer.getCurrentBestScore();
@@ -2627,7 +2628,7 @@
                             80 + (1 - temperature / this.initialTemperature) * 15, 
                             this.optimizer.getCurrentBestScore().toFixed(1), 
                             this.optimizer.testCount, 
-                            this.optimizer.bestMetrics?.tokensMatched || '--', 
+                            this.optimizer.bestMetrics?.totalTokens || '--', 
                             this.optimizer.startTime);
                     }
                 }
@@ -2682,7 +2683,7 @@
             this.configCache = new ConfigCache(1000);
             this.bestConfig = null;
             this.bestScore = -Infinity;
-            this.bestMetrics = null;
+            this.bestMetrics = { totalTokens: 0, tpPnlPercent: 0, winRate: 0 }; // Safe defaults instead of null
             this.testCount = 0;
             this.startTime = Date.now();
             this.history = [];
@@ -2747,7 +2748,7 @@
                 }
                 
                 stats.innerHTML = `
-                    <div><strong>Score:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.bestMetrics.tokensMatched} | <strong>Win Rate:</strong> ${this.bestMetrics.winRate?.toFixed(1)}%</div>
+                    <div><strong>Score:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.bestMetrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${this.bestMetrics?.winRate?.toFixed(1) || 0}%</div>
                     ${methodDisplay}
                     <div><strong>Tests:</strong> ${this.testCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.startTime) / 1000)}s</div>
                 `;
@@ -2798,7 +2799,7 @@
                 const metrics = result.metrics;
                 
                 // Validate metrics
-                if (metrics.tpPnlPercent === undefined || metrics.tokensMatched < CONFIG.MIN_TOKENS) {
+                if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < CONFIG.MIN_TOKENS) {
                     const failResult = { success: false, reason: 'insufficient_tokens' };
                     
                     // Track failed test
@@ -2853,7 +2854,13 @@
                 if (improvement > 0) {
                     this.bestConfig = completeConfig;
                     this.bestScore = currentScore;
-                    this.bestMetrics = metrics;
+                    // Ensure metrics has required properties
+                    this.bestMetrics = {
+                        totalTokens: metrics.totalTokens || 0,
+                        tpPnlPercent: metrics.tpPnlPercent || 0,
+                        winRate: metrics.winRate || 0,
+                        ...metrics // Include all other properties
+                    };
                     
                     // Update optimization tracker with current best
                     window.optimizationTracker.setCurrentBest({
@@ -2867,9 +2874,9 @@
                         console.log(`🎉 New best! ${testName}:`);
                         console.log(`   📊 Robust Score: ${currentScore.toFixed(1)} (${rs.scoringMethod})`);
                         console.log(`   📈 Raw TP PnL: ${rs.components.rawPnL.toFixed(1)}%`);
-                        console.log(`   🎯 Win Rate: ${rs.components.winRate.toFixed(1)}% | Tokens: ${metrics.tokensMatched} | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%`);
+                        console.log(`   🎯 Win Rate: ${rs.components.winRate.toFixed(1)}% | Tokens: ${metrics?.totalTokens || 0} | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%`);
                     } else {
-                        console.log(`🎉 New best! ${testName}: ${currentScore.toFixed(1)}% (${metrics.tokensMatched} tokens)`);
+                        console.log(`🎉 New best! ${testName}: ${currentScore.toFixed(1)}% (${metrics?.totalTokens || 0} tokens)`);
                     }
                     
                     // Update global reference for UI
@@ -2980,7 +2987,7 @@
             const result = await this.testConfig(baselineConfig, 'Baseline');
             
             if (result.success) {
-                console.log(`✅ Baseline established: ${this.bestScore.toFixed(1)}% PnL with ${this.bestMetrics.tokensMatched} tokens`);
+                console.log(`✅ Baseline established: ${this.bestScore.toFixed(1)}% PnL with ${this.bestMetrics?.totalTokens || 0} tokens`);
                 // Save the baseline config as the current best config
                 window.currentBestConfig = this.bestConfig;
                 
@@ -2996,7 +3003,7 @@
                 // Set a fallback baseline if testing failed
                 this.bestConfig = baselineConfig;
                 this.bestScore = -999; // Very low score to ensure any real result is better
-                this.bestMetrics = { tokensMatched: 0, tpPnlPercent: -999, winRate: 0 };
+                this.bestMetrics = { totalTokens: 0, tpPnlPercent: -999, winRate: 0 };
                 window.currentBestConfig = this.bestConfig;
                 
                 // Set fallback in optimization tracker too
@@ -3008,7 +3015,7 @@
                 }
             }
             
-            updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
         }
 
         // Helper function to check if low bundled constraint is enabled
@@ -3153,7 +3160,7 @@
 
         // Main parameter testing phase
         async runParameterPhase() {
-            updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Check if we have a valid baseline configuration
             if (!this.bestConfig) {
@@ -3206,7 +3213,7 @@
 
                 // Early termination if target achieved
                 if (this.bestScore >= CONFIG.TARGET_PNL) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
                     return;
                 }
             }
@@ -3307,7 +3314,7 @@
 
         // Advanced optimization phases
         async runLatinHypercubePhase() {
-            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Focus on top parameters for LHS
             const topParams = this.parameterTests.slice(0, 6).map(p => p.param);
@@ -3322,14 +3329,14 @@
                 // Early termination if target achieved
                 const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
                 if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
                     return;
                 }
             }
         }
 
         async runCorrelatedParameterPhase() {
-            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             const correlatedVariations = this.generateCorrelatedVariations(this.bestConfig);
 
@@ -3342,14 +3349,14 @@
                 // Early termination if target achieved
                 const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
                 if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
                     return;
                 }
             }
         }
 
         async runMultipleStartingPoints() {
-            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Use all presets as starting points
             const startingPoints = Object.entries(PRESETS);
@@ -3377,14 +3384,14 @@
                 // Early termination if target achieved
                 const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
                 if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics.tokensMatched, this.startTime);
+                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
                     return;
                 }
             }
         }
 
         async runDeepDive() {
-            updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.tokensMatched || '--', this.startTime);
+            updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Deep dive on top 3 most effective parameters
             const topParams = this.parameterTests.slice(0, 3);
@@ -3514,7 +3521,7 @@
                     ((run - 1) / runCount) * 100, 
                     this.globalBestScore === -Infinity ? 0 : this.globalBestScore.toFixed(1), 
                     this.totalTestCount, 
-                    this.globalBestMetrics?.tokensMatched || '--', 
+                    this.globalBestMetrics?.totalTokens || '--', 
                     this.chainStartTime
                 );
 
@@ -3576,7 +3583,7 @@
                         chainProgress, 
                         this.globalBestScore.toFixed(1), 
                         this.totalTestCount, 
-                        this.globalBestMetrics?.tokensMatched || '--', 
+                        this.globalBestMetrics?.totalTokens || '--', 
                         this.chainStartTime
                     );
                     
@@ -3632,7 +3639,7 @@
                 sortedRuns.slice(0, 3).forEach((run, index) => {
                     const rank = index + 1;
                     const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
-                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${run.metrics.tokensMatched} tokens, ${run.testCount} tests)`);
+                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${run.metrics.totalTokens} tokens, ${run.testCount} tests)`);
                 });
                 
                 // Show score progression across runs
@@ -3700,7 +3707,7 @@
                 }
                 
                 stats.innerHTML = `
-                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.globalBestMetrics.tokensMatched} | <strong>Win Rate:</strong> ${this.globalBestMetrics.winRate?.toFixed(1)}%</div>
+                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.globalBestMetrics.totalTokens} | <strong>Win Rate:</strong> ${this.globalBestMetrics.winRate?.toFixed(1)}%</div>
                     ${methodDisplay}
                     <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.chainStartTime) / 1000)}s</div>
                 `;
@@ -4121,7 +4128,7 @@
             updateStatus('📊 Testing preset configuration...');
             const result = await testConfigurationAPI(preset, `Preset: ${presetName}`);
             if (result.success) {
-                updateStatus(`📊 Preset results: ${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
+                updateStatus(`📊 Preset results: ${result.metrics.totalTokens} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
             }
         } else {
             updateStatus(`❌ Failed to apply preset ${presetName} to UI`, true);
@@ -4146,7 +4153,7 @@
                     updateStatus('📊 Testing clipboard configuration...');
                     const result = await testConfigurationAPI(config, 'Clipboard Config');
                     if (result.success) {
-                        updateStatus(`📊 Clipboard config results: ${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
+                        updateStatus(`📊 Clipboard config results: ${result.metrics.totalTokens} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
                     }
                 } else {
                     updateStatus('❌ Failed to apply clipboard configuration to UI', true);
@@ -4400,7 +4407,7 @@
                 margin-bottom: 15px;
                 display: none;
             ">
-                <h5 style="margin: 0 0 8px 0; font-size: 12px; color: #4CAF50;">🏆 Best Configuration Found:</h5>
+                <h5 style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #4CAF50;">🏆 Best Configuration Found:</h5>
                 <div id="best-config-stats" style="font-size: 11px; margin-bottom: 8px;"></div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                     <button onclick="applyBestConfigToUI()" style="padding: 8px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">⚙️ Apply to UI</button>
@@ -4678,11 +4685,11 @@
         }
     }
 
-    function updateProgress(message, progress, bestScore, testCount, tokensMatched, startTime) {
+    function updateProgress(message, progress, bestScore, testCount, totalTokens, startTime) {
         // Log progress to console only
         if (startTime) {
             const runtime = Math.floor((Date.now() - startTime) / 1000);
-            console.log(`📊 ${message} | Progress: ${(progress || 0).toFixed(1)}% | Best: ${bestScore}% | Tests: ${testCount} | Tokens: ${tokensMatched} | Runtime: ${runtime}s`);
+            console.log(`📊 ${message} | Progress: ${(progress || 0).toFixed(1)}% | Best: ${bestScore}% | Tests: ${testCount} | Tokens: ${totalTokens} | Runtime: ${runtime}s`);
         } else {
             console.log(`📊 ${message}`);
         }
@@ -5614,7 +5621,7 @@
                     burstSuccess++;
                     totalSuccessCount++;
                     if (i % 10 === 0 || i === callsPerBurst) {
-                        console.log(`   ✅ Call ${i}/${callsPerBurst}: ${callDuration}ms (${result.metrics.tokensMatched} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% PnL)`);
+                        console.log(`   ✅ Call ${i}/${callsPerBurst}: ${callDuration}ms (${result.metrics.totalTokens} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% PnL)`);
                     }
                 } else {
                     burstFailure++;
