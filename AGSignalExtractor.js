@@ -251,8 +251,6 @@
                 'Drained%',
                 'Drained Count',
                 'TTC',
-                'Z Score',
-                'Avg Z Score',
                 'Buyer Label',
                 'Deployer Balance',
                 'Fresh Deployer',
@@ -310,26 +308,11 @@
                 // Drained percentage
                 const drainedPercent = swap.criteria?.drainedPct ? `${swap.criteria.drainedPct.toFixed(1)}%` : '';
                 
-                // Deployer age in readable format (API provides minutes as base unit)
-                const deployerAge = swap.criteria?.deployerAge ? 
-                    (swap.criteria.deployerAge >= 1440 ? `${(swap.criteria.deployerAge / 1440).toFixed(1)}d` :
-                     swap.criteria.deployerAge >= 60 ? `${(swap.criteria.deployerAge / 60).toFixed(1)}h` :
-                     `${swap.criteria.deployerAge}m`) : '';
-                
-                // Token age in readable format (handle seconds vs minutes based on API flag)
-                const tokenAge = swap.criteria?.tokenAge ? (() => {
-                    let ageInMinutes = swap.criteria.tokenAge;
-                    
-                    // Convert from seconds to minutes if the API indicates the value is in seconds
-                    if (swap.criteria.tokenAgeInSeconds) {
-                        ageInMinutes = Math.floor(swap.criteria.tokenAge / 60);
-                    }
-                    
-                    // Format the age in minutes
-                    return ageInMinutes >= 1440 ? `${(ageInMinutes / 1440).toFixed(1)}d` :
-                           ageInMinutes >= 60 ? `${(ageInMinutes / 60).toFixed(1)}h` :
-                           `${ageInMinutes}m`;
-                })() : '';
+                // Deployer age
+                const deployerAge = swap.criteria?.deployerAge ? `${swap.criteria.deployerAge}m` : '';
+                                
+                // Token age
+                const tokenAge = swap.criteria?.tokenAge ? `${swap.criteria.tokenAge}s` : '';
                 
                 const row = [
                     processed.symbol || '',                                    // Ticker
@@ -348,8 +331,6 @@
                     drainedPercent,                                            // Bundle
                     swap.criteria.drainedCount,
                     swap.criteria.ttc,
-                    swap.criteria.zScore,
-                    swap.criteria.avgZScore,
                     swap.criteria.buyerLabel,
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
                     swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Fresh Deployer
@@ -365,208 +346,8 @@
         return csvLines.join('\n');
     }
 
-    // Generate original detailed TSV format (all columns)
-    function generateDetailedTSV(allTokenData, removeHeaders = true) {
-        const csvLines = [];
-        
-        // Original detailed TSV Header
-        if (!removeHeaders) {
-            csvLines.push([
-                'Token_Name',
-                'Symbol', 
-                'Contract_Address',
-                'Signal_ID',
-                'Signal_Timestamp',
-                'Signal_Date',
-                'Signal_MCAP_USD',
-                'Current_MCAP_USD', 
-                'ATH_MCAP_USD',
-                'ATH_Date',
-                'ATL_MCAP_USD',
-                'ATL_Date',
-                'ATH_Multiplier',
-                'Current_vs_ATH_Percent',
-                'Trigger_Mode',
-                'Win_Prediction_Percent',
-                'Time_to_Complete_Seconds',
-                'AG_Score',
-                'Token_Age_Minutes',
-                'Deployer_Age_Minutes',
-                'Liquidity_USD',
-                'Liquidity_Percent',
-                'Unique_Wallets',
-                'KYC_Wallets',
-                'Bundled_Percent',
-                'Buy_Volume_Percent',
-                'Volume_vs_MCAP_Percent',
-                'Drained_Percent',
-                'Drained_Count',
-                'Deployer_Balance_SOL',
-                'Fresh_Deployer',
-                'Has_Description',
-                'Has_Socials',
-                'Deployer_Funding_Win_Rate'
-            ].join('\t'));
-        }
-        
-        // Original detailed TSV data rows
-        allTokenData.forEach(tokenData => {
-            const processed = tokenData.processed;
-            
-            tokenData.swaps.forEach(swap => {
-                // Calculate ATH multiplier for this specific signal
-                const athMultiplier = swap.athMcap && swap.signalMcap ? 
-                    (swap.athMcap / swap.signalMcap).toFixed(2) : '';
-                
-                // Calculate current vs ATH percentage
-                const currentVsAth = swap.athMcap && swap.currentMcap ? 
-                    (((swap.currentMcap - swap.athMcap) / swap.athMcap) * 100).toFixed(2) : '';
-                
-                // Format dates for Google Sheets (YYYY-MM-DD HH:MM:SS)
-                const signalDate = swap.timestamp ? 
-                    new Date(swap.timestamp * 1000).toISOString().replace('T', ' ').slice(0, 19) : '';
-                const athDate = swap.athTime ? 
-                    new Date(swap.athTime * 1000).toISOString().replace('T', ' ').slice(0, 19) : '';
-                const atlDate = swap.atlTime ? 
-                    new Date(swap.atlTime * 1000).toISOString().replace('T', ' ').slice(0, 19) : '';
-                
-                const row = [
-                    processed.tokenName.replace(/\t/g, ' '), // Replace tabs with spaces in token names
-                    processed.symbol,
-                    processed.tokenAddress,
-                    swap.id || '',
-                    swap.timestamp || '',
-                    signalDate,
-                    swap.signalMcap || '',
-                    swap.currentMcap || '',
-                    swap.athMcap || '',
-                    athDate,
-                    swap.atlMcap || '',
-                    atlDate,
-                    athMultiplier,
-                    currentVsAth,
-                    swap.triggerMode || '',
-                    swap.winPredPercent || '',
-                    swap.criteria?.ttc || '',
-                    swap.criteria?.agScore || '',
-                    swap.criteria?.tokenAge || '',
-                    swap.criteria?.deployerAge || '',
-                    swap.criteria?.liquidity || '',
-                    swap.criteria?.liquidityPct || '',
-                    swap.criteria?.uniqueCount || '',
-                    swap.criteria?.kycCount || '',
-                    swap.criteria?.smCount || '',
-                    swap.criteria?.holdersCount || '',
-                    swap.criteria?.bundledPct || '',
-                    swap.criteria?.buyVolumePct || '',
-                    swap.criteria?.volMcapPct || '',
-                    swap.criteria?.drainedPct || '',
-                    swap.criteria?.drainedCount || '',
-                    swap.criteria?.zScore || '',
-                    swap.criteria?.avgZscore || '',
-                    swap.criteria?.buyerLabel || '',
-                    swap.criteria?.deployerBalance || '',
-                    swap.criteria?.freshDeployer ? 'TRUE' : 'FALSE', // Google Sheets boolean format
-                    swap.criteria?.hasDescription ? 'TRUE' : 'FALSE',
-                    swap.criteria?.hasSocials ? 'TRUE' : 'FALSE',
-                    swap.criteria?.deployerFundingWinRate || ''
-                ];
-                csvLines.push(row.join('\t'));
-            });
-        });
-        
-        return csvLines.join('\n');
-    }
-
-    // Generate a summary CSV for overview analysis
-    function generateSummaryCSV(allTokenData, errors) {
-        const csvLines = [];
-        
-        // Summary TSV Header
-        csvLines.push([
-            'Token_Name',
-            'Symbol',
-            'Contract_Address',
-            'Total_Signals',
-            'First_Signal_Date',
-            'Last_Signal_Date',
-            'Current_MCAP_USD',
-            'ATH_MCAP_USD',
-            'Max_ATH_Multiplier',
-            'Average_Win_Prediction',
-            'Max_Win_Prediction',
-            'Min_Win_Prediction',
-            'Trigger_Modes_Used',
-            'Status'
-        ].join('\t'));
-        
-        // Summary data for each token
-        allTokenData.forEach(tokenData => {
-            const processed = tokenData.processed;
-            
-            // Calculate max ATH multiplier across all signals
-            const maxAthMultiplier = Math.max(...tokenData.swaps.map(swap => {
-                return swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0;
-            })).toFixed(2);
-            
-            // Calculate average win prediction
-            const avgWinPred = tokenData.swaps.length > 0 ? 
-                (tokenData.swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / tokenData.swaps.length).toFixed(2) : '';
-            
-            // Get min/max win predictions
-            const winPreds = tokenData.swaps.map(swap => swap.winPredPercent || 0);
-            const maxWinPred = Math.max(...winPreds).toFixed(2);
-            const minWinPred = Math.min(...winPreds).toFixed(2);
-            
-            // Format dates
-            const firstSignalDate = tokenData.swaps.length > 0 ? 
-                new Date(tokenData.swaps[tokenData.swaps.length - 1].timestamp * 1000).toISOString().slice(0, 10) : '';
-            const lastSignalDate = tokenData.swaps.length > 0 ? 
-                new Date(tokenData.swaps[0].timestamp * 1000).toISOString().slice(0, 10) : '';
-            
-            const row = [
-                processed.tokenName.replace(/\t/g, ' '), // Replace tabs with spaces in token names
-                processed.symbol,
-                processed.tokenAddress,
-                processed.totalSignals,
-                firstSignalDate,
-                lastSignalDate,
-                processed.currentMcapRaw || '',
-                processed.athMcapRaw || '',
-                maxAthMultiplier,
-                avgWinPred,
-                maxWinPred,
-                minWinPred,
-                processed.triggerModes,
-                'Success'
-            ];
-            csvLines.push(row.join('\t'));
-        });
-        
-        // Add error entries
-        errors.forEach(error => {
-            const shortAddr = error.address;
-            const row = [
-                '',
-                '',
-                shortAddr,
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                `Error: ${error.error}`
-            ];
-            csvLines.push(row.join('\t'));
-        });
-        
-        return csvLines.join('\n');
-    }
+    
+    
 
     // ========================================
     // 📋 CLIPBOARD FUNCTIONS
@@ -708,7 +489,7 @@
             
             <div id="action-buttons" style="margin-top: 10px; display: none;">
                 <button id="copy-detailed-csv-btn" style="
-                    width: 47%; 
+                    width: 97%; 
                     padding: 8px; 
                     background: #28a745; 
                     border: none; 
@@ -719,21 +500,7 @@
                     margin-right: 2%;
                     font-weight: bold;
                 ">
-                    📊 Custom
-                </button>
-                <button id="copy-full-detailed-btn" style="
-                    width: 47%;
-                    padding: 8px; 
-                    background: #6f42c1; 
-                    border: none; 
-                    border-radius: 4px; 
-                    color: white; 
-                    font-size: 10px; 
-                    cursor: pointer;
-                    margin-right: 2%;
-                    font-weight: bold;
-                ">
-                    📈 Detail
+                    📊 Copy
                 </button>
             </div>
             
@@ -769,12 +536,6 @@
             statusArea.scrollTop = statusArea.scrollHeight;
         }
     }
-
-    // ========================================
-    // 🚀 MAIN EXTRACTION FUNCTION
-    // ========================================
-    
-    // Get selected trigger modes
       
     
     // ========================================
@@ -953,121 +714,7 @@
         return false;
     }
     
-    // Apply generated config to backtester UI using correct field mappings
-    async function applyConfigToBacktester(config) {
-        let appliedFields = 0;
-        let totalFields = 0;
-        const results = [];        
         
-        // Helper function to track field setting (without section opening)
-        const trackField = async (fieldName, value) => {
-            totalFields++;
-            try {
-                const success = await setFieldValue(fieldName, value);
-                if (success) {
-                    appliedFields++;
-                    results.push(`✅ ${fieldName}: ${value}`);
-                    return true;
-                } else {
-                    results.push(`❌ ${fieldName}: ${value} (field not found)`);
-                    return false;
-                }
-            } catch (error) {
-                results.push(`❌ ${fieldName}: ${value} (error: ${error.message})`);
-                return false;
-            }
-        };
-        
-        // Helper function to open section and apply fields
-        const applyFieldsToSection = async (sectionName, fieldsToApply) => {
-            try {
-                const sectionOpened = await openSection(sectionName);
-                if (!sectionOpened) {
-                    results.push(`❌ Could not open ${sectionName} section`);
-                    return false;
-                }
-                
-                await sleep(200); // Wait for section to open
-                
-                // Apply all fields for this section
-                for (const [fieldName, value] of fieldsToApply) {
-                    if (value !== undefined && value !== null) {
-                        await trackField(fieldName, value);
-                        await sleep(50); // Small delay between field updates
-                    }
-                }
-                
-                return true;
-            } catch (error) {
-                results.push(`❌ Error with ${sectionName} section: ${error.message}`);
-                return false;
-            }
-        };        
-    
-        const boolToToggleValue = (val) => {
-            if (val === null) return "Don't care";
-            return val ? "Yes" : "Don't care";
-        };
-        
-        // Basic Section Fields
-        await applyFieldsToSection('Basic', [
-            ['Min MCAP (USD)', config.basic.mcapMin],
-            ['Max MCAP (USD)', config.basic.mcapMax],
-            ['Min Liquidity (USD)', config.liquidity.liquidityMin],
-            ['Max Liquidity (USD)', config.liquidity.liquidityMax]
-        ]);
-        
-        // Token Details Section Fields  
-        await applyFieldsToSection('Token Details', [
-            ['Min AG Score', config.basic.agScoreMin],
-            ['Max Token Age (min)', config.basic.tokenAgeMax],
-            ['Min Deployer Age (min)', config.basic.deployerAgeMin]
-        ]);
-        
-        // Wallets Section Fields
-        await applyFieldsToSection('Wallets', [
-            ['Min Unique Wallets', config.wallets.uniqueWalletsMin],
-            ['Max Unique Wallets', config.wallets.uniqueWalletsMax],
-            ['Min KYC Wallets', config.wallets.kycWalletsMin],
-            ['Max KYC Wallets', config.wallets.kycWalletsMax]
-        ]);
-        
-        // Risk Section Fields (including booleans)
-        const riskFields = [
-            ['Min Bundled %', config.risk.bundledPctMin],
-            ['Max Bundled %', config.risk.bundledPctMax],
-            ['Min Deployer Balance (SOL)', config.basic.deployerBalanceMin],
-            ['Min Buy Ratio %', config.trading.buyVolumePctMin],
-            ['Max Buy Ratio %', config.trading.buyVolumePctMax],
-            ['Min Vol MCAP %', config.trading.volMcapPctMin],
-            ['Max Vol MCAP %', config.trading.volMcapPctMax],
-            ['Max Drained %', config.risk.drainedPctMax]
-        ];
-        
-        // Add boolean fields if they have values (check for true/false, not just non-null)
-        if (config.booleans.freshDeployer !== null && config.booleans.freshDeployer !== undefined) {
-            riskFields.push(['Fresh Deployer', boolToToggleValue(config.booleans.freshDeployer)]);
-        }
-        if (config.booleans.hasDescription !== null && config.booleans.hasDescription !== undefined) {
-            riskFields.push(['Description', boolToToggleValue(config.booleans.hasDescription)]);
-        }
-        
-        await applyFieldsToSection('Risk', riskFields);
-        
-        // Advanced Section Fields
-        await applyFieldsToSection('Advanced', [
-            ['Max Liquidity %', config.liquidity.liquidityPctMax]
-        ]);
-        
-        return {
-            success: appliedFields > 0,
-            appliedFields,
-            totalFields,
-            successRate: totalFields > 0 ? ((appliedFields / totalFields) * 100).toFixed(1) : 0,
-            results
-        };
-    }
-    
     // ========================================
     // 🚀 MAIN EXTRACTION FUNCTION
     // ========================================
@@ -1285,16 +932,7 @@
                 updateStatus(success ? `📊 Custom format TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
             }
         });
-        
-        document.getElementById('copy-full-detailed-btn').addEventListener('click', async () => {
-            if (window.extractedData) {
-                const removeHeaders = document.getElementById('remove-headers').checked;
-                const detailedOutput = generateDetailedTSV(window.extractedData.tokens, removeHeaders);
-                const success = await copyToClipboard(detailedOutput);
-                updateStatus(success ? `📈 Full detailed TSV copied${removeHeaders ? ' (no headers)' : ' (with headers)'}! Paste into Google Sheets` : 'Failed to copy to clipboard', !success);
-            }
-        });      
-        
+                
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('signal-extractor-ui').remove();
         });
@@ -1323,9 +961,5 @@
     console.log('📋 Enter contract addresses (one per line) and click "Extract Data" for batch analysis');
     console.log('🔧 Use Ctrl+Enter to start extraction from the text area');
     console.log('📊 Export formats optimized for Google Sheets: Custom TSV and Full Detailed TSV');
-    console.log('⚙️ NEW: Generate tightest backtester config from successful signals!');
-    console.log('🎯 Config generation analyzes MCAP, AG Score, Token Age, Deployer stats, and Wallet criteria');
-    console.log('� Auto-applies generated config directly to backtester UI fields!');
-    console.log('�💡 Copy generated config and apply to backtester for reverse-engineered optimization!');
     
 })();
