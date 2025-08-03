@@ -50,17 +50,14 @@
             { size: 20, gain: 10000 }
         ],
         
-        // Rate limiting - BALANCED MODE with 90 req/min hard cap
-        RATE_LIMIT_THRESHOLD: 35,    // Increased from 60 to 65 for better performance
-        RATE_LIMIT_RECOVERY: 8500,   // 8.5s recovery (balanced - was 10s)
-        RATE_LIMIT_SAFETY_MARGIN: 1.1, // 10% safety margin (reduced from 20%)
-        INTRA_BURST_DELAY: 8,        // 8ms delay for ~75-85 req/min target
-        MAX_REQUESTS_PER_MINUTE: 60, // Hard cap at 60 req/min
-        USE_BURST_RATE_LIMITING: true, // Use burst mode for maximum speed
-        ADAPTIVE_RATE_LIMITING: true,  // Speed up when no rate limits are detected
-        AGGRESSIVE_RECOVERY: true,     // Enable moderate recovery (was false)
-        RESILIENT_MODE: true,          // Don't reduce burst limit as much on first 429
-        SMART_BURST_SIZE: true        // Dynamically adjust burst size based on API behavior
+        // Rate limiting - ULTRA CONSERVATIVE MODE for 0-1 rate limit errors per session
+        RATE_LIMIT_THRESHOLD: 20,    // Very conservative burst size (reduced from 35)
+        RATE_LIMIT_RECOVERY: 10000,  // 10s recovery time (increased from 8.5s)
+        RATE_LIMIT_SAFETY_MARGIN: 1.5, // 50% safety margin (increased from 10%)
+        INTRA_BURST_DELAY: 100,      // 100ms delay between requests
+        MAX_REQUESTS_PER_MINUTE: 50, // Conservative hard cap at 40 req/min (reduced from 60)
+        USE_BURST_RATE_LIMITING: true, // Use burst mode for efficiency
+        SMART_BURST_SIZE: true        // Keep smart burst size learning for optimal discovery
     };
 
     // Parameter validation rules (same as original AGCopilot)
@@ -193,7 +190,7 @@
     // Initialize window.STOPPED for global access
     window.STOPPED = false;
 
-    // Burst Rate Limiter - Enhanced for maximum safe speed with intelligent learning
+    // Burst Rate Limiter
     class BurstRateLimiter {
         constructor(burstLimit = CONFIG.RATE_LIMIT_THRESHOLD, recoveryTime = CONFIG.RATE_LIMIT_RECOVERY, safetyMargin = CONFIG.RATE_LIMIT_SAFETY_MARGIN) {
             this.originalBurstLimit = burstLimit;
@@ -218,11 +215,12 @@
             // Rolling window for accurate rate tracking (last 60 seconds)
             this.recentCalls = []; // Array of timestamps for recent calls
             
-            console.log(`🚀 Enhanced BurstRateLimiter: ${burstLimit} calls/burst, ${(recoveryTime * safetyMargin / 1000).toFixed(1)}s recovery, ${this.intraBurstDelay}ms intra-burst delay`);
-            console.log(`🛑 Hard rate cap: ${CONFIG.MAX_REQUESTS_PER_MINUTE} requests/minute maximum`);
+            console.log(`🚀 BurstRateLimiter: ${burstLimit} calls/burst, ${(recoveryTime * safetyMargin / 1000).toFixed(1)}s recovery, ${this.intraBurstDelay}ms intra-burst delay`);
+            console.log(`🛑 Rate limit: ${CONFIG.MAX_REQUESTS_PER_MINUTE} requests/minute max`);
+            console.log(`🎯 Goal: Maximum 1 rate limit error per session`);
         }
 
-        // Adaptive adjustment when we hit unexpected rate limits (intelligent learning)
+        // Adaptive adjustment when we hit unexpected rate limits (ultra-conservative learning)
         adaptToBurstLimit() {
             this.rateLimitHits++;
             this.rateLimitPositions.push(this.callCount); // Record where the 429 occurred
@@ -233,128 +231,63 @@
             if (CONFIG.SMART_BURST_SIZE) {
                 // Learn the optimal burst size from where rate limits actually occur
                 const avgRateLimitPosition = this.rateLimitPositions.reduce((a, b) => a + b, 0) / this.rateLimitPositions.length;
-                const safetyBuffer = 5; // 5-call safety buffer
-                this.optimalBurstSize = Math.max(15, Math.floor(avgRateLimitPosition - safetyBuffer));
+                const safetyBuffer = Math.max(8, Math.floor(avgRateLimitPosition * 0.4)); // Larger safety buffer (40% of avg position)
+                this.optimalBurstSize = Math.max(5, Math.floor(avgRateLimitPosition - safetyBuffer));
                 
-                console.log(`🧠 Learning: Rate limits occur around position ${avgRateLimitPosition.toFixed(1)}, setting optimal burst size to ${this.optimalBurstSize}`);
+                console.log(`🧠 Learning: Rate limits occur around position ${avgRateLimitPosition.toFixed(1)}, setting optimal burst size to ${this.optimalBurstSize} (buffer: ${safetyBuffer})`);
                 this.burstLimit = this.optimalBurstSize;
             } else {
-                // Original logic with resilient mode
+                // Ultra-conservative immediate harsh reduction
                 let reductionFactor, minLimit;
                 
-                if (CONFIG.RESILIENT_MODE) {
-                    if (this.rateLimitHits === 1) {
-                        reductionFactor = 0.95; // Only 5% reduction
-                        minLimit = 60;
-                        console.log(`⚠️ First rate limit hit - minimal adaptation (5% reduction)`);
-                    } else if (this.rateLimitHits === 2) {
-                        reductionFactor = 0.90; // 10% reduction
-                        minLimit = 45;
-                        console.log(`⚠️ Second rate limit hit - moderate adaptation (10% reduction)`);
-                    } else {
-                        reductionFactor = 0.80; // 20% reduction
-                        minLimit = 30;
-                        console.log(`⚠️ Multiple rate limits - aggressive adaptation (20% reduction)`);
-                    }
+                if (this.rateLimitHits === 1) {
+                    reductionFactor = 0.5; // Immediate 50% reduction on first hit
+                    minLimit = 5;
+                    console.log(`⚠️ First rate limit hit - immediate harsh reduction (50%)`);
                 } else {
-                    reductionFactor = 0.90;
-                    minLimit = 20;
+                    reductionFactor = 0.3; // 70% reduction on subsequent hits
+                    minLimit = 3;
+                    console.log(`⚠️ Multiple rate limits - extreme reduction (70%)`);
                 }
                 
                 const newLimit = Math.max(minLimit, Math.floor(this.callCount * reductionFactor));
                 this.burstLimit = newLimit;
             }
             
-            // Minimal recovery time adjustment
-            const recoveryMultiplier = CONFIG.RESILIENT_MODE ? 1.01 : 1.02; // Almost no increase
-            this.recoveryTime = Math.min(15000, this.recoveryTime * recoveryMultiplier);
+            // Significant recovery time increase to avoid rapid re-triggering
+            const recoveryMultiplier = 1.5; // 50% increase each time
+            this.recoveryTime = Math.min(30000, this.recoveryTime * recoveryMultiplier); // Cap at 30s
             
             console.log(`📉 Burst limit: ${this.burstLimit}, Recovery: ${(this.recoveryTime/1000).toFixed(1)}s`);
         }
 
-        // Speed up when things are going well (enhanced with learning)
+        // Simple success tracking - no adaptive behavior
         adaptToSuccess() {
             this.successfulBursts++;
             this.consecutiveSuccesses++;
-            
-            const successThreshold = CONFIG.AGGRESSIVE_RECOVERY ? 1 : 2; // Very aggressive success threshold
-            
-            if (this.consecutiveSuccesses >= successThreshold && CONFIG.ADAPTIVE_RATE_LIMITING) {
-                
-                if (CONFIG.SMART_BURST_SIZE && this.rateLimitPositions.length > 0) {
-                    // Intelligently increase towards learned optimal, but cautiously
-                    const learnedOptimal = this.optimalBurstSize;
-                    const currentGap = learnedOptimal - this.burstLimit;
-                    
-                    if (currentGap > 0) {
-                        const increaseAmount = Math.min(3, Math.ceil(currentGap * 0.3)); // Gradual increase
-                        const newLimit = Math.min(learnedOptimal, this.burstLimit + increaseAmount);
-                        
-                        if (newLimit > this.burstLimit) {
-                            console.log(`📈 Smart increase: ${this.burstLimit} → ${newLimit} (towards learned optimal ${learnedOptimal})`);
-                            this.burstLimit = newLimit;
-                        }
-                    }
-                } else {
-                    // Original logic
-                    if (this.burstLimit < this.originalBurstLimit) {
-                        const increaseAmount = CONFIG.AGGRESSIVE_RECOVERY ? 8 : 5;
-                        const newLimit = Math.min(this.originalBurstLimit, this.burstLimit + increaseAmount);
-                        console.log(`📈 Increasing burst limit: ${this.burstLimit} → ${newLimit} (${this.successfulBursts} successful bursts)`);
-                        this.burstLimit = newLimit;
-                    }
-                }
-                
-                // Aggressively reduce recovery time
-                if (this.recoveryTime > this.baseRecoveryTime * CONFIG.RATE_LIMIT_SAFETY_MARGIN) {
-                    const reductionFactor = CONFIG.AGGRESSIVE_RECOVERY ? 0.8 : 0.9; // Faster reduction
-                    this.recoveryTime = Math.max(
-                        this.baseRecoveryTime * CONFIG.RATE_LIMIT_SAFETY_MARGIN, 
-                        this.recoveryTime * reductionFactor
-                    );
-                    console.log(`⏩ Reduced recovery time to ${(this.recoveryTime/1000).toFixed(1)}s`);
-                }
-            }
+            // Just track successful bursts, no adaptive changes to limits or recovery times
         }
 
         async throttle() {
             const now = Date.now();
             
-            // HARD CAP: Enforce maximum requests per minute using rolling window
-            const rollingRate = this.getRollingWindowRate();
-            const sessionRate = this.getRequestsPerMinute();
-            
-            // Use the higher of the two rates for safety
-            const currentRate = Math.max(rollingRate, sessionRate);
-            
-            if (currentRate >= CONFIG.MAX_REQUESTS_PER_MINUTE && this.totalCalls > 5) {
-                const rateCap = CONFIG.MAX_REQUESTS_PER_MINUTE;
-                const excessRate = currentRate - rateCap;
-                
-                // Calculate delay needed to bring rate back under cap
-                // More aggressive delay calculation based on excess
-                const baseDelay = Math.max(1000, 60000 / rateCap); // Minimum interval between requests
-                const excessMultiplier = 1 + (excessRate / rateCap); // Scale delay based on how much we're over
-                const requiredDelay = Math.min(10000, baseDelay * excessMultiplier); // Cap at 10 seconds
-                
-                console.log(`🛑 HARD CAP ENFORCED: Rolling=${rollingRate}, Session=${sessionRate.toFixed(1)} >= ${rateCap} req/min`);
-                console.log(`🛑 Adding ${Math.round(requiredDelay)}ms delay (excess: ${excessRate.toFixed(1)} req/min)`);
-                
-                await sleep(requiredDelay);
-                
-                // Log the rate after delay
-                const newRollingRate = this.getRollingWindowRate();
-                console.log(`🛑 Rate after delay: Rolling=${newRollingRate} req/min`);
-            }
-            
-            // Add small delay between requests within a burst to be respectful
+            // Add respectful delay between ALL requests
             if (this.intraBurstDelay > 0 && this.lastCallTime > 0) {
                 const timeSinceLastCall = now - this.lastCallTime;
                 if (timeSinceLastCall < this.intraBurstDelay) {
                     await sleep(this.intraBurstDelay - timeSinceLastCall);
                 }
             }
-            
+
+            const rollingRate = this.getRollingWindowRate();
+            if (rollingRate >= CONFIG.MAX_REQUESTS_PER_MINUTE) {
+                // Calculate how long to wait to get back under the limit
+                const excessRequests = rollingRate - CONFIG.MAX_REQUESTS_PER_MINUTE + 1;
+                const waitTime = (excessRequests / CONFIG.MAX_REQUESTS_PER_MINUTE) * 60000; // Convert to ms
+                console.log(`⏳ Rate limit prevention: ${rollingRate}/${CONFIG.MAX_REQUESTS_PER_MINUTE} req/min, waiting ${(waitTime/1000).toFixed(1)}s...`);
+                await sleep(waitTime);
+            }
+
             // Reset burst count if enough time has passed since last burst
             if (now - this.lastBurstTime > this.recoveryTime) {
                 if (this.callCount > 0) {
@@ -373,14 +306,14 @@
                 }
             }
             
-            // If we've hit the burst limit, wait for recovery
+            // If we've hit the burst limit, wait for recovery with extra safety margin
             if (this.callCount >= this.burstLimit) {
                 const timeSinceBurst = now - this.burstStartTime;
                 const waitTime = Math.max(0, this.recoveryTime - timeSinceBurst);
                 
                 if (waitTime > 0) {
                     console.log(`⏳ Burst limit reached (${this.callCount}/${this.burstLimit}), waiting ${(waitTime/1000).toFixed(1)}s...`);
-                    console.log(`📊 Current rate: ~${this.getRequestsPerMinute()} requests/minute`);
+                    console.log(`📊 Current rate: ~${this.getRequestsPerMinute()} requests/minute (rolling: ${this.getRollingWindowRate()})`);
                     await sleep(waitTime);
                 }
                 
@@ -398,8 +331,8 @@
             this.recentCalls.push(now);
             
             if (this.callCount === 1) {
-                console.log(`📡 Starting new burst (${this.totalCalls} total calls)`);
-            } else if (this.callCount % 15 === 0 || this.callCount >= this.burstLimit - 5) {
+                console.log(`📡 Starting new burst (${this.totalCalls} total calls, burst limit: ${this.burstLimit})`);
+            } else if (this.callCount % 5 === 0 || this.callCount >= this.burstLimit - 2) {
                 console.log(`📡 Burst progress: ${this.callCount}/${this.burstLimit} | ${this.getRequestsPerMinute()} req/min | Rolling: ${this.getRollingWindowRate()} req/min`);
             }
         }
@@ -447,8 +380,10 @@
                 timeSinceLastCall: Date.now() - this.lastBurstTime,
                 requestsPerMinute: this.getRequestsPerMinute(),
                 rollingWindowRate: this.getRollingWindowRate(),
+                maxRequestsPerMinute: CONFIG.MAX_REQUESTS_PER_MINUTE,
                 recoveryTime: this.recoveryTime,
-                intraBurstDelay: this.intraBurstDelay
+                intraBurstDelay: this.intraBurstDelay,
+                isApproachingLimit: this.getRollingWindowRate() >= CONFIG.MAX_REQUESTS_PER_MINUTE * 0.9
             };
         }
     }
@@ -544,6 +479,7 @@
             this.currentBest = null;
             this.totalTests = 0;
             this.failedTests = 0;
+            this.rateLimitFailures = 0; // Track only actual rate limiting failures
             this.startTime = null;
             this.isRunning = false;
         }
@@ -553,6 +489,7 @@
             this.startTime = Date.now();
             this.totalTests = 0;
             this.failedTests = 0;
+            this.rateLimitFailures = 0;
             this.currentBest = null;
             this.updateBestConfigDisplay();
         }
@@ -562,9 +499,10 @@
             // Keep display showing final results
         }
 
-        updateProgress(testCount, failedCount, currentBest = null) {
+        updateProgress(testCount, failedCount, rateLimitFailures = 0, currentBest = null) {
             this.totalTests = testCount;
             this.failedTests = failedCount;
+            this.rateLimitFailures = rateLimitFailures;
             if (currentBest) this.currentBest = currentBest;
             
             this.updateBestConfigDisplay();
@@ -609,9 +547,10 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: bold; opacity: 0.8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
                     <div>🚀 Burst: <span style="color: #4ECDC4;">${burstStats.currentBurstCount}/${burstStats.burstLimit}</span></div>
                     <div>📡 Total: <span style="color: #4ECDC4;">${burstStats.totalCalls}</span></div>
-                    <div>📊 Session: <span style="color: #4ECDC4;">${burstStats.requestsPerMinute}/min</span></div>
-                    <div>⏱️ Rolling: <span style="color: ${burstStats.rollingWindowRate >= CONFIG.MAX_REQUESTS_PER_MINUTE ? '#ff9800' : '#4ECDC4'};">${burstStats.rollingWindowRate}/min</span></div>
-                    ${burstStats.rateLimitHits > 0 ? `<div>⚠️ Rate Hits: <span style="color: #ff9800;">${burstStats.rateLimitHits}</span></div>` : ''}
+                    <div>📊 Session: <span style="color: ${burstStats.requestsPerMinute >= burstStats.maxRequestsPerMinute ? '#ff9800' : '#4ECDC4'};">${burstStats.requestsPerMinute}/min</span></div>
+                    <div>⏱️ Rolling: <span style="color: ${burstStats.rollingWindowRate >= burstStats.maxRequestsPerMinute ? '#ff9800' : '#4ECDC4'};">${burstStats.rollingWindowRate}/min</span></div>
+                    <div>🎯 Limit: <span style="color: #888;">${burstStats.maxRequestsPerMinute}/min</span></div>
+                    ${burstStats.rateLimitHits > 0 ? `<div>⚠️ Rate Hits: <span style="color: #ff4444;">${burstStats.rateLimitHits}</span></div>` : '<div>✅ No Rate Hits</div>'}
                 </div>
             `;
 
@@ -641,11 +580,11 @@
                 `;
             }
 
-            // Add rate limiting warning if many failures
-            if (this.failedTests > this.totalTests * 0.3 && this.totalTests > 5) {
+            // Add rate limiting warning only for actual rate limit failures
+            if (this.rateLimitFailures > this.totalTests * 0.1 && this.totalTests > 10) {
                 content += `
                     <div style="margin-top: 8px; margin-bottom: 8px; padding: 6px; background: rgba(255, 152, 0, 0.1); border: 1px solid #ff9800; border-radius: 4px; font-size: 9px; color: #ff9800;">
-                        ⚠️ High failure rate detected. Burst rate limiter may need adjustment - check console for details.
+                        ⚠️ High rate limit failure rate detected (${this.rateLimitFailures}/${this.totalTests}). Burst rate limiter may need adjustment - check console for details.
                     </div>
                 `;
             }
@@ -987,20 +926,24 @@
                         
                         if (!response.ok) {
                             if (response.status === 429) {
-                                // Rate limited - adapt the burst limiter and handle gracefully
-                                console.warn(`⚠️ Rate limit hit (429) on attempt ${attempt}/${retries}`);
+                                // Rate limited - adapt the burst limiter and handle with aggressive backoff
+                                console.warn(`⚠️ Rate limit hit (429) on attempt ${attempt}/${retries} - CRITICAL FAILURE`);
                                 burstRateLimiter.adaptToBurstLimit();
                                 
                                 const retryAfter = response.headers.get('Retry-After');
-                                let waitTime = retryAfter ? parseInt(retryAfter) * 1000 : CONFIG.RATE_LIMIT_RECOVERY;
+                                let waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.max(20000, CONFIG.RATE_LIMIT_RECOVERY * 2);
                                 
-                                // For subsequent retries, use exponential backoff
+                                // Exponential backoff with much longer delays
                                 if (attempt > 1) {
-                                    waitTime *= Math.pow(1.5, attempt - 1);
+                                    waitTime *= Math.pow(2, attempt - 1); // True exponential backoff
                                 }
                                 
-                                console.warn(`⏳ Waiting ${(waitTime/1000).toFixed(1)}s before retry...`);
+                                // Cap at 2 minutes but ensure it's substantial
+                                waitTime = Math.min(120000, Math.max(20000, waitTime));
+                                
+                                console.warn(`⏳ EXTENDED BACKOFF: Waiting ${(waitTime/1000).toFixed(1)}s before retry...`);
                                 console.warn(`📊 Burst limiter adapted: ${burstRateLimiter.burstLimit} calls/burst, ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s recovery`);
+                                console.warn(`🚨 This rate limit indicates our throttling needs further adjustment!`);
                                 
                                 if (attempt < retries) {
                                     await sleep(waitTime);
@@ -1009,7 +952,7 @@
                                     // On final retry failure, return a special result to continue optimization
                                     return {
                                         success: false,
-                                        error: 'Rate limit exceeded after all retries',
+                                        error: 'Rate limit exceeded after all retries - throttling insufficient',
                                         isRateLimit: true,
                                         retryable: true
                                     };
@@ -1054,6 +997,12 @@
                             cleanPnL: data.cleanPnL || 0,
                             totalSignals: data.totalAvailableSignals || 0
                         };
+                        
+                        // Ensure we have valid numbers for required fields
+                        if (isNaN(transformedMetrics.tpPnlPercent) || isNaN(transformedMetrics.totalTokens)) {
+                            console.error('❌ Invalid metrics - contains NaN values:', transformedMetrics);
+                            throw new Error(`Invalid metrics returned: tpPnlPercent=${transformedMetrics.tpPnlPercent}, totalTokens=${transformedMetrics.totalTokens}`);
+                        }
                         
                         return {
                             success: true,
@@ -1166,7 +1115,17 @@
     // 📊 ROBUST SCORING SYSTEM (Outlier-Resistant)
     // ========================================
     function calculateRobustScore(metrics) {
-        if (!metrics || metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
+        if (!metrics) {
+            console.warn('⚠️ calculateRobustScore: metrics is null/undefined');
+            return null;
+        }
+        
+        if (metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
+            console.warn('⚠️ calculateRobustScore: missing required properties', {
+                tpPnlPercent: metrics.tpPnlPercent,
+                totalTokens: metrics.totalTokens,
+                allKeys: Object.keys(metrics)
+            });
             return null;
         }
 
@@ -1297,6 +1256,27 @@
             }
             
             const metrics = result.metrics;
+            
+            // Validate metrics before proceeding
+            if (!metrics) {
+                console.warn(`❌ ${testName}: No metrics returned from API`);
+                return {
+                    success: false,
+                    error: 'No metrics returned from API'
+                };
+            }
+            
+            if (metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
+                console.warn(`❌ ${testName}: Invalid metrics structure:`, {
+                    tpPnlPercent: metrics.tpPnlPercent,
+                    totalTokens: metrics.totalTokens,
+                    allKeys: Object.keys(metrics)
+                });
+                return {
+                    success: false,
+                    error: `Invalid metrics: missing tpPnlPercent (${metrics.tpPnlPercent}) or totalTokens (${metrics.totalTokens})`
+                };
+            }
             
             // Calculate robust score for logging
             const robustScoring = calculateRobustScore(metrics);
@@ -2761,10 +2741,16 @@
 
             try {
                 this.testCount++;
-                let failedCount = this.history.filter(h => !h.success).length;
+                let totalFailures = this.history.filter(h => !h.success).length;
+                let rateLimitFailures = this.history.filter(h => !h.success && (
+                    h.error?.includes('429') || 
+                    h.error?.includes('Rate limit') || 
+                    h.error?.includes('rate limit') ||
+                    h.reason === 'api_error'
+                )).length;
                 
-                // Update optimization tracker
-                window.optimizationTracker.updateProgress(this.testCount, failedCount);
+                // Update optimization tracker with separate failure counts
+                window.optimizationTracker.updateProgress(this.testCount, totalFailures, rateLimitFailures);
                 
                 // Ensure config is complete before testing
                 const completeConfig = ensureCompleteConfig(config);
@@ -2780,12 +2766,19 @@
                 const result = await testConfigurationAPI(completeConfig, testName);
                 
                 if (!result.success) {
-                    // Track failed test
+                    // Determine failure type - distinguish between API errors and threshold rejections
+                    const isRateLimitError = result.error?.includes('429') || 
+                                           result.error?.includes('Rate limit') || 
+                                           result.error?.includes('rate limit') ||
+                                           result.source === 'API';
+                    
+                    // Track failed test with categorization
                     this.history.push({
                         testName,
                         config: completeConfig,
                         success: false,
                         error: result.error,
+                        reason: isRateLimitError ? 'api_error' : 'validation_error',
                         testNumber: this.testCount,
                         timestamp: new Date().toISOString()
                     });
@@ -4307,12 +4300,12 @@
                     </label>
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runtime (min):</span>
-                        <input type="number" id="runtime-min" value="15" min="5" max="120" step="5"
+                        <input type="number" id="runtime-min" value="10" min="5" max="120" step="5"
                                style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runs:</span>
-                        <input type="number" id="chain-run-count" value="3" min="1" max="10" step="1"
+                        <input type="number" id="chain-run-count" value="4" min="1" max="10" step="1"
                                style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                 </div>
