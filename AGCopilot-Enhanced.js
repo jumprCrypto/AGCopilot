@@ -4219,11 +4219,8 @@
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                     <div style="flex: 1; text-align: center;">
                         <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
-                            🤖 AG Co-Pilot Enhanced + Signal Analysis
+                            🤖 AG Co-Pilot Enhanced
                         </h3>
-                        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">
-                            Optimization + Signal Analysis + Config Generation
-                        </p>
                     </div>
                     <button id="collapse-ui-btn" style="
                         background: rgba(255,255,255,0.2); 
@@ -4412,7 +4409,7 @@
             <!-- Signal Analysis Section -->
             <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">🔍 Signal Analysis</h4>
+                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">🔍 Signal Analysis & Config generation</h4>
                     <button id="toggle-signal-section" style="
                         background: rgba(255,255,255,0.1); 
                         border: 1px solid rgba(255,255,255,0.3); 
