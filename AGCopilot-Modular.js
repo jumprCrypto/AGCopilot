@@ -263,6 +263,428 @@
         // 📊 CORE FUNCTIONS
         // ========================================
 
+        // ========================================
+        // 🌐 SIGNAL ANALYSIS API FUNCTIONS (using module functions)
+        // ========================================
+
+        // Note: getTokenInfo and getAllTokenSwaps are imported from apiClientModule
+
+        // ========================================
+        // 🔄 SIGNAL PROCESSING & CONFIG GENERATION
+        // ========================================
+
+        // Process token data and swaps into structured format
+        function processTokenData(tokenInfo, swaps) {
+            return {
+                // Basic Info
+                contractAddress: tokenInfo.address || 'N/A',
+                name: tokenInfo.name || 'Unknown',
+                symbol: tokenInfo.symbol || 'N/A',
+                
+                // Market Data
+                signalMcap: tokenInfo.signalMcap || 0,
+                signalPrice: tokenInfo.signalPrice || 0,
+                currentMcap: tokenInfo.currentMcap || 0,
+                currentPrice: tokenInfo.currentPrice || 0,
+                athMcap: tokenInfo.athMcap || 0,
+                athPrice: tokenInfo.athPrice || 0,
+                
+                // Performance Metrics
+                athMultiplier: tokenInfo.athMcap && tokenInfo.signalMcap ? 
+                    (tokenInfo.athMcap / tokenInfo.signalMcap).toFixed(2) + 'x' : 'N/A',
+                athMultiplierRaw: tokenInfo.athMcap && tokenInfo.signalMcap ? 
+                    (tokenInfo.athMcap / tokenInfo.signalMcap) : 0,
+                currentMultiplier: tokenInfo.currentMcap && tokenInfo.signalMcap ? 
+                    (tokenInfo.currentMcap / tokenInfo.signalMcap).toFixed(2) + 'x' : 'N/A',
+                
+                // Signal Analysis
+                totalSignals: swaps.length,
+                
+                // AG Copilot Parameters (from signal data)
+                minMcap: tokenInfo.signalMcap || 0,
+                maxMcap: Math.max(tokenInfo.signalMcap || 0, tokenInfo.currentMcap || 0, tokenInfo.athMcap || 0),
+                deployerAge: tokenInfo.deployerAge || 0,
+                tokenAge: tokenInfo.tokenAge || 0,
+                agScore: tokenInfo.agScore || 0,
+                holders: tokenInfo.holders || 0,
+                uniqueWallets: tokenInfo.uniqueWallets || 0,
+                kycWallets: tokenInfo.kycWallets || 0,
+                bundledPercent: tokenInfo.bundledPercent || 0,
+                deployerBalance: tokenInfo.deployerBalance || 0,
+                buyRatio: tokenInfo.buyRatio || 50,
+                volMcapRatio: tokenInfo.volMcapRatio || 0,
+                drainedPercent: tokenInfo.drainedPercent || 0,
+                drainedCount: tokenInfo.drainedCount || 0,
+                ttc: tokenInfo.ttc || 0,
+                liquidity: tokenInfo.liquidity || 0,
+                winPred: tokenInfo.winPred || 0
+            };
+        }
+
+        // Generate batch summary from multiple token analyses
+        function generateBatchSummary(allTokenData) {
+            if (!allTokenData || allTokenData.length === 0) {
+                return {
+                    totalTokens: 0,
+                    avgMultiplier: 0,
+                    successRate: 0,
+                    topPerformers: [],
+                    avgSignalMcap: 0,
+                    avgAthMcap: 0
+                };
+            }
+
+            const successfulTokens = allTokenData.filter(token => token.athMultiplierRaw > 1);
+            
+            return {
+                totalTokens: allTokenData.length,
+                successfulTokens: successfulTokens.length,
+                successRate: (successfulTokens.length / allTokenData.length * 100).toFixed(1) + '%',
+                avgMultiplier: (allTokenData.reduce((sum, token) => sum + (token.athMultiplierRaw || 0), 0) / allTokenData.length).toFixed(2) + 'x',
+                topPerformers: allTokenData
+                    .sort((a, b) => (b.athMultiplierRaw || 0) - (a.athMultiplierRaw || 0))
+                    .slice(0, 5)
+                    .map(token => ({
+                        name: token.name,
+                        symbol: token.symbol,
+                        multiplier: token.athMultiplier
+                    })),
+                avgSignalMcap: Math.round(allTokenData.reduce((sum, token) => sum + (token.signalMcap || 0), 0) / allTokenData.length),
+                avgAthMcap: Math.round(allTokenData.reduce((sum, token) => sum + (token.athMcap || 0), 0) / allTokenData.length)
+            };
+        }
+
+        // Analyze signals to find optimal parameter bounds
+        function analyzeSignalCriteria(allTokenData, bufferPercent = 10, outlierMethod = 'none', useClustering = true) {
+            if (!allTokenData || allTokenData.length === 0) {
+                console.warn('⚠️ No token data provided for analysis');
+                return null;
+            }
+
+            console.log(`🔍 Analyzing ${allTokenData.length} signals with ${bufferPercent}% buffer, outlier method: ${outlierMethod}, clustering: ${useClustering}`);
+
+            // Filter for successful tokens (those that achieved >1x multiplier)
+            const successfulTokens = allTokenData.filter(token => token.athMultiplierRaw > 1);
+            
+            if (successfulTokens.length === 0) {
+                console.warn('⚠️ No successful tokens found (none achieved >1x multiplier)');
+                return generateFullAnalysis(allTokenData, bufferPercent, outlierMethod);
+            }
+
+            console.log(`✅ Found ${successfulTokens.length} successful tokens out of ${allTokenData.length}`);
+
+            if (useClustering && successfulTokens.length >= 10) {
+                return findSignalClusters(successfulTokens, allTokenData, 5);
+            } else {
+                return generateFullAnalysis(successfulTokens, bufferPercent, outlierMethod);
+            }
+        }
+
+        // Generate analysis from signals (core logic)
+        function generateAnalysisFromSignals(signals, bufferPercent, outlierMethod) {
+            const getClusteringParameters = () => [
+                'minMcap', 'agScore', 'deployerAge', 'tokenAge', 'holders', 
+                'uniqueWallets', 'kycWallets', 'bundledPercent', 'deployerBalance',
+                'buyRatio', 'volMcapRatio', 'drainedPercent', 'drainedCount', 
+                'ttc', 'liquidity', 'winPred'
+            ];
+
+            const analysis = {
+                tokenCount: signals.length,
+                successRate: signals.length > 0 ? '100%' : '0%', // All provided signals are "successful"
+                avgMultiplier: signals.length > 0 ? 
+                    (signals.reduce((sum, s) => sum + (s.athMultiplierRaw || 0), 0) / signals.length).toFixed(2) + 'x' : '0x',
+                parameters: {}
+            };
+
+            // Analyze each parameter
+            const parameters = getClusteringParameters();
+            for (const param of parameters) {
+                const values = signals.map(s => s[param]).filter(v => v !== undefined && v !== null && !isNaN(v));
+                
+                if (values.length === 0) continue;
+
+                // Remove outliers if requested
+                const cleanedValues = removeOutliers(values, outlierMethod);
+                
+                if (cleanedValues.length === 0) continue;
+
+                const min = Math.min(...cleanedValues);
+                const max = Math.max(...cleanedValues);
+                const avg = cleanedValues.reduce((sum, val) => sum + val, 0) / cleanedValues.length;
+                
+                // Apply buffer
+                const buffer = (max - min) * (bufferPercent / 100);
+                const bufferedMin = Math.max(0, min - buffer);
+                const bufferedMax = max + buffer;
+
+                analysis.parameters[param] = {
+                    original: { min, max, avg: avg.toFixed(2) },
+                    buffered: { 
+                        min: bufferedMin, 
+                        max: bufferedMax, 
+                        avg: avg.toFixed(2) 
+                    },
+                    sampleSize: cleanedValues.length,
+                    outlierMethod
+                };
+            }
+
+            return analysis;
+        }
+
+        // Generate full analysis (no clustering)
+        function generateFullAnalysis(allSignals, bufferPercent, outlierMethod) {
+            return {
+                type: 'full',
+                analysis: generateAnalysisFromSignals(allSignals, bufferPercent, outlierMethod),
+                clusters: null
+            };
+        }
+
+        // Find signal clusters (simplified version)
+        function findSignalClusters(signals, tokenData, minClusterTokens) {
+            // For simplicity in modular version, just return full analysis
+            // Full clustering implementation would require more complex logic
+            console.log('🔍 Clustering analysis simplified in modular version');
+            return generateFullAnalysis(signals, 10, 'none');
+        }
+
+        // Generate tightest possible configuration from analysis
+        function generateTightestConfig(analysis) {
+            if (!analysis || !analysis.analysis || !analysis.analysis.parameters) {
+                console.warn('⚠️ Invalid analysis data provided');
+                return null;
+            }
+
+            const params = analysis.analysis.parameters;
+            const config = deepClone(COMPLETE_CONFIG_TEMPLATE);
+
+            // Map analysis parameters to config sections
+            const paramMapping = {
+                'minMcap': { section: 'basic', name: 'Min MCAP (USD)' },
+                'agScore': { section: 'tokenDetails', name: 'Min AG Score' },
+                'deployerAge': { section: 'tokenDetails', name: 'Min Deployer Age (min)' },
+                'tokenAge': { section: 'tokenDetails', name: 'Min Token Age (sec)' },
+                'holders': { section: 'wallets', name: 'Min Holders' },
+                'uniqueWallets': { section: 'wallets', name: 'Min Unique Wallets' },
+                'kycWallets': { section: 'wallets', name: 'Min KYC Wallets' },
+                'bundledPercent': { section: 'risk', name: 'Max Bundled %' },
+                'deployerBalance': { section: 'risk', name: 'Min Deployer Balance (SOL)' },
+                'buyRatio': { section: 'risk', name: 'Min Buy Ratio %' },
+                'volMcapRatio': { section: 'risk', name: 'Max Vol MCAP %' },
+                'drainedPercent': { section: 'risk', name: 'Max Drained %' },
+                'drainedCount': { section: 'risk', name: 'Max Drained Count' },
+                'ttc': { section: 'advanced', name: 'Min TTC (sec)' },
+                'liquidity': { section: 'advanced', name: 'Max Liquidity %' },
+                'winPred': { section: 'advanced', name: 'Min Win Pred %' }
+            };
+
+            // Apply parameter bounds to config
+            for (const [paramKey, mapping] of Object.entries(paramMapping)) {
+                if (params[paramKey] && params[paramKey].buffered) {
+                    const value = params[paramKey].buffered.min;
+                    if (!isNaN(value) && value >= 0) {
+                        config[mapping.section][mapping.name] = Math.round(value * 100) / 100;
+                    }
+                }
+            }
+
+            // Set reasonable max values
+            if (params['minMcap'] && params['minMcap'].buffered && params['minMcap'].buffered.max) {
+                config.basic['Max MCAP (USD)'] = Math.round(params['minMcap'].buffered.max);
+            }
+
+            return config;
+        }
+
+        // ========================================
+        // 🚀 MAIN OPTIMIZATION FUNCTIONS
+        // ========================================
+
+        // Run full optimization with advanced techniques
+        async function runOptimization(initialConfig = null, options = {}) {
+            console.log('🚀 Starting full optimization...');
+            
+            if (!EnhancedOptimizer) {
+                console.warn('⚠️ Enhanced optimizer not available, using basic optimization');
+                return await basicOptimization(initialConfig);
+            }
+
+            const optimizer = new EnhancedOptimizer(initialConfig);
+            
+            // Initialize advanced components if available
+            if (LatinHypercubeSampler && SimulatedAnnealing && GeneticOptimizer) {
+                optimizer.initializeAdvancedComponents(LatinHypercubeSampler, SimulatedAnnealing, GeneticOptimizer);
+                console.log('✅ Advanced optimization components initialized');
+            } else {
+                console.log('⚠️ Some advanced optimization components not available');
+            }
+
+            try {
+                // Start the optimization
+                const result = await optimizer.runOptimization();
+                
+                if (result && result.bestConfig) {
+                    console.log(`✅ Optimization completed! Best score: ${result.bestScore?.toFixed(1) || 'N/A'}`);
+                    
+                    // Update global tracking
+                    if (window.optimizationTracker && result.bestConfig && result.bestMetrics) {
+                        window.optimizationTracker.updateBestConfig(
+                            result.bestConfig, 
+                            result.bestMetrics, 
+                            result.bestScore || 0
+                        );
+                    }
+                    
+                    return {
+                        success: true,
+                        bestConfig: result.bestConfig,
+                        bestScore: result.bestScore,
+                        bestMetrics: result.bestMetrics,
+                        testCount: result.testCount,
+                        runtime: result.runtime,
+                        type: 'enhanced'
+                    };
+                } else {
+                    console.warn('⚠️ Optimization returned invalid result');
+                    return await basicOptimization(initialConfig);
+                }
+                
+            } catch (error) {
+                console.error('❌ Enhanced optimization failed:', error);
+                console.log('🔄 Falling back to basic optimization...');
+                return await basicOptimization(initialConfig);
+            }
+        }
+
+        // Basic optimization fallback
+        async function basicOptimization(initialConfig = null) {
+            console.log('🔧 Running basic optimization...');
+            
+            try {
+                // Use initial config or create a reasonable default
+                let config = initialConfig;
+                if (!config) {
+                    config = deepClone(COMPLETE_CONFIG_TEMPLATE);
+                    // Set some reasonable defaults for testing
+                    config.basic["Min MCAP (USD)"] = 10000;
+                    config.basic["Max MCAP (USD)"] = 50000;
+                    config.tokenDetails["Min AG Score"] = 3;
+                    config.wallets["Min Unique Wallets"] = 1;
+                    config.wallets["Max Unique Wallets"] = 8;
+                    config.risk["Max Bundled %"] = 50;
+                    config.advanced["Max Liquidity %"] = 100;
+                }
+                
+                const result = await testConfigurationAPI(config, 'Basic Optimization Test');
+                
+                if (result.success) {
+                    console.log('✅ Basic optimization completed');
+                    
+                    // Update global tracking
+                    if (window.optimizationTracker && result.metrics) {
+                        const score = calculateRobustScore(result.metrics, CONFIG);
+                        window.optimizationTracker.updateBestConfig(
+                            config, 
+                            result.metrics, 
+                            score?.score || result.metrics.tpPnlPercent || 0
+                        );
+                    }
+                    
+                    return { 
+                        success: true, 
+                        bestConfig: config, 
+                        bestMetrics: result.metrics,
+                        bestScore: result.metrics.tpPnlPercent || 0,
+                        testCount: 1,
+                        runtime: 1,
+                        type: 'basic'
+                    };
+                } else {
+                    console.warn('❌ Basic optimization failed:', result.error);
+                    return { 
+                        success: false, 
+                        error: result.error,
+                        type: 'basic'
+                    };
+                }
+            } catch (error) {
+                console.error('❌ Basic optimization error:', error);
+                return { 
+                    success: false, 
+                    error: error.message,
+                    type: 'basic'
+                };
+            }
+        }
+
+        // Chained optimization runs
+        async function chainedOptimization(runs = CONFIG.CHAIN_RUN_COUNT, initialConfig = null) {
+            console.log(`🔗 Starting chained optimization (${runs} runs)...`);
+            
+            if (ChainedOptimizer && EnhancedOptimizer) {
+                console.log('✅ Using advanced ChainedOptimizer class');
+                const chainedOptimizer = new ChainedOptimizer();
+                return await chainedOptimizer.runChainedOptimization(runs, CONFIG.MAX_RUNTIME_MIN / runs, EnhancedOptimizer);
+            }
+            
+            // Fallback to simple implementation
+            console.log('⚠️ Using fallback chained optimization');
+            let bestOverallConfig = null;
+            let bestOverallScore = -Infinity;
+            let bestOverallMetrics = null;
+            const results = [];
+
+            for (let i = 0; i < runs; i++) {
+                if (window.STOPPED) {
+                    console.log('🛑 Chained optimization stopped by user');
+                    break;
+                }
+
+                console.log(`\n🔗 === CHAIN RUN ${i + 1}/${runs} ===`);
+                
+                const runConfig = i === 0 ? initialConfig : bestOverallConfig; // Use best config from previous run
+                const result = await runOptimization(runConfig, { chainRun: i + 1 });
+                
+                if (result.success) {
+                    results.push(result);
+                    
+                    const score = calculateRobustScore(result.bestMetrics, CONFIG);
+                    if (score && score.score > bestOverallScore) {
+                        bestOverallScore = score.score;
+                        bestOverallConfig = result.bestConfig;
+                        bestOverallMetrics = result.bestMetrics;
+                        console.log(`🏆 New best score: ${score.score.toFixed(1)}`);
+                    }
+                } else {
+                    console.warn(`❌ Chain run ${i + 1} failed:`, result.error);
+                }
+            }
+
+            console.log(`\n🎉 Chained optimization completed! ${results.length}/${runs} successful runs`);
+            
+            if (bestOverallConfig) {
+                console.log(`🏆 Best overall score: ${bestOverallScore.toFixed(1)}`);
+                console.log('📋 Best configuration:', bestOverallConfig);
+                
+                // Update global tracker
+                if (window.optimizationTracker) {
+                    window.optimizationTracker.updateBestConfig(bestOverallConfig, bestOverallMetrics, bestOverallScore);
+                }
+            }
+
+            return {
+                success: results.length > 0,
+                bestConfig: bestOverallConfig,
+                bestMetrics: bestOverallMetrics,
+                bestScore: bestOverallScore,
+                results,
+                totalRuns: runs,
+                successfulRuns: results.length
+            };
+        }
+
         // Test configuration via API call (New: Direct API instead of UI scraping)
         async function testConfigurationAPI(config, testName = 'API Test') {
             try {
@@ -356,6 +778,46 @@
             testConfigurationAPI,
             testConfigurationUI,
             
+            // Main optimization functions
+            runOptimization,
+            basicOptimization,
+            chainedOptimization,
+            
+            // Quick test function for verification
+            quickTest: async () => {
+                console.log('🧪 Running quick system test...');
+                try {
+                    const testConfig = {
+                        basic: { "Min MCAP (USD)": 15000, "Max MCAP (USD)": 35000 },
+                        tokenDetails: { "Min AG Score": 4 },
+                        wallets: { "Min Unique Wallets": 2, "Max Unique Wallets": 6 },
+                        risk: { "Max Bundled %": 30 },
+                        advanced: { "Max Liquidity %": 80 }
+                    };
+                    
+                    const result = await testConfigurationAPI(testConfig, 'Quick Test');
+                    if (result.success) {
+                        console.log('✅ Quick test passed!');
+                        console.log(`📊 Result: ${result.metrics.tpPnlPercent?.toFixed(1)}% PnL, ${result.metrics.totalTokens} tokens`);
+                        return { success: true, result };
+                    } else {
+                        console.warn('❌ Quick test failed:', result.error);
+                        return { success: false, error: result.error };
+                    }
+                } catch (error) {
+                    console.error('❌ Quick test error:', error);
+                    return { success: false, error: error.message };
+                }
+            },
+            
+            // Signal analysis functions
+            getTokenInfo,
+            getAllTokenSwaps,
+            processTokenData,
+            generateBatchSummary,
+            analyzeSignalCriteria,
+            generateTightestConfig,
+            
             // Modules and utilities
             CONFIG,
             PARAM_RULES,
@@ -369,6 +831,7 @@
             
             // API client
             backtesterAPI,
+            fetchWithRetry,
             
             // Utilities
             deepClone,
@@ -397,12 +860,84 @@
             }
         };
 
-        console.log('🎉 AG Copilot Enhanced loaded successfully!');
+        console.log('🎉 AG Copilot Enhanced (Modular Version) loaded successfully!');
         console.log('💡 Access via: window.AGCopilot');
-        console.log('📚 Available methods:', Object.keys(window.AGCopilot));
+        console.log('📚 Available methods:', Object.keys(window.AGCopilot).sort().join(', '));
+        console.log('\n🚀 Quick Start Examples:');
+        console.log('🧪 Quick test: await window.AGCopilot.quickTest()');
+        console.log('💡 Test config: await window.AGCopilot.testConfigurationAPI({basic: {"Min MCAP (USD)": 15000, "Max MCAP (USD)": 35000}})');
+        console.log('🔬 Run optimization: await window.AGCopilot.runOptimization()');
+        console.log('🔗 Chained optimization: await window.AGCopilot.chainedOptimization(3)');
+        console.log('📊 Analyze signals: await window.AGCopilot.analyzeSignalCriteria(tokenData)');
+        console.log('🎯 Generate config: window.AGCopilot.generateTightestConfig(analysis)');
+        console.log('\n📈 Module Status:');
+        console.log(`✅ Core modules: ${configModule ? '✓' : '✗'} Config, ${utilitiesModule ? '✓' : '✗'} Utilities, ${apiClientModule ? '✓' : '✗'} API`);
+        console.log(`✅ Optimization: ${EnhancedOptimizer ? '✓' : '✗'} Enhanced, ${ChainedOptimizer ? '✓' : '✗'} Chained, ${LatinHypercubeSampler ? '✓' : '✗'} Advanced`);
+        console.log(`✅ UI: ${createUI ? '✓' : '✗'} Interface, ${window.optimizationTracker ? '✓' : '✗'} Tracker`);
         
         // Auto-start optimization tracker display
         window.optimizationTracker.updateBestConfigDisplay(burstRateLimiter);
+        
+        // ========================================
+        // 🌐 GLOBAL UTILITY FUNCTIONS
+        // ========================================
+        
+        // Global stop function
+        window.STOPPED = false;
+        window.stopOptimization = () => {
+            console.log('🛑 Stopping optimization...');
+            window.STOPPED = true;
+        };
+        
+        // Show/hide optimization tracker
+        window.showOptimizationTracker = () => {
+            const element = document.getElementById('ag-optimization-tracker');
+            if (element) element.style.display = 'block';
+        };
+        
+        window.hideOptimizationTracker = () => {
+            const element = document.getElementById('ag-optimization-tracker');
+            if (element) element.style.display = 'none';
+        };
+        
+        // Get rate limit stats
+        window.getRateLimitStats = () => {
+            return {
+                burst: burstRateLimiter.getStats(),
+                optimization: window.optimizationTracker.getStats()
+            };
+        };
+        
+        // Quick config application helpers
+        window.applyBestConfigToUI = async function() {
+            const bestConfig = window.optimizationTracker.getCurrentBest()?.config;
+            if (bestConfig) {
+                console.log('📋 Best config:', bestConfig);
+                console.log('⚠️ UI application not implemented in modular version');
+                console.log('💡 Copy the config above and apply manually');
+                return bestConfig;
+            } else {
+                console.warn('❌ No best config available yet');
+                return null;
+            }
+        };
+        
+        window.copyBestConfigToClipboard = function() {
+            const bestConfig = window.optimizationTracker.getCurrentBest()?.config;
+            if (bestConfig) {
+                const configText = JSON.stringify(bestConfig, null, 2);
+                navigator.clipboard.writeText(configText).then(() => {
+                    console.log('✅ Best config copied to clipboard!');
+                }).catch(err => {
+                    console.error('❌ Failed to copy to clipboard:', err);
+                    console.log('📋 Best config:', configText);
+                });
+                return bestConfig;
+            } else {
+                console.warn('❌ No best config available yet');
+                return null;
+            }
+        };
         
         // ========================================
         // 🖥️ UI INITIALIZATION
@@ -477,6 +1012,29 @@
                 console.warn('⚠️ Could not create status indicator:', statusError);
             }
         }
+        
+        // ========================================
+        // 📊 PROGRESS TRACKING
+        // ========================================
+        
+        // Progress update function for optimization tracking
+        function updateProgress(message, progress, bestScore, testCount, totalTokens, startTime) {
+            // Log progress to console
+            if (startTime) {
+                const runtime = Math.floor((Date.now() - startTime) / 1000);
+                console.log(`📊 ${message} | Progress: ${(progress || 0).toFixed(1)}% | Best: ${bestScore}% | Tests: ${testCount} | Tokens: ${totalTokens} | Runtime: ${runtime}s`);
+            } else {
+                console.log(`📊 ${message}`);
+            }
+            
+            // Update global optimization tracker if available
+            if (window.optimizationTracker) {
+                window.optimizationTracker.updateProgress(testCount || 0, 0, 0, message);
+            }
+        }
+        
+        // Make updateProgress available globally for modules
+        window.updateProgress = updateProgress;
         
     } catch (error) {
         console.error('❌ Failed to initialize AG Copilot:', error);

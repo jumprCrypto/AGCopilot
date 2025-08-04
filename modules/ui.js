@@ -516,17 +516,68 @@ export function setupEventHandlers() {
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'block';
         
-        // Placeholder for actual optimization
-        setTimeout(() => {
-            console.log('✅ Optimization completed (placeholder)');
+        try {
+            // Check if AGCopilot is available
+            if (!window.AGCopilot) {
+                console.error('❌ AGCopilot not available');
+                updateStatus('❌ AGCopilot not loaded', true);
+                return;
+            }
+            
+            updateStatus('🚀 Starting optimization...');
+            
+            // Get optimization settings from UI
+            const useChainedRuns = document.getElementById('chained-runs')?.checked || false;
+            const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 3;
+            
+            let result;
+            if (useChainedRuns) {
+                console.log(`🔗 Starting chained optimization (${chainRunCount} runs)...`);
+                updateStatus(`🔗 Running ${chainRunCount} chained optimizations...`);
+                result = await window.AGCopilot.chainedOptimization(chainRunCount);
+            } else {
+                console.log('🚀 Starting single optimization run...');
+                updateStatus('🚀 Running optimization...');
+                result = await window.AGCopilot.runOptimization();
+            }
+            
+            if (result && result.success) {
+                const message = `✅ Optimization complete! Best score: ${result.bestScore?.toFixed(1) || 'N/A'}`;
+                console.log(message);
+                updateStatus(message);
+                
+                if (result.bestConfig) {
+                    console.log('📊 Best configuration:', result.bestConfig);
+                }
+            } else {
+                const errorMsg = `❌ Optimization failed: ${result?.error || 'Unknown error'}`;
+                console.error(errorMsg);
+                updateStatus(errorMsg, true);
+            }
+            
+        } catch (error) {
+            const errorMsg = `❌ Optimization error: ${error.message}`;
+            console.error(errorMsg, error);
+            updateStatus(errorMsg, true);
+        } finally {
+            // Reset button states
             if (startBtn) startBtn.style.display = 'block';
             if (stopBtn) stopBtn.style.display = 'none';
-        }, 3000);
+        }
     });
     
     // Stop optimization button
     safeAddEventListener('stop-optimization', 'click', () => {
-        console.log('⏹️ Optimization stopped');
+        console.log('⏹️ Stopping optimization...');
+        
+        // Set global stop flag
+        if (window.stopOptimization) {
+            window.stopOptimization();
+        } else {
+            window.STOPPED = true;
+        }
+        
+        updateStatus('⏹️ Optimization stopped by user');
         
         const startBtn = document.getElementById('start-optimization');
         const stopBtn = document.getElementById('stop-optimization');
@@ -543,13 +594,77 @@ export function setupEventHandlers() {
             const addresses = contractInput.value.trim();
             if (addresses) {
                 resultsDiv.style.display = 'block';
-                updateSignalStatus('🔄 Analyzing signals... (placeholder)');
+                updateSignalStatus('🔄 Starting signal analysis...');
                 
-                setTimeout(() => {
-                    updateSignalStatus('✅ Analysis complete (placeholder functionality)');
-                }, 2000);
+                try {
+                    // Check if AGCopilot is available
+                    if (!window.AGCopilot) {
+                        updateSignalStatus('❌ AGCopilot not available', true);
+                        return;
+                    }
+                    
+                    const addressList = addresses.split(/[,\s\n]+/).filter(addr => addr.length > 0);
+                    updateSignalStatus(`🔍 Analyzing ${addressList.length} contract address(es)...`);
+                    
+                    const tokenDataArray = [];
+                    
+                    for (let i = 0; i < addressList.length; i++) {
+                        const address = addressList[i].trim();
+                        updateSignalStatus(`📡 Fetching data for token ${i + 1}/${addressList.length}: ${address.substring(0, 8)}...`);
+                        
+                        try {
+                            // Get token info and swaps
+                            const tokenInfo = await window.AGCopilot.getTokenInfo(address);
+                            const swaps = await window.AGCopilot.getAllTokenSwaps(address);
+                            
+                            // Process the data
+                            const processedData = window.AGCopilot.processTokenData(tokenInfo, swaps);
+                            tokenDataArray.push(processedData);
+                            
+                            updateSignalStatus(`✅ Token ${i + 1}/${addressList.length} processed: ${processedData.name} (${processedData.symbol})`);
+                            
+                        } catch (tokenError) {
+                            updateSignalStatus(`❌ Failed to process ${address}: ${tokenError.message}`, true);
+                            console.warn(`Failed to process token ${address}:`, tokenError);
+                        }
+                    }
+                    
+                    if (tokenDataArray.length === 0) {
+                        updateSignalStatus('❌ No tokens could be processed', true);
+                        return;
+                    }
+                    
+                    updateSignalStatus(`📊 Generating analysis from ${tokenDataArray.length} tokens...`);
+                    
+                    // Generate batch summary
+                    const batchSummary = window.AGCopilot.generateBatchSummary(tokenDataArray);
+                    updateSignalStatus(`📈 Batch Summary: ${batchSummary.totalTokens} tokens, ${batchSummary.successRate} success rate, ${batchSummary.avgMultiplier} avg multiplier`);
+                    
+                    // Analyze signal criteria
+                    const analysis = window.AGCopilot.analyzeSignalCriteria(tokenDataArray);
+                    if (analysis) {
+                        updateSignalStatus(`🎯 Analysis complete: ${analysis.analysis?.tokenCount || 0} tokens analyzed`);
+                        
+                        // Generate optimized configuration
+                        const optimizedConfig = window.AGCopilot.generateTightestConfig(analysis);
+                        if (optimizedConfig) {
+                            updateSignalStatus('✅ Optimized configuration generated successfully!');
+                            console.log('📋 Generated Configuration:', optimizedConfig);
+                            updateSignalStatus('📋 Check console for detailed configuration output');
+                        } else {
+                            updateSignalStatus('⚠️ Could not generate optimized configuration', true);
+                        }
+                    } else {
+                        updateSignalStatus('⚠️ Signal analysis failed - insufficient data', true);
+                    }
+                    
+                } catch (error) {
+                    const errorMsg = `❌ Analysis error: ${error.message}`;
+                    updateSignalStatus(errorMsg, true);
+                    console.error('Signal analysis error:', error);
+                }
             } else {
-                alert('Please enter at least one contract address');
+                updateSignalStatus('⚠️ Please enter at least one contract address', true);
             }
         }
     });
