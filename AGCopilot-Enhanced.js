@@ -26,7 +26,7 @@
         
         // Outlier-resistant scoring system
         USE_ROBUST_SCORING: true,  // Use outlier-resistant metrics instead of raw TP PnL %
-        MIN_WIN_RATE: 40.0,        // Minimum win rate to consider config viable
+        MIN_WIN_RATE: 60.0,        // Minimum win rate to consider config viable
         RELIABILITY_WEIGHT: 0.3,   // Weight for sample size and consistency (0.0-1.0)
         CONSISTENCY_WEIGHT: 0.4,   // Weight for win rate (0.0-1.0)
         RETURN_WEIGHT: 0.6,        // Weight for raw PnL (0.0-1.0)
@@ -543,13 +543,7 @@
                     <div>Failed: <span style="color: ${this.failedTests > 0 ? '#ff9800' : '#666'};">${this.failedTests}</span></div>
                     <div>Runtime: <span style="color: #4CAF50;">${runtimeMin}m ${runtimeSec}s</span></div>
                     <div>Rate: <span style="color: #4CAF50;">${testsPerMin}/min</span></div>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: bold; opacity: 0.8; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">
-                    <div>🚀 Burst: <span style="color: #4ECDC4;">${burstStats.currentBurstCount}/${burstStats.burstLimit}</span></div>
-                    <div>📡 Total: <span style="color: #4ECDC4;">${burstStats.totalCalls}</span></div>
-                    <div>📊 Session: <span style="color: ${burstStats.requestsPerMinute >= burstStats.maxRequestsPerMinute ? '#ff9800' : '#4ECDC4'};">${burstStats.requestsPerMinute}/min</span></div>
-                    <div>⏱️ Rolling: <span style="color: ${burstStats.rollingWindowRate >= burstStats.maxRequestsPerMinute ? '#ff9800' : '#4ECDC4'};">${burstStats.rollingWindowRate}/min</span></div>
-                    <div>🎯 Limit: <span style="color: #888;">${burstStats.maxRequestsPerMinute}/min</span></div>
+                     <div>🎯 Limit: <span style="color: #888;">${burstStats.maxRequestsPerMinute}/min</span></div>
                     ${burstStats.rateLimitHits > 0 ? `<div>⚠️ Rate Hits: <span style="color: #ff4444;">${burstStats.rateLimitHits}</span></div>` : '<div>✅ No Rate Hits</div>'}
                 </div>
             `;
