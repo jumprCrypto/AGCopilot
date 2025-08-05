@@ -4291,12 +4291,12 @@
                     </label>
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runtime (min):</span>
-                        <input type="number" id="runtime-min" value="10" min="5" max="120" step="5"
+                        <input type="number" id="runtime-min" value="15" min="5" max="120" step="5"
                                style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                     <label style="display: flex; flex-direction: column;">
                         <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runs:</span>
-                        <input type="number" id="chain-run-count" value="4" min="1" max="10" step="1"
+                        <input type="number" id="chain-run-count" value="50" min="1" max="100" step="1"
                                style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
                     </label>
                 </div>
