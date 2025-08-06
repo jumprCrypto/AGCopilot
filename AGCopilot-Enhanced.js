@@ -140,7 +140,7 @@
     };
 
     // ========================================
-    // � PRESET CONFIGURATIONS
+    // 🎯 PRESET CONFIGURATIONS
     // ========================================
     // Preset configurations (all original presets restored)
     const PRESETS = {
@@ -180,6 +180,38 @@
             wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 10 },
             risk: { "Max Bundled %": 80, "Max Vol MCAP %": 200 },
             advanced: { "Min TTC (sec)": 5, "Max Liquidity %": 90 }
+        },
+        
+        // Discovery-based presets (from Parameter Impact Analysis)
+        highTTCFilter: {
+            advanced: { "Min TTC (sec)": 900 }
+        },
+        exclusiveWallets: {
+            wallets: { "Min Unique Wallets": 3 }
+        },
+        mediumMcap: {
+            basic: { "Min MCAP (USD)": 10000 }
+        },
+        highAgScore: {
+            tokenDetails: { "Min AG Score": "8" }
+        },
+        moderateDrainTolerance: {
+            risk: { "Max Drained %": 50 }
+        },
+        kycRequired: {
+            wallets: { "Min KYC Wallets": 3 }
+        },
+        zeroDrainTolerance: {
+            risk: { "Max Drained Count": 0 }
+        },
+        mediumVolMcap: {
+            risk: { "Min Vol MCAP %": 30 }
+        },
+        agedTokens: {
+            tokenDetails: { "Min Token Age (sec)": 10005 }
+        },
+        lowVolMcapCap: {
+            risk: { "Max Vol MCAP %": 33 }
         }
     };
 
@@ -469,6 +501,11 @@
             return value === '' ? null : parseInt(value); // Handle empty string for "Bullish Bonding"
         }
         return 4; // Default to Launchpads if no selection
+    }
+
+    // Alias for parameter discovery compatibility
+    async function getCurrentConfiguration() {
+        return await getCurrentConfigFromUI();
     }
 
     // ========================================
@@ -1037,7 +1074,276 @@
     const backtesterAPI = new BacktesterAPI();
 
     // ========================================
-    // �📊 UI METRICS EXTRACTOR (Enhanced from original AGCopilot)
+    // 🔬 PARAMETER IMPACT DISCOVERY (Integrated from AGPinDiscovery)  
+    // ========================================
+    
+    // Generate test values dynamically from PARAM_RULES
+    function generateTestValuesFromRules(paramName) {
+        const rule = PARAM_RULES[paramName];
+        if (!rule) {
+            console.warn(`⚠️ No rule found for parameter: ${paramName}`);
+            return [];
+        }
+        
+        const { min, max, step, type } = rule;
+        const testValues = [];
+        
+        // Always include min and max values
+        testValues.push(min);
+        if (max !== min) {
+            testValues.push(max);
+        }
+        
+        // Generate intermediate values based on the range and step
+        const range = max - min;
+        const numSteps = Math.floor(range / step);
+        
+        if (numSteps <= 1) {
+            // Small range - just use min and max
+            const finalValues = [...new Set(testValues)]; // Remove duplicates
+            
+            // Special handling for AG Score - convert numbers to strings
+            if (paramName === 'Min AG Score') {
+                return finalValues.map(v => String(v));
+            }
+            
+            return finalValues;
+        }
+        
+        // For larger ranges, generate strategic test points
+        if (numSteps <= 5) {
+            // Small number of steps - test all values
+            for (let value = min + step; value < max; value += step) {
+                testValues.push(type === 'integer' ? Math.round(value) : value);
+            }
+        } else {
+            // Larger ranges - use strategic sampling
+            // Test quartiles and a few key points
+            const quartile1 = min + (range * 0.25);
+            const median = min + (range * 0.5);
+            const quartile3 = min + (range * 0.75);
+            
+            // Round to nearest step
+            const roundToStep = (val) => {
+                const rounded = Math.round((val - min) / step) * step + min;
+                return type === 'integer' ? Math.round(rounded) : rounded;
+            };
+            
+            testValues.push(roundToStep(quartile1));
+            testValues.push(roundToStep(median));
+            testValues.push(roundToStep(quartile3));
+            
+            // Add a couple more strategic points for very large ranges
+            if (numSteps > 20) {
+                const point1 = min + (range * 0.1);  // 10th percentile
+                const point2 = min + (range * 0.9);  // 90th percentile
+                testValues.push(roundToStep(point1));
+                testValues.push(roundToStep(point2));
+            }
+        }
+        
+        // Remove duplicates and sort
+        const uniqueValues = [...new Set(testValues)].sort((a, b) => a - b);
+        
+        // Limit to maximum 8 values to keep testing reasonable
+        const maxValues = 8;
+        let finalValues;
+        if (uniqueValues.length > maxValues) {
+            // Keep min, max, and evenly spaced intermediate values
+            const result = [uniqueValues[0]]; // min
+            const step_size = Math.floor((uniqueValues.length - 2) / (maxValues - 2));
+            for (let i = step_size; i < uniqueValues.length - 1; i += step_size) {
+                result.push(uniqueValues[i]);
+            }
+            result.push(uniqueValues[uniqueValues.length - 1]); // max
+            finalValues = result.slice(0, maxValues);
+        } else {
+            finalValues = uniqueValues;
+        }
+        
+        // Special handling for AG Score - convert numbers to strings
+        if (paramName === 'Min AG Score') {
+            finalValues = finalValues.map(v => String(v));
+        }
+        
+        console.log(`📊 Generated ${finalValues.length} test values for ${paramName}: [${finalValues.join(', ')}]`);
+        return finalValues;
+    }
+    
+    async function runParameterImpactDiscovery() {
+        const MIN_TOKENS_REQUIRED = 25;
+        const MIN_IMPROVEMENT_THRESHOLD = 1;
+        
+        try {
+            console.log('%c🔬 Starting Parameter Impact Discovery', 'color: purple; font-size: 16px; font-weight: bold;');
+            window.optimizationTracker.startOptimization();
+            
+            // Step 1: Establish baseline with current UI configuration
+            console.log('%c📊 Establishing baseline...', 'color: blue; font-weight: bold;');
+            const currentConfig = getCurrentConfiguration();
+            const baselineResult = await backtesterAPI.fetchResults(currentConfig);
+            
+            if (!baselineResult.success || !baselineResult.metrics) {
+                throw new Error('Failed to establish baseline configuration');
+            }
+            
+            if (baselineResult.metrics.totalTokens < MIN_TOKENS_REQUIRED) {
+                throw new Error(`Baseline has insufficient tokens: ${baselineResult.metrics.totalTokens} < ${MIN_TOKENS_REQUIRED}`);
+            }
+            
+            const baselineScore = baselineResult.metrics.tpPnlPercent;
+            const baselineTokens = baselineResult.metrics.totalTokens;
+            
+            const triggerMode = getTriggerMode();
+            const triggerModeNames = ['Bullish Bonding', 'God Mode', 'Moon Finder', 'Fomo', 'Launchpads', 'Smart Tracker'];
+            const triggerModeName = triggerModeNames[triggerMode] || `Mode ${triggerMode}`;
+            
+            console.log(`🎯 Trigger Mode: ${triggerModeName} (${triggerMode})`);
+            console.log(`✅ Baseline: ${baselineScore.toFixed(1)}% PnL, ${baselineTokens} tokens`);
+            
+            // Step 2: Test parameters systematically  
+            const parameterResults = [];
+            const parametersToTest = [
+                // High-impact parameters first
+                { param: 'Min MCAP (USD)', section: 'basic' },
+                { param: 'Min KYC Wallets', section: 'wallets' },
+                { param: 'Min Unique Wallets', section: 'wallets' },
+                { param: 'Min AG Score', section: 'tokenDetails' },
+                { param: 'Min Buy Ratio %', section: 'risk' },
+                { param: 'Max Bundled %', section: 'risk' },
+                { param: 'Min TTC (sec)', section: 'advanced' },
+                { param: 'Max Drained %', section: 'risk' },
+                { param: 'Min Token Age (sec)', section: 'tokenDetails' },
+                { param: 'Max Drained Count', section: 'risk' },
+                { param: 'Min Vol MCAP %', section: 'risk' },
+                { param: 'Min Deployer Age (min)', section: 'tokenDetails' },
+                { param: 'Max Vol MCAP %', section: 'risk' },
+                { param: 'Max Liquidity %', section: 'advanced' },
+                { param: 'Min Win Pred %', section: 'advanced' }
+            ];
+            
+            let testCount = 0;
+            let failedCount = 0;
+            
+            for (const { param, section } of parametersToTest) {
+                if (window.STOPPED) break;
+                
+                console.log(`%c🔬 Analyzing ${param}...`, 'color: orange; font-weight: bold;');
+                
+                // Generate test values dynamically from PARAM_RULES
+                const testValues = generateTestValuesFromRules(param);
+                if (!testValues || testValues.length === 0) {
+                    console.log(`⚠️ No test values could be generated for ${param}`);
+                    continue;
+                }
+                
+                const paramResults = [];
+                
+                for (const value of testValues) {
+                    if (window.STOPPED) break;
+                    
+                    try {
+                        testCount++;
+                        console.log(`  Testing ${param}: ${value}`);
+                        
+                        // Create test configuration
+                        const testConfig = ensureCompleteConfig(currentConfig);
+                        testConfig[section][param] = value;
+                        
+                        const result = await backtesterAPI.fetchResults(testConfig);
+                        
+                        if (!result.success || !result.metrics) {
+                            failedCount++;
+                            console.log(`    ❌ ${value}: API call failed`);
+                            continue;
+                        }
+                        
+                        if (result.metrics.totalTokens < MIN_TOKENS_REQUIRED) {
+                            console.log(`    ⚠️ ${value}: Insufficient tokens (${result.metrics.totalTokens})`);
+                            continue;
+                        }
+                        
+                        const improvement = result.metrics.tpPnlPercent - baselineScore;
+                        
+                        paramResults.push({
+                            value: value,
+                            score: result.metrics.tpPnlPercent,
+                            improvement: improvement,
+                            tokens: result.metrics.totalTokens,
+                            winRate: result.metrics.winRate || 0
+                        });
+                        
+                        if (improvement > MIN_IMPROVEMENT_THRESHOLD) {
+                            console.log(`    ✅ ${value}: ${result.metrics.tpPnlPercent.toFixed(1)}% (+${improvement.toFixed(1)}%) [${result.metrics.totalTokens} tokens]`);
+                        } else {
+                            console.log(`    📊 ${value}: ${result.metrics.tpPnlPercent.toFixed(1)}% (${improvement.toFixed(1)}%) [${result.metrics.totalTokens} tokens]`);
+                        }
+                        
+                        // Update progress
+                        window.optimizationTracker.updateProgress(testCount, failedCount);
+                        
+                    } catch (error) {
+                        failedCount++;
+                        console.log(`    ❌ ${value}: ${error.message}`);
+                    }
+                }
+                
+                if (paramResults.length > 0) {
+                    // Calculate parameter impact metrics
+                    const improvements = paramResults.map(r => r.improvement);
+                    const maxImprovement = Math.max(...improvements);
+                    const range = Math.max(...improvements) - Math.min(...improvements);
+                    
+                    const bestResult = paramResults.reduce((best, current) => 
+                        current.improvement > best.improvement ? current : best
+                    );
+                    
+                    parameterResults.push({
+                        parameter: param,
+                        section: section,
+                        maxImprovement: maxImprovement,
+                        range: range,
+                        impact: (Math.abs(maxImprovement) + range) / 2,
+                        bestValue: bestResult.value,
+                        bestScore: bestResult.score,
+                        bestImprovement: bestResult.improvement,
+                        results: paramResults
+                    });
+                    
+                    console.log(`📈 ${param} Impact: Max +${maxImprovement.toFixed(1)}%, Best Value: ${bestResult.value}`);
+                }
+            }
+            
+            // Step 3: Generate simplified report with top 10 parameters
+            const sortedResults = parameterResults
+                .sort((a, b) => b.impact - a.impact)
+                .slice(0, 10); // Top 10 only
+            
+            console.log('\n%c🏆 TOP 10 PARAMETER IMPACT RANKINGS:', 'color: gold; font-size: 16px; font-weight: bold;');
+            console.log('%c' + '='.repeat(60), 'color: gold;');
+            
+            sortedResults.forEach((result, index) => {
+                console.log(`%c${(index + 1).toString().padStart(2)}. ${result.parameter} = ${result.bestValue} → +${result.bestImprovement.toFixed(1)}% improvement`, 
+                    result.impact > 10 ? 'color: #ff6b6b; font-weight: bold;' : 
+                    result.impact > 5 ? 'color: #feca57; font-weight: bold;' : 'color: #48dbfb;');
+            });
+            
+            window.optimizationTracker.stopOptimization();
+            console.log('\n%c✅ Parameter Impact Discovery Complete!', 'color: green; font-size: 16px; font-weight: bold;');
+            console.log(`📊 Tested ${testCount} configurations, ${failedCount} failed`);
+            console.log(`📈 Baseline: ${baselineScore.toFixed(1)}% PnL with ${baselineTokens} tokens`);
+            
+            return sortedResults;
+            
+        } catch (error) {
+            window.optimizationTracker.stopOptimization();
+            console.error('❌ Parameter Impact Discovery failed:', error);
+            throw error;
+        }
+    }
+
+    // ========================================
+    // 📊 UI METRICS EXTRACTOR (Enhanced from original AGCopilot)
     // ========================================
     async function extractMetricsFromUI() {
         try {
@@ -4382,6 +4688,23 @@
                 </button>
             </div>
             
+            <div style="margin-bottom: 15px;">
+                <button id="parameter-discovery" style="
+                    width: 100%; 
+                    padding: 10px; 
+                    background: linear-gradient(45deg, #9b59b6, #e74c3c); 
+                    border: none; 
+                    border-radius: 8px; 
+                    color: white; 
+                    font-weight: bold; 
+                    cursor: pointer;
+                    font-size: 13px;
+                    transition: transform 0.2s;
+                " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                    🔬 Parameter Impact Discovery
+                </button>
+            </div>
+            
             <!-- Results Section -->
             <div id="best-config-display" style="
                 background: rgba(76, 175, 80, 0.2); 
@@ -5142,6 +5465,46 @@
             if (stopBtn) stopBtn.style.display = 'none';
             // Update status to confirm stop action
             updateStatus('⏹️ Optimization stopped by user', false);
+        });
+        
+        // Parameter Impact Discovery button
+        safeAddEventListener('parameter-discovery', 'click', async () => {
+            const discoveryBtn = document.getElementById('parameter-discovery');
+            const startBtn = document.getElementById('start-optimization');
+            
+            try {
+                // Reset stop flag and hide other buttons
+                window.STOPPED = false;
+                if (discoveryBtn) {
+                    discoveryBtn.style.display = 'none';
+                    discoveryBtn.disabled = true;
+                }
+                if (startBtn) {
+                    startBtn.style.display = 'none';
+                    startBtn.disabled = true;
+                }
+                
+                updateStatus('🔬 Starting Parameter Impact Discovery...', true);
+                
+                // Run parameter discovery
+                const results = await runParameterImpactDiscovery();
+                
+                updateStatus(`✅ Parameter Discovery Complete! Found ${results.length} parameter insights. Check console for detailed results.`, false);
+                
+            } catch (error) {
+                console.error('❌ Parameter Discovery Error:', error);
+                updateStatus(`❌ Parameter Discovery failed: ${error.message}`, false);
+            } finally {
+                // Re-enable buttons
+                if (discoveryBtn) {
+                    discoveryBtn.style.display = 'block';
+                    discoveryBtn.disabled = false;
+                }
+                if (startBtn) {
+                    startBtn.style.display = 'block';
+                    startBtn.disabled = false;
+                }
+            }
         });
         
         // Signal Analysis event handlers

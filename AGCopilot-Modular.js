@@ -1,19 +1,32 @@
-// ========================================
-// 🤖 AG Co-Pilot Enhanced + Signal Analysis v2.0 - MODULAR VERSION
-// ========================================
-// Dynamic module loading from GitHub for better maintainability
+/**
+ * AGCopilot-Modular.js - Main Entry Point for Modular AGCopilot System
+ * 
+ * This is the main entry script that loads all required modules dynamically
+ * from GitHub and initializes the modular AGCopilot system.
+ * 
+ * Module Architecture:
+ * - Configuration Module: Settings, presets, parameter rules
+ * - API Client Module: Backtester API, signal analysis API
+ * - Optimization Engine Module: Algorithms, parameter testing
+ * - UI Module: Controls, visualization, status updates
+ * - Utility Module: Helper functions, common tools
+ * 
+ * Usage: Copy and paste this entire script into the browser console on the Alpha Gardeners website
+ */
 
-(async function () {
+(async function() {
+    'use strict';
+    
     console.clear();
-    console.log('%c🤖 AG Co-Pilot Enhanced + Signal Analysis v2.0 (Modular) 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
-    console.log('%c🔗 Dynamic Module Loading + Direct API Optimization + Signal Analysis', 'color: green; font-size: 12px;');
+    console.log('%c🤖 AGCopilot Modular v3.0 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
+    console.log('%c� Loading Modular Architecture...', 'color: green; font-size: 12px;');
 
     // ========================================
     // 🔄 MODULE LOADING
     // ========================================
     
     // GitHub repository base URL for modules
-    const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules';
+    const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/AGCopilot';
     
     // Simple module loader (embedded for bootstrapping)
     async function loadModule(moduleName) {
@@ -136,47 +149,19 @@
         const [
             configModule,
             utilitiesModule,
-            rateLimiterModule,
             apiClientModule,
-            scoringModule,
-            uiTrackerModule
+            optimizationModule,
+            uiModuleCore
         ] = await Promise.all([
-            loadModule('config'),
-            loadModule('utilities'),
-            loadModule('rate-limiter'),
-            loadModule('api-client'),
-            loadModule('scoring'),
-            loadModule('ui-tracker')
+            loadModule('AGCopilot-Config'),
+            loadModule('AGCopilot-Utils'),
+            loadModule('AGCopilot-API'),
+            loadModule('AGCopilot-Optimization'),
+            loadModule('AGCopilot-UI')
         ]);
 
-        // Load optimization modules (optional)
-        let advancedOptimizationModule = null;
-        let enhancedOptimizerModule = null;
-        let chainedOptimizerModule = null;
-        
-        try {
-            [advancedOptimizationModule, enhancedOptimizerModule, chainedOptimizerModule] = await Promise.all([
-                loadModule('advanced-optimization'),
-                loadModule('enhanced-optimizer'),
-                loadModule('chained-optimizer')
-            ]);
-            console.log('✅ Advanced optimization modules loaded!');
-        } catch (error) {
-            console.warn('⚠️ Advanced optimization modules not available:', error.message);
-        }
-
-        // Load UI module (optional)
-        let uiModule = null;
-        try {
-            uiModule = await loadModule('ui');
-            console.log('✅ UI module loaded!');
-        } catch (error) {
-            console.warn('⚠️ UI module not available:', error.message);
-            console.log('🔧 This is expected if the ui.js module hasn\'t been pushed to GitHub yet.');
-            console.log('📋 To test the UI locally, use AGCopilot-Local-Test.js instead.');
-        }
-
-        console.log('✅ All modules loaded successfully!');
+        // Remove the old optional loading section since we're loading UI as core module now
+        console.log('✅ All core modules loaded successfully!');
 
         // ========================================
         // 🎯 EXTRACT MODULE EXPORTS
@@ -187,6 +172,7 @@
         
         // Utilities
         const { 
+            sleep,
             deepClone, 
             ensureCompleteConfig, 
             getTriggerMode, 
@@ -194,48 +180,48 @@
             formatTimestamp,
             formatMcap,
             formatPercent,
-            removeOutliers
+            formatNumber,
+            removeOutliers,
+            calculateStats,
+            validateParameter,
+            validateConfiguration,
+            generateParameterVariations
         } = utilitiesModule;
         
-        // Rate Limiting
-        const { BurstRateLimiter, APIRateLimiter, sleep } = rateLimiterModule;
-        
         // API Client
-        const { BacktesterAPI, fetchWithRetry, getTokenInfo, getAllTokenSwaps } = apiClientModule;
+        const { 
+            BurstRateLimiter, 
+            BacktesterAPI, 
+            fetchWithRetry, 
+            getTokenInfo, 
+            getAllTokenSwaps,
+            calculateRobustScore,
+            runManualScan
+        } = apiClientModule;
         
-        // Scoring
-        const { calculateRobustScore } = scoringModule;
+        // Optimization Engine
+        const { 
+            EnhancedOptimizer,
+            GeneticOptimizer,
+            SimulatedAnnealingOptimizer,
+            ChainedOptimizer,
+            LatinHypercubeSampler,
+            runQuickOptimization,
+            runDeepOptimization,
+            runGeneticOptimization
+        } = optimizationModule;
         
-        // UI Tracking
-        const { OptimizationTracker, extractMetricsFromUI } = uiTrackerModule;
-        
-        // Advanced Optimization (optional)
-        let LatinHypercubeSampler = null;
-        let GeneticOptimizer = null;
-        let SimulatedAnnealing = null;
-        if (advancedOptimizationModule) {
-            ({ LatinHypercubeSampler, GeneticOptimizer, SimulatedAnnealing } = advancedOptimizationModule);
-        }
-        
-        // Enhanced Optimizer (optional)
-        let EnhancedOptimizer = null;
-        if (enhancedOptimizerModule) {
-            ({ EnhancedOptimizer } = enhancedOptimizerModule);
-        }
-        
-        // Chained Optimizer (optional)
-        let ChainedOptimizer = null;
-        if (chainedOptimizerModule) {
-            ({ ChainedOptimizer } = chainedOptimizerModule);
-        }
-        
-        // UI Components (optional)
-        let createUI = null;
-        let setupEventHandlers = null;
-        let updateModuleStatus = null;
-        if (uiModule) {
-            ({ createUI, setupEventHandlers, updateModuleStatus } = uiModule);
-        }
+        // UI Components
+        const { 
+            createUI, 
+            createPresetModal,
+            updateStatus,
+            clearStatus,
+            updateResultsSummary,
+            setupEventHandlers, 
+            showPresetModal,
+            loadPreset
+        } = uiModuleCore;
 
         // ========================================
         // 🛠️ INITIALIZE CORE COMPONENTS
@@ -244,20 +230,58 @@
         // Initialize window.STOPPED for global access
         window.STOPPED = false;
 
-        // Create rate limiter instances
-        const rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // For signal analysis
+        // Create rate limiter instance
         const burstRateLimiter = new BurstRateLimiter(
-            CONFIG.RATE_LIMIT_THRESHOLD, 
-            CONFIG.RATE_LIMIT_RECOVERY, 
-            CONFIG.RATE_LIMIT_SAFETY_MARGIN,
-            CONFIG
-        ); // For backtester API - Enhanced with adaptive behavior
+            CONFIG.RATE_LIMIT_THRESHOLD || 30, 
+            CONFIG.RATE_LIMIT_RECOVERY || 60000, 
+            CONFIG.RATE_LIMIT_SAFETY_MARGIN || 0.8
+        );
 
         // Initialize the API client
         const backtesterAPI = new BacktesterAPI(CONFIG, getTriggerMode);
 
-        // Global optimization tracker instance
-        window.optimizationTracker = new OptimizationTracker();
+        // Global optimization tracker (simplified version)
+        window.optimizationTracker = {
+            bestConfig: null,
+            bestScore: -Infinity,
+            bestMetrics: null,
+            testCount: 0,
+            rateLimitFailures: 0,
+            
+            updateBestConfig: function(config, metrics, score) {
+                if (score > this.bestScore) {
+                    this.bestConfig = config;
+                    this.bestScore = score;
+                    this.bestMetrics = metrics;
+                    console.log(`🏆 New best configuration! Score: ${score.toFixed(1)}`);
+                }
+            },
+            
+            getCurrentBest: function() {
+                return {
+                    config: this.bestConfig,
+                    score: this.bestScore,
+                    metrics: this.bestMetrics
+                };
+            },
+            
+            getStats: function() {
+                return {
+                    testCount: this.testCount,
+                    bestScore: this.bestScore,
+                    rateLimitFailures: this.rateLimitFailures
+                };
+            },
+            
+            updateProgress: function(testCount, progress, score, message) {
+                this.testCount = testCount;
+                console.log(`📊 ${message || 'Progress update'}`);
+            },
+            
+            updateBestConfigDisplay: function(rateLimiter) {
+                console.log('📊 Optimization tracker initialized');
+            }
+        };
 
         // ========================================
         // 📊 CORE FUNCTIONS
@@ -827,7 +851,6 @@
             
             // Rate limiting
             burstRateLimiter,
-            rateLimiter,
             
             // API client
             backtesterAPI,
@@ -871,9 +894,8 @@
         console.log('📊 Analyze signals: await window.AGCopilot.analyzeSignalCriteria(tokenData)');
         console.log('🎯 Generate config: window.AGCopilot.generateTightestConfig(analysis)');
         console.log('\n📈 Module Status:');
-        console.log(`✅ Core modules: ${configModule ? '✓' : '✗'} Config, ${utilitiesModule ? '✓' : '✗'} Utilities, ${apiClientModule ? '✓' : '✗'} API`);
-        console.log(`✅ Optimization: ${EnhancedOptimizer ? '✓' : '✗'} Enhanced, ${ChainedOptimizer ? '✓' : '✗'} Chained, ${LatinHypercubeSampler ? '✓' : '✗'} Advanced`);
-        console.log(`✅ UI: ${createUI ? '✓' : '✗'} Interface, ${window.optimizationTracker ? '✓' : '✗'} Tracker`);
+        console.log(`✅ Core modules: ${configModule ? '✓' : '✗'} Config, ${utilitiesModule ? '✓' : '✗'} Utils, ${apiClientModule ? '✓' : '✗'} API`);
+        console.log(`✅ Features: ${optimizationModule ? '✓' : '✗'} Optimization, ${uiModuleCore ? '✓' : '✗'} UI, ${EnhancedOptimizer ? '✓' : '✗'} Advanced`);
         
         // Auto-start optimization tracker display
         window.optimizationTracker.updateBestConfigDisplay(burstRateLimiter);
@@ -943,7 +965,11 @@
         // 🖥️ UI INITIALIZATION
         // ========================================
         
-        if (createUI && setupEventHandlers && updateModuleStatus) {
+        // ========================================
+        // 🖥️ UI INITIALIZATION
+        // ========================================
+        
+        if (createUI && setupEventHandlers) {
             console.log('🖥️ Creating user interface...');
             
             // Create and setup UI
@@ -953,10 +979,6 @@
                 
                 setupEventHandlers();
                 console.log('✅ Event handlers setup completed');
-                
-                // Update module status in UI
-                updateModuleStatus();
-                console.log('✅ Module status updated');
                 
             } catch (uiError) {
                 console.warn('⚠️ UI creation failed:', uiError);
