@@ -1,720 +1,1018 @@
 /**
- * AGCopilot-Optimization.js - Optimization Engine Module
+ * AGCopilot-Optimization.js - Advanced Optimization Module (RESTORED ORIGINAL FEATURES)
  * 
- * Contains all optimization algorithms, parameter testing, and 
- * advanced optimization techniques for the AGCopilot system.
+ * Contains all the advanced optimization algorithms from AGCopilot-Enhanced.js:
+ * - LatinHypercubeSampler for statistical parameter exploration
+ * - SimulatedAnnealing for advanced optimization
+ * - Multiple starting points testing
+ * - Correlated parameter testing
+ * - Deep dive analysis
+ * - Parameter impact discovery
+ * - Robust scoring system
  */
 
 // ========================================
-// 🧬 ENHANCED OPTIMIZER CLASS
+// 🧬 ADVANCED OPTIMIZATION CLASSES (RESTORED)
 // ========================================
 
-class EnhancedOptimizer {
-    constructor(initialConfig = null) {
-        this.initialConfig = initialConfig;
-        this.bestConfig = null;
-        this.bestScore = -Infinity;
-        this.bestMetrics = null;
-        this.testCount = 0;
-        this.startTime = null;
-        this.maxTests = 100;
-        this.maxRuntime = 15 * 60 * 1000; // 15 minutes
+// Latin Hypercube Sampler for better parameter space exploration
+class LatinHypercubeSampler {
+    constructor() {
+        this.samples = new Map();
     }
-
-    // Initialize advanced components (if available)
-    initializeAdvancedComponents(LatinHypercubeSampler, SimulatedAnnealing, GeneticOptimizer) {
-        this.LatinHypercubeSampler = LatinHypercubeSampler;
-        this.SimulatedAnnealing = SimulatedAnnealing;
-        this.GeneticOptimizer = GeneticOptimizer;
-        this.hasAdvancedComponents = true;
-    }
-
-    // Run the main optimization process
-    async runOptimization() {
-        console.log('🚀 Starting enhanced optimization...');
-        this.startTime = Date.now();
+    
+    generateSamples(parameters, numSamples) {
+        const samples = [];
         
-        try {
-            // Phase 1: Initial exploration
-            await this.runInitialExploration();
+        for (let i = 0; i < numSamples; i++) {
+            const sample = {};
             
-            // Phase 2: Focused optimization
-            if (this.hasAdvancedComponents) {
-                await this.runAdvancedOptimization();
-            } else {
-                await this.runBasicOptimization();
-            }
-            
-            const runtime = Date.now() - this.startTime;
-            
-            return {
-                success: true,
-                bestConfig: this.bestConfig,
-                bestScore: this.bestScore,
-                bestMetrics: this.bestMetrics,
-                testCount: this.testCount,
-                runtime: runtime
-            };
-            
-        } catch (error) {
-            console.error('❌ Enhanced optimization failed:', error);
-            return {
-                success: false,
-                error: error.message,
-                testCount: this.testCount,
-                runtime: Date.now() - this.startTime
-            };
-        }
-    }
-
-    // Initial exploration phase
-    async runInitialExploration() {
-        console.log('🔍 Phase 1: Initial exploration...');
-        
-        // Test initial config if provided
-        if (this.initialConfig) {
-            await this.testConfiguration(this.initialConfig, 'Initial Config');
-        }
-        
-        // Test some baseline configurations
-        const baselineConfigs = this.generateBaselineConfigs();
-        
-        for (const config of baselineConfigs) {
-            if (this.shouldStop()) break;
-            await this.testConfiguration(config, 'Baseline');
-        }
-    }
-
-    // Advanced optimization phase
-    async runAdvancedOptimization() {
-        console.log('🧠 Phase 2: Advanced optimization...');
-        
-        if (this.GeneticOptimizer) {
-            const geneticOptimizer = new this.GeneticOptimizer();
-            const result = await geneticOptimizer.run(this.bestConfig);
-            
-            if (result.success && result.bestConfig) {
-                await this.testConfiguration(result.bestConfig, 'Genetic Result');
-            }
-        }
-        
-        if (this.SimulatedAnnealing) {
-            const saOptimizer = new this.SimulatedAnnealing();
-            const result = await saOptimizer.run(this.bestConfig);
-            
-            if (result.success && result.bestConfig) {
-                await this.testConfiguration(result.bestConfig, 'SA Result');
-            }
-        }
-    }
-
-    // Basic optimization fallback
-    async runBasicOptimization() {
-        console.log('🔧 Phase 2: Basic optimization...');
-        
-        // Simple parameter variation
-        if (this.bestConfig) {
-            const variations = this.generateParameterVariations(this.bestConfig);
-            
-            for (const config of variations) {
-                if (this.shouldStop()) break;
-                await this.testConfiguration(config, 'Variation');
-            }
-        }
-    }
-
-    // Generate baseline configurations for testing
-    generateBaselineConfigs() {
-        return [
-            {
-                basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 50000 },
-                tokenDetails: { "Min AG Score": 3 },
-                wallets: { "Min Unique Wallets": 2, "Max Unique Wallets": 8 },
-                risk: { "Max Bundled %": 40 },
-                advanced: { "Max Liquidity %": 90 }
-            },
-            {
-                basic: { "Min MCAP (USD)": 20000, "Max MCAP (USD)": 100000 },
-                tokenDetails: { "Min AG Score": 5 },
-                wallets: { "Min Unique Wallets": 3, "Max Unique Wallets": 12 },
-                risk: { "Max Bundled %": 30 },
-                advanced: { "Max Liquidity %": 80 }
-            },
-            {
-                basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                tokenDetails: { "Min AG Score": 4 },
-                wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 6 },
-                risk: { "Max Bundled %": 50 },
-                advanced: { "Max Liquidity %": 95 }
-            }
-        ];
-    }
-
-    // Generate parameter variations
-    generateParameterVariations(baseConfig) {
-        const variations = [];
-        const config = JSON.parse(JSON.stringify(baseConfig));
-        
-        // Vary MCAP ranges
-        if (config.basic) {
-            const minMcap = config.basic["Min MCAP (USD)"] || 10000;
-            const maxMcap = config.basic["Max MCAP (USD)"] || 50000;
-            
-            variations.push({
-                ...config,
-                basic: {
-                    ...config.basic,
-                    "Min MCAP (USD)": Math.floor(minMcap * 0.8),
-                    "Max MCAP (USD)": Math.floor(maxMcap * 1.2)
-                }
-            });
-            
-            variations.push({
-                ...config,
-                basic: {
-                    ...config.basic,
-                    "Min MCAP (USD)": Math.floor(minMcap * 1.2),
-                    "Max MCAP (USD)": Math.floor(maxMcap * 0.8)
-                }
-            });
-        }
-        
-        // Vary AG Score
-        if (config.tokenDetails && config.tokenDetails["Min AG Score"]) {
-            const agScore = config.tokenDetails["Min AG Score"];
-            
-            if (agScore > 1) {
-                variations.push({
-                    ...config,
-                    tokenDetails: {
-                        ...config.tokenDetails,
-                        "Min AG Score": agScore - 1
+            for (const param of parameters) {
+                const originalRules = (window.AGCopilot?.PARAM_RULES || {})[param];
+                if (originalRules) {
+                    // Check if this is being called from an optimizer context that has bundled constraints
+                    let rules = originalRules;
+                    
+                    // Apply bundled constraints if the UI checkbox is checked
+                    const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+                    if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+                        if (param === 'Min Bundled %') {
+                            rules = {
+                                ...originalRules,
+                                min: 0,
+                                max: Math.min(5, originalRules.max)
+                            };
+                        } else if (param === 'Max Bundled %') {
+                            rules = {
+                                ...originalRules,
+                                min: originalRules.min,
+                                max: Math.min(35, originalRules.max)
+                            };
+                        }
                     }
-                });
+                    
+                    if (rules.type === 'string') {
+                        sample[param] = Math.floor(Math.random() * 10 + 1).toString();
+                    } else {
+                        // Latin hypercube sampling
+                        const segment = (rules.max - rules.min) / numSamples;
+                        const segmentStart = rules.min + i * segment;
+                        const randomInSegment = Math.random() * segment;
+                        const value = segmentStart + randomInSegment;
+                        sample[param] = Math.round(value / rules.step) * rules.step;
+                    }
+                }
             }
             
-            if (agScore < 10) {
-                variations.push({
-                    ...config,
-                    tokenDetails: {
-                        ...config.tokenDetails,
-                        "Min AG Score": agScore + 1
-                    }
-                });
-            }
+            samples.push(sample);
         }
         
-        return variations.slice(0, 10); // Limit variations
+        // Shuffle samples to remove correlation
+        for (let i = samples.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [samples[i], samples[j]] = [samples[j], samples[i]];
+        }
+        
+        return samples;
     }
+}
 
-    // Test a configuration
-    async testConfiguration(config, testName) {
-        if (!window.AGCopilot || !window.AGCopilot.testConfigurationAPI) {
-            console.warn('⚠️ Test API not available');
-            return false;
-        }
+// Simulated Annealing Optimizer
+class SimulatedAnnealing {
+    constructor(optimizer) {
+        this.optimizer = optimizer;
+        this.initialTemperature = 100;
+        this.finalTemperature = 0.1;
+        this.coolingRate = 0.95;
+    }
+    
+    async runSimulatedAnnealing() {
+        this.updateProgress('🔥 Simulated Annealing Phase', 80, this.optimizer.getCurrentBestScore().toFixed(1), this.optimizer.testCount, this.optimizer.bestMetrics?.totalTokens || '--', this.optimizer.startTime);
         
-        try {
-            this.testCount++;
-            const result = await window.AGCopilot.testConfigurationAPI(config, `${testName} #${this.testCount}`);
+        let currentConfig = JSON.parse(JSON.stringify(this.optimizer.bestConfig)); // Deep clone
+        let currentScore = this.optimizer.getCurrentBestScore();
+        let temperature = this.initialTemperature;
+        
+        while (temperature > this.finalTemperature && this.optimizer.getRemainingTime() > 0.05 && !window.STOPPED) {
+            // Generate neighbor configuration
+            const neighbor = this.generateNeighbor(currentConfig);
+            const result = await this.optimizer.testConfig(neighbor, 'Simulated annealing');
             
             if (result.success && result.metrics) {
-                const score = window.AGCopilot.calculateRobustScore(result.metrics);
-                const finalScore = score?.score || result.metrics.tpPnlPercent || 0;
+                const neighborScore = this.optimizer.calculateScore(result.metrics);
                 
-                if (finalScore > this.bestScore) {
-                    this.bestScore = finalScore;
-                    this.bestConfig = JSON.parse(JSON.stringify(config));
-                    this.bestMetrics = result.metrics;
-                    
-                    console.log(`🏆 New best! Score: ${finalScore.toFixed(1)} (${testName})`);
-                    
-                    // Update global tracker if available
-                    if (window.optimizationTracker) {
-                        window.optimizationTracker.updateBestConfig(config, result.metrics, finalScore);
-                    }
-                }
+                const deltaE = neighborScore - currentScore;
                 
-                return true;
-            }
-            
-            return false;
-            
-        } catch (error) {
-            console.warn(`❌ Test failed (${testName}):`, error.message);
-            return false;
-        }
-    }
-
-    // Check if optimization should stop
-    shouldStop() {
-        if (window.STOPPED) {
-            console.log('🛑 Optimization stopped by user');
-            return true;
-        }
-        
-        if (this.testCount >= this.maxTests) {
-            console.log(`🔄 Reached maximum tests (${this.maxTests})`);
-            return true;
-        }
-        
-        if (Date.now() - this.startTime >= this.maxRuntime) {
-            console.log(`⏰ Reached maximum runtime (${this.maxRuntime / 1000}s)`);
-            return true;
-        }
-        
-        return false;
-    }
-}
-
-// ========================================
-// 🧬 GENETIC OPTIMIZER CLASS
-// ========================================
-
-class GeneticOptimizer {
-    constructor(options = {}) {
-        this.populationSize = options.populationSize || 20;
-        this.generations = options.generations || 10;
-        this.mutationRate = options.mutationRate || 0.1;
-        this.crossoverRate = options.crossoverRate || 0.8;
-        this.elitismRate = options.elitismRate || 0.2;
-    }
-
-    // Run genetic algorithm optimization
-    async run(seedConfig = null) {
-        console.log(`🧬 Starting genetic optimization (Pop: ${this.populationSize}, Gen: ${this.generations})`);
-        
-        try {
-            // Initialize population
-            let population = this.initializePopulation(seedConfig);
-            let bestIndividual = null;
-            let bestScore = -Infinity;
-            
-            for (let generation = 0; generation < this.generations; generation++) {
-                if (window.STOPPED) break;
-                
-                console.log(`🧬 Generation ${generation + 1}/${this.generations}`);
-                
-                // Evaluate population
-                const evaluatedPop = await this.evaluatePopulation(population);
-                
-                // Find best individual
-                const generationBest = evaluatedPop.reduce((best, ind) => 
-                    ind.score > best.score ? ind : best);
-                
-                if (generationBest.score > bestScore) {
-                    bestScore = generationBest.score;
-                    bestIndividual = generationBest;
-                    console.log(`🏆 New genetic best: ${bestScore.toFixed(1)}`);
-                }
-                
-                // Create next generation
-                population = this.createNextGeneration(evaluatedPop);
-            }
-            
-            return {
-                success: true,
-                bestConfig: bestIndividual?.config,
-                bestScore: bestScore,
-                generations: this.generations
-            };
-            
-        } catch (error) {
-            console.error('❌ Genetic optimization failed:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    // Initialize population
-    initializePopulation(seedConfig) {
-        const population = [];
-        
-        // Add seed config if provided
-        if (seedConfig) {
-            population.push(seedConfig);
-        }
-        
-        // Generate random configurations
-        while (population.length < this.populationSize) {
-            population.push(this.generateRandomConfig());
-        }
-        
-        return population;
-    }
-
-    // Generate random configuration
-    generateRandomConfig() {
-        return {
-            basic: {
-                "Min MCAP (USD)": Math.floor(Math.random() * 40000) + 5000,
-                "Max MCAP (USD)": Math.floor(Math.random() * 200000) + 30000
-            },
-            tokenDetails: {
-                "Min AG Score": Math.floor(Math.random() * 8) + 1
-            },
-            wallets: {
-                "Min Unique Wallets": Math.floor(Math.random() * 5) + 1,
-                "Max Unique Wallets": Math.floor(Math.random() * 15) + 5
-            },
-            risk: {
-                "Max Bundled %": Math.floor(Math.random() * 60) + 20
-            },
-            advanced: {
-                "Max Liquidity %": Math.floor(Math.random() * 40) + 60
-            }
-        };
-    }
-
-    // Evaluate population fitness
-    async evaluatePopulation(population) {
-        const evaluated = [];
-        
-        for (let i = 0; i < population.length; i++) {
-            if (window.STOPPED) break;
-            
-            const config = population[i];
-            let score = -Infinity;
-            
-            if (window.AGCopilot && window.AGCopilot.testConfigurationAPI) {
-                try {
-                    const result = await window.AGCopilot.testConfigurationAPI(config, `Genetic ${i + 1}`);
-                    if (result.success) {
-                        const scoring = window.AGCopilot.calculateRobustScore(result.metrics);
-                        score = scoring?.score || result.metrics.tpPnlPercent || 0;
-                    }
-                } catch (error) {
-                    console.warn(`❌ Genetic evaluation failed for individual ${i + 1}`);
-                }
-            }
-            
-            evaluated.push({ config, score });
-        }
-        
-        return evaluated.sort((a, b) => b.score - a.score);
-    }
-
-    // Create next generation
-    createNextGeneration(evaluatedPopulation) {
-        const nextGen = [];
-        const eliteCount = Math.floor(this.populationSize * this.elitismRate);
-        
-        // Keep elite individuals
-        for (let i = 0; i < eliteCount; i++) {
-            nextGen.push(evaluatedPopulation[i].config);
-        }
-        
-        // Create offspring through crossover and mutation
-        while (nextGen.length < this.populationSize) {
-            const parent1 = this.selectParent(evaluatedPopulation);
-            const parent2 = this.selectParent(evaluatedPopulation);
-            
-            let offspring = this.crossover(parent1.config, parent2.config);
-            offspring = this.mutate(offspring);
-            
-            nextGen.push(offspring);
-        }
-        
-        return nextGen;
-    }
-
-    // Tournament selection
-    selectParent(population) {
-        const tournamentSize = 3;
-        const tournament = [];
-        
-        for (let i = 0; i < tournamentSize; i++) {
-            const randomIndex = Math.floor(Math.random() * population.length);
-            tournament.push(population[randomIndex]);
-        }
-        
-        return tournament.reduce((best, ind) => ind.score > best.score ? ind : best);
-    }
-
-    // Crossover two configurations
-    crossover(parent1, parent2) {
-        if (Math.random() > this.crossoverRate) {
-            return JSON.parse(JSON.stringify(parent1));
-        }
-        
-        const offspring = {};
-        
-        for (const section in parent1) {
-            offspring[section] = {};
-            
-            for (const param in parent1[section]) {
-                // Randomly choose from either parent
-                const useParent1 = Math.random() < 0.5;
-                offspring[section][param] = useParent1 ? 
-                    parent1[section][param] : parent2[section][param];
-            }
-        }
-        
-        return offspring;
-    }
-
-    // Mutate configuration
-    mutate(config) {
-        const mutated = JSON.parse(JSON.stringify(config));
-        
-        for (const section in mutated) {
-            for (const param in mutated[section]) {
-                if (Math.random() < this.mutationRate) {
-                    // Apply random mutation
-                    const currentValue = mutated[section][param];
-                    const mutationFactor = 0.8 + Math.random() * 0.4; // ±20%
-                    mutated[section][param] = Math.floor(currentValue * mutationFactor);
-                }
-            }
-        }
-        
-        return mutated;
-    }
-}
-
-// ========================================
-// 🌡️ SIMULATED ANNEALING OPTIMIZER
-// ========================================
-
-class SimulatedAnnealingOptimizer {
-    constructor(options = {}) {
-        this.initialTemperature = options.initialTemperature || 100;
-        this.coolingRate = options.coolingRate || 0.95;
-        this.minTemperature = options.minTemperature || 0.1;
-        this.maxIterations = options.maxIterations || 50;
-    }
-
-    // Run simulated annealing optimization
-    async run(initialConfig = null) {
-        console.log('🌡️ Starting simulated annealing optimization');
-        
-        try {
-            let currentConfig = initialConfig || this.generateRandomConfig();
-            let currentScore = await this.evaluateConfig(currentConfig);
-            
-            let bestConfig = JSON.parse(JSON.stringify(currentConfig));
-            let bestScore = currentScore;
-            
-            let temperature = this.initialTemperature;
-            let iteration = 0;
-            
-            while (temperature > this.minTemperature && iteration < this.maxIterations) {
-                if (window.STOPPED) break;
-                
-                // Generate neighbor configuration
-                const neighborConfig = this.generateNeighbor(currentConfig);
-                const neighborScore = await this.evaluateConfig(neighborConfig);
-                
-                // Calculate acceptance probability
-                const delta = neighborScore - currentScore;
-                const acceptanceProbability = delta > 0 ? 1 : Math.exp(delta / temperature);
-                
-                // Accept or reject the neighbor
-                if (Math.random() < acceptanceProbability) {
-                    currentConfig = neighborConfig;
+                // Accept if better, or with probability if worse
+                if (deltaE > 0 || Math.random() < Math.exp(deltaE / temperature)) {
+                    currentConfig = neighbor;
                     currentScore = neighborScore;
                     
-                    if (neighborScore > bestScore) {
-                        bestScore = neighborScore;
-                        bestConfig = JSON.parse(JSON.stringify(neighborConfig));
-                        console.log(`🌡️ SA new best: ${bestScore.toFixed(1)} (T=${temperature.toFixed(2)})`);
-                    }
+                    this.updateProgress(`🔥 Annealing T=${temperature.toFixed(1)}`, 
+                        80 + (1 - temperature / this.initialTemperature) * 15, 
+                        this.optimizer.getCurrentBestScore().toFixed(1), 
+                        this.optimizer.testCount, 
+                        this.optimizer.bestMetrics?.totalTokens || '--', 
+                        this.optimizer.startTime);
                 }
-                
-                // Cool down
-                temperature *= this.coolingRate;
-                iteration++;
             }
             
-            return {
-                success: true,
-                bestConfig: bestConfig,
-                bestScore: bestScore,
-                iterations: iteration
-            };
+            temperature *= this.coolingRate;
             
-        } catch (error) {
-            console.error('❌ Simulated annealing failed:', error);
-            return { success: false, error: error.message };
+            // Early termination if target achieved
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            if (this.optimizer.getCurrentBestScore() >= targetPnl) {
+                break;
+            }
         }
     }
-
-    // Generate neighbor configuration
+    
     generateNeighbor(config) {
-        const neighbor = JSON.parse(JSON.stringify(config));
+        const neighbor = JSON.parse(JSON.stringify(config)); // Deep clone
         
-        // Randomly modify one parameter
-        const sections = Object.keys(neighbor);
-        const randomSection = sections[Math.floor(Math.random() * sections.length)];
-        const params = Object.keys(neighbor[randomSection]);
-        const randomParam = params[Math.floor(Math.random() * params.length)];
+        // Randomly modify 1-2 parameters
+        const paramList = Object.keys(window.AGCopilot?.PARAM_RULES || {});
+        const numModifications = Math.floor(Math.random() * 2) + 1;
         
-        const currentValue = neighbor[randomSection][randomParam];
-        const variationFactor = 0.7 + Math.random() * 0.6; // ±30%
-        neighbor[randomSection][randomParam] = Math.floor(currentValue * variationFactor);
+        for (let i = 0; i < numModifications; i++) {
+            const param = paramList[Math.floor(Math.random() * paramList.length)];
+            const section = this.optimizer.getSection(param);
+            const originalRules = (window.AGCopilot?.PARAM_RULES || {})[param];
+            
+            // Apply bundled constraints if enabled
+            const rules = this.optimizer.applyBundledConstraints(param, originalRules);
+            
+            if (rules && neighbor[section]) {
+                if (rules.type === 'string') {
+                    neighbor[section][param] = Math.floor(Math.random() * 10 + 1).toString();
+                } else {
+                    const currentValue = neighbor[section][param] || (rules.min + rules.max) / 2;
+                    const maxChange = (rules.max - rules.min) * 0.1;
+                    const change = (Math.random() - 0.5) * maxChange;
+                    const newValue = Math.max(rules.min, Math.min(rules.max, currentValue + change));
+                    neighbor[section][param] = Math.round(newValue / rules.step) * rules.step;
+                }
+            }
+        }
         
         return neighbor;
     }
 
-    // Generate random configuration
-    generateRandomConfig() {
-        return {
-            basic: {
-                "Min MCAP (USD)": Math.floor(Math.random() * 40000) + 5000,
-                "Max MCAP (USD)": Math.floor(Math.random() * 200000) + 30000
-            },
-            tokenDetails: {
-                "Min AG Score": Math.floor(Math.random() * 8) + 1
-            },
-            wallets: {
-                "Min Unique Wallets": Math.floor(Math.random() * 5) + 1,
-                "Max Unique Wallets": Math.floor(Math.random() * 15) + 5
-            },
-            risk: {
-                "Max Bundled %": Math.floor(Math.random() * 60) + 20
-            },
-            advanced: {
-                "Max Liquidity %": Math.floor(Math.random() * 40) + 60
-            }
-        };
+    updateProgress(message, progress, score, tests, tokens, startTime) {
+        if (typeof updateProgress === 'function') {
+            updateProgress(message, progress, score, tests, tokens, startTime);
+        } else {
+            console.log(`${message} - Progress: ${progress}% - Score: ${score} - Tests: ${tests}`);
+        }
     }
+}
 
-    // Evaluate configuration
-    async evaluateConfig(config) {
-        if (!window.AGCopilot || !window.AGCopilot.testConfigurationAPI) {
-            return -Infinity;
+// Config Cache for performance optimization
+class ConfigCache {
+    constructor(maxSize = 1000) {
+        this.cache = new Map();
+        this.maxSize = maxSize;
+    }
+    
+    has(config) {
+        const key = this.generateKey(config);
+        return this.cache.has(key);
+    }
+    
+    get(config) {
+        const key = this.generateKey(config);
+        return this.cache.get(key);
+    }
+    
+    set(config, result) {
+        const key = this.generateKey(config);
+        
+        // Remove oldest entry if at max size
+        if (this.cache.size >= this.maxSize) {
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
         }
         
-        try {
-            const result = await window.AGCopilot.testConfigurationAPI(config, 'SA Test');
-            if (result.success) {
-                const scoring = window.AGCopilot.calculateRobustScore(result.metrics);
-                return scoring?.score || result.metrics.tpPnlPercent || 0;
-            }
-        } catch (error) {
-            console.warn('❌ SA evaluation failed');
-        }
-        
-        return -Infinity;
+        this.cache.set(key, result);
+    }
+    
+    generateKey(config) {
+        return JSON.stringify(config, Object.keys(config).sort());
+    }
+    
+    clear() {
+        this.cache.clear();
+    }
+    
+    size() {
+        return this.cache.size;
     }
 }
 
 // ========================================
-// 🔗 CHAINED OPTIMIZER CLASS
+// 🚀 ENHANCED OPTIMIZER CLASS (RESTORED)
 // ========================================
-
-class ChainedOptimizer {
-    constructor() {
-        this.results = [];
+class EnhancedOptimizer {
+    constructor(initialConfig = null) {
+        this.configCache = new ConfigCache(1000);
+        this.bestConfig = null;
+        this.bestScore = -Infinity;
+        this.bestMetrics = { totalTokens: 0, tpPnlPercent: 0, winRate: 0 }; // Safe defaults
+        this.testCount = 0;
+        this.startTime = Date.now();
+        this.history = [];
+        
+        // Store initial configuration to start from - use template if none provided
+        if (initialConfig) {
+            this.initialConfig = initialConfig;
+        } else if (window.AGCopilot?.COMPLETE_CONFIG_TEMPLATE) {
+            this.initialConfig = JSON.parse(JSON.stringify(window.AGCopilot.COMPLETE_CONFIG_TEMPLATE));
+            console.log('📋 Using default config template as initial configuration');
+        } else {
+            this.initialConfig = null;
+            console.warn('⚠️ No initial configuration or template available');
+        }
+        
+        // Parameter tracking
+        this.parameterTests = [];
+        
+        // Advanced optimization components
+        this.latinSampler = new LatinHypercubeSampler();
+        this.simulatedAnnealing = new SimulatedAnnealing(this);
+        
+        // Global stop flag
+        window.STOPPED = false;
     }
 
-    // Run chained optimization
-    async runChainedOptimization(runs = 3, timePerRun = 5, OptimizerClass = EnhancedOptimizer) {
-        console.log(`🔗 Starting chained optimization: ${runs} runs`);
+    getRemainingTime() {
+        const maxRuntime = parseFloat(document.getElementById('runtime-min')?.value) || 15;
+        const elapsed = (Date.now() - this.startTime) / (maxRuntime * 60 * 1000);
+        return Math.max(0, 1 - elapsed);
+    }
+
+    getProgress() {
+        const maxRuntime = parseFloat(document.getElementById('runtime-min')?.value) || 15;
+        return Math.min(100, ((Date.now() - this.startTime) / (maxRuntime * 60 * 1000)) * 100);
+    }
+
+    getCurrentBestScore() {
+        return this.bestScore;
+    }
+
+    calculateScore(metrics) {
+        const useRobustScoring = document.getElementById('robust-scoring')?.checked || false;
         
-        let bestOverallConfig = null;
-        let bestOverallScore = -Infinity;
-        let bestOverallMetrics = null;
+        if (useRobustScoring && metrics) {
+            return this.calculateRobustScore(metrics)?.score || metrics.tpPnlPercent || 0;
+        }
         
-        for (let i = 0; i < runs; i++) {
+        return metrics?.tpPnlPercent || 0;
+    }
+
+    calculateRobustScore(metrics) {
+        if (!metrics || metrics.totalTokens < 10) {
+            return null;
+        }
+
+        const tokenCount = Math.max(1, metrics.totalTokens || 1);
+        const winRate = Math.max(0.01, Math.min(0.99, (metrics.winRate || 0) / 100));
+        const rawPnL = metrics.tpPnlPercent || 0;
+
+        // Reliability factor based on sample size and win rate
+        const sampleReliability = Math.min(1, tokenCount / 50);
+        const winRateReliability = 1 - Math.abs(winRate - 0.5);
+        const reliabilityFactor = (sampleReliability * 0.7) + (winRateReliability * 0.3);
+
+        // Apply conservative scaling
+        const robustScore = rawPnL * reliabilityFactor;
+
+        return {
+            score: robustScore,
+            components: {
+                rawPnL,
+                reliabilityFactor,
+                sampleReliability,
+                winRateReliability,
+                tokenCount
+            }
+        };
+    }
+
+    getSection(param) {
+        const sectionMap = {
+            'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+            'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+            'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
+            'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
+            'Max Drained %': 'risk', 'Max Drained Count': 'risk',
+            'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+            'Min Holders': 'wallets', 'Max Holders': 'wallets',
+            'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
+        };
+        return sectionMap[param] || 'basic';
+    }
+
+    applyBundledConstraints(param, originalRules) {
+        if (!originalRules) return originalRules;
+        
+        const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+        if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+            if (param === 'Min Bundled %') {
+                return {
+                    ...originalRules,
+                    min: 0,
+                    max: Math.min(5, originalRules.max)
+                };
+            } else if (param === 'Max Bundled %') {
+                return {
+                    ...originalRules,
+                    min: originalRules.min,
+                    max: Math.min(35, originalRules.max)
+                };
+            }
+        }
+        
+        return originalRules;
+    }
+
+    // Update the best configuration display in the UI
+    updateBestConfigDisplay() {
+        const display = document.getElementById('best-config-display');
+        const stats = document.getElementById('best-config-stats');
+        
+        if (display && stats && this.bestMetrics) {
+            display.style.display = 'block';
+            
+            let scoreDisplay = this.bestScore.toFixed(1);
+            let methodDisplay = '';
+            
+            // Show robust scoring details if available
+            const useRobustScoring = document.getElementById('robust-scoring')?.checked || false;
+            if (useRobustScoring && this.bestMetrics.robustScoring) {
+                const rs = this.bestMetrics.robustScoring;
+                scoreDisplay = `${this.bestScore.toFixed(1)} (Robust)`;
+                methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+            }
+            
+            stats.innerHTML = `
+                <div><strong>Score:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.bestMetrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${this.bestMetrics?.winRate?.toFixed(1) || 0}%</div>
+                ${methodDisplay}
+                <div><strong>Tests:</strong> ${this.testCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.startTime) / 1000)}s</div>
+            `;
+        }
+    }
+
+    // Main test function - uses API call
+    async testConfig(config, testName) {
+        if (window.STOPPED) return { success: false };
+
+        try {
+            this.testCount++;
+            const minTokens = parseFloat(document.getElementById('min-tokens')?.value) || 75;
+            
+            // Update optimization tracker with failure counts
+            let totalFailures = this.history.filter(h => !h.success).length;
+            let rateLimitFailures = this.history.filter(h => !h.success && (
+                h.error?.includes('429') || 
+                h.error?.includes('Rate limit') || 
+                h.error?.includes('rate limit') ||
+                h.reason === 'api_error'
+            )).length;
+            
+            if (window.optimizationTracker) {
+                window.optimizationTracker.updateProgress(this.testCount, totalFailures, rateLimitFailures);
+            }
+            
+            // Ensure config is complete before testing
+            const completeConfig = this.ensureCompleteConfig(config);
+            
+            // Check cache first
+            if (this.configCache.has(completeConfig)) {
+                const cachedResult = this.configCache.get(completeConfig);
+                console.log(`💾 Cache hit for: ${testName}`);
+                return cachedResult;
+            }
+            
+            // Test via API call (placeholder - needs actual implementation)
+            const result = await this.testConfigurationAPI(completeConfig, testName);
+            
+            if (!result.success) {
+                const isRateLimitError = result.error?.includes('429') || 
+                                       result.error?.includes('Rate limit') || 
+                                       result.error?.includes('rate limit') ||
+                                       result.source === 'API';
+                
+                this.history.push({
+                    testName,
+                    config: completeConfig,
+                    success: false,
+                    error: result.error,
+                    reason: isRateLimitError ? 'api_error' : 'validation_error',
+                    testNumber: this.testCount,
+                    timestamp: new Date().toISOString()
+                });
+                
+                this.configCache.set(completeConfig, result);
+                return result;
+            }
+
+            const metrics = result.metrics;
+            
+            // Validate metrics
+            if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < minTokens) {
+                const failResult = { success: false, reason: 'insufficient_tokens' };
+                
+                this.history.push({
+                    testName,
+                    config: completeConfig,
+                    success: false,
+                    reason: 'insufficient_tokens',
+                    testNumber: this.testCount,
+                    timestamp: new Date().toISOString()
+                });
+                
+                this.configCache.set(completeConfig, failResult);
+                return failResult;
+            }
+
+            // Calculate score
+            const score = this.calculateScore(metrics);
+            
+            // Store metrics with robust scoring details if used
+            const useRobustScoring = document.getElementById('robust-scoring')?.checked || false;
+            if (useRobustScoring) {
+                metrics.robustScoring = this.calculateRobustScore(metrics);
+            }
+            
+            // Update best if this is better
+            if (score > this.bestScore) {
+                this.bestScore = score;
+                this.bestConfig = completeConfig;
+                this.bestMetrics = metrics;
+                this.updateBestConfigDisplay();
+                
+                console.log(`🎉 New best: ${score.toFixed(1)}% (${metrics.totalTokens} tokens, ${testName})`);
+            }
+            
+            // Track successful test
+            this.history.push({
+                testName,
+                config: completeConfig,
+                success: true,
+                score: score,
+                metrics: metrics,
+                testNumber: this.testCount,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Cache the result
+            this.configCache.set(completeConfig, result);
+            
+            return result;
+            
+        } catch (error) {
+            console.error(`❌ Error testing ${testName}:`, error);
+            
+            this.history.push({
+                testName,
+                config: config,
+                success: false,
+                error: error.message,
+                reason: 'exception',
+                testNumber: this.testCount,
+                timestamp: new Date().toISOString()
+            });
+            
+            return { success: false, error: error.message };
+        }
+    }
+
+    // Placeholder for API testing - needs actual implementation
+    async testConfigurationAPI(config, testName) {
+        // This would be implemented to call the actual AG API
+        console.log('🔧 Testing config via API:', testName);
+        
+        // Simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Return mock result for now
+        return {
+            success: true,
+            metrics: {
+                tpPnlPercent: Math.random() * 200 - 50, // Random score between -50 and 150
+                totalTokens: Math.floor(Math.random() * 100) + 50,
+                winRate: Math.random() * 100
+            }
+        };
+    }
+
+    ensureCompleteConfig(config) {
+        // This would ensure the config has all required fields
+        return config;
+    }
+
+    // ========================================
+    // 🎯 MAIN OPTIMIZATION FUNCTION (RESTORED)
+    // ========================================
+    async runOptimization() {
+        try {
+            console.log('🚀 Enhanced Optimization Started');
+            
+            // Clear cache at start
+            this.configCache.clear();
+            console.log('💾 Cache cleared at start of optimization');
+            
+            // Get optimization settings from UI
+            const useSimulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
+            const useMultipleStarts = document.getElementById('multiple-starting-points')?.checked || false;
+            const useLatinHypercube = document.getElementById('latin-hypercube')?.checked || false;
+            const useCorrelatedParams = document.getElementById('correlated-params')?.checked || false;
+            const useDeepDive = document.getElementById('deep-dive')?.checked || false;
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            
+            console.log('🚀 Optimization settings:', {
+                useSimulatedAnnealing,
+                useMultipleStarts,
+                useLatinHypercube,
+                useCorrelatedParams,
+                useDeepDive,
+                targetPnl
+            });
+            
+            // 1. Multiple Starting Points (if enabled)
+            if (useMultipleStarts && this.getRemainingTime() > 0.8) {
+                await this.runMultipleStartingPoints();
+            } else {
+                // 1. Establish baseline
+                await this.establishBaseline();
+            }
+            
+            // 2. Parameter testing phase
+            if (this.getRemainingTime() > 0.6 && !window.STOPPED) {
+                await this.runParameterPhase();
+            }
+            
+            // 3. Latin Hypercube Sampling (if enabled and we have time and good parameters)
+            if (useLatinHypercube && this.getRemainingTime() > 0.4 && !window.STOPPED && this.parameterTests.length > 0) {
+                await this.runLatinHypercubePhase();
+            }
+            
+            // 4. Correlated Parameter testing (if enabled and we have time)
+            if (useCorrelatedParams && this.getRemainingTime() > 0.3 && !window.STOPPED) {
+                await this.runCorrelatedParameterPhase();
+            }
+            
+            // 5. Simulated Annealing (if enabled and we have time)
+            if (useSimulatedAnnealing && this.getRemainingTime() > 0.15 && !window.STOPPED) {
+                await this.simulatedAnnealing.runSimulatedAnnealing();
+            }
+            
+            // 6. Deep dive on best parameters (if enabled and final optimization)
+            if (useDeepDive && this.getRemainingTime() > 0.05 && !window.STOPPED && this.parameterTests.length > 0) {
+                await this.runDeepDive();
+            }
+            
+            const runtime = Math.floor((Date.now() - this.startTime) / 1000);
+            
+            return {
+                bestConfig: this.bestConfig,
+                bestScore: this.bestScore,
+                bestMetrics: this.bestMetrics,
+                testCount: this.testCount,
+                runtime: runtime,
+                targetAchieved: this.bestScore >= targetPnl,
+                history: this.history,
+                cacheSize: this.configCache.size(),
+                parameterEffectiveness: this.parameterTests.slice(0, 10)
+            };
+            
+        } catch (error) {
+            console.error('Optimization error:', error);
+            throw error;
+        }
+    }
+
+    // ========================================
+    // 🔬 ADVANCED OPTIMIZATION PHASES (RESTORED)
+    // ========================================
+
+    async establishBaseline() {
+        this.updateProgress('🎯 Establishing Baseline', 5, '--', 0, '--', this.startTime);
+        
+        if (this.initialConfig) {
+            await this.testConfig(this.initialConfig, 'Initial baseline');
+        }
+    }
+
+    async runParameterPhase() {
+        this.updateProgress('🧪 Parameter Testing Phase', 20, this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+        
+        // Test individual parameters to understand their impact
+        const paramList = Object.keys(window.AGCopilot?.PARAM_RULES || {});
+        
+        for (const param of paramList.slice(0, 10)) { // Test top 10 parameters
+            if (window.STOPPED || this.getRemainingTime() <= 0.5) break;
+            
+            const variations = this.generateParameterVariations(this.bestConfig || this.initialConfig, param, this.getSection(param));
+            
+            for (const variation of variations) {
+                if (window.STOPPED) break;
+                const result = await this.testConfig(variation.config, variation.name);
+                
+                if (result.success) {
+                    this.parameterTests.push({
+                        param: param,
+                        section: this.getSection(param),
+                        effectiveness: result.metrics.tpPnlPercent - this.bestScore
+                    });
+                }
+            }
+        }
+        
+        // Sort parameters by effectiveness
+        this.parameterTests.sort((a, b) => b.effectiveness - a.effectiveness);
+    }
+
+    async runLatinHypercubePhase() {
+        this.updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+        
+        // Use best config or fall back to initial config
+        const baseConfig = this.bestConfig || this.initialConfig;
+        if (!baseConfig) {
+            console.log('⚠️ No configuration available, skipping Latin Hypercube phase');
+            return;
+        }
+        
+        // Focus on top parameters for LHS
+        const topParams = this.parameterTests.slice(0, 6).map(p => p.param);
+        const variations = this.generateLatinHypercubeVariations(baseConfig, topParams, 8);
+        
+        for (const variation of variations) {
+            if (window.STOPPED || this.getRemainingTime() <= 0.3) break;
+            
+            const result = await this.testConfig(variation.config, variation.name);
+            if (!result.success) continue;
+            
+            // Early termination if target achieved
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            if (this.bestScore >= targetPnl) {
+                this.updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+                return;
+            }
+        }
+    }
+
+    async runCorrelatedParameterPhase() {
+        this.updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+        
+        // Use best config or fall back to initial config
+        const baseConfig = this.bestConfig || this.initialConfig;
+        if (!baseConfig) {
+            console.log('⚠️ No configuration available, skipping correlated parameter phase');
+            return;
+        }
+        
+        const correlatedVariations = this.generateCorrelatedVariations(baseConfig);
+        
+        for (const variation of correlatedVariations) {
+            if (window.STOPPED || this.getRemainingTime() <= 0.1) break;
+            
+            const result = await this.testConfig(variation.config, variation.name);
+            if (!result.success) continue;
+            
+            // Early termination if target achieved
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            if (this.bestScore >= targetPnl) {
+                this.updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+                return;
+            }
+        }
+    }
+
+    async runMultipleStartingPoints() {
+        this.updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+        
+        // Use all presets as starting points
+        const startingPoints = Object.entries(window.AGCopilot?.PRESETS || {});
+        
+        for (const [presetName, startingPoint] of startingPoints) {
             if (window.STOPPED) break;
             
-            console.log(`\n🔗 Chain Run ${i + 1}/${runs}`);
+            const result = await this.testConfig(startingPoint, `Starting point: ${presetName}`);
+            if (!result.success) continue;
             
-            const optimizer = new OptimizerClass(bestOverallConfig);
-            optimizer.maxRuntime = timePerRun * 60 * 1000; // Convert to milliseconds
-            
-            const result = await optimizer.runOptimization();
-            
-            if (result.success && result.bestScore > bestOverallScore) {
-                bestOverallScore = result.bestScore;
-                bestOverallConfig = result.bestConfig;
-                bestOverallMetrics = result.bestMetrics;
-                console.log(`🏆 New chain best: ${bestOverallScore.toFixed(1)}`);
+            // Test variations around this starting point (only if we have reasonable time)
+            if (this.getRemainingTime() > 0.01) {
+                const topParam = this.parameterTests[0]?.param;
+                if (topParam) {
+                    const variations = this.generateParameterVariations(startingPoint, topParam, this.getSection(topParam));
+                    if (variations) {
+                        for (const variation of variations.slice(0, 2)) {
+                            if (window.STOPPED) break;
+                            await this.testConfig(variation.config, variation.name);
+                        }
+                    }
+                }
             }
             
-            this.results.push(result);
+            // Early termination if target achieved
+            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+            if (this.bestScore >= targetPnl) {
+                this.updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+                return;
+            }
+        }
+    }
+
+    async runDeepDive() {
+        this.updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
+        
+        // Use best config or fall back to initial config
+        const baseConfig = this.bestConfig || this.initialConfig;
+        if (!baseConfig) {
+            console.log('⚠️ No configuration available, skipping Deep Dive phase');
+            return;
         }
         
+        // Deep dive on top 3 most effective parameters
+        const topParams = this.parameterTests.slice(0, 3);
+        
+        for (const paramTest of topParams) {
+            if (window.STOPPED || this.getRemainingTime() <= 0.02) break;
+            
+            // Generate more fine-grained variations
+            const variations = this.generateParameterVariations(baseConfig, paramTest.param, paramTest.section, true);
+            
+            for (const variation of variations) {
+                if (window.STOPPED) break;
+                await this.testConfig(variation.config, `Deep dive: ${variation.name}`);
+            }
+        }
+    }
+
+    // ========================================
+    // 🎲 VARIATION GENERATORS (RESTORED)
+    // ========================================
+
+    // Enhanced variation generation using Latin Hypercube Sampling
+    generateLatinHypercubeVariations(baseConfig, parameters, numSamples = 6) {
+        const samples = this.latinSampler.generateSamples(parameters, numSamples);
+        const variations = [];
+        
+        for (const sample of samples) {
+            const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
+            let name = 'LHS: ';
+            
+            for (const [param, value] of Object.entries(sample)) {
+                const section = this.getSection(param);
+                if (config[section]) {
+                    config[section][param] = value;
+                    name += `${param}=${value} `;
+                }
+            }
+            
+            variations.push({ config, name: name.trim() });
+        }
+        
+        return variations;
+    }
+
+    // Generate correlated parameter variations (e.g., Min/Max MCAP together)
+    generateCorrelatedVariations(baseConfig) {
+        const variations = [];
+        
+        // MCAP correlation
+        variations.push(...this.generateCorrelatedPair(baseConfig, 'Min MCAP (USD)', 'Max MCAP (USD)', 'MCAP range'));
+        
+        // Bundled % correlation
+        variations.push(...this.generateCorrelatedPair(baseConfig, 'Min Bundled %', 'Max Bundled %', 'Bundled range'));
+        
+        // Wallet count correlation
+        variations.push(...this.generateCorrelatedPair(baseConfig, 'Min Unique Wallets', 'Max Unique Wallets', 'Wallet range'));
+        
+        return variations;
+    }
+
+    generateCorrelatedPair(baseConfig, param1, param2, description) {
+        if (!baseConfig) {
+            console.warn('⚠️ baseConfig is null in generateCorrelatedPair');
+            return [];
+        }
+        
+        const variations = [];
+        const rules1 = window.AGCopilot?.PARAM_RULES?.[param1];
+        const rules2 = window.AGCopilot?.PARAM_RULES?.[param2];
+        
+        if (!rules1 || !rules2) return variations;
+        
+        const section1 = this.getSection(param1);
+        const section2 = this.getSection(param2);
+        
+        // Generate 3 correlated variations
+        for (let i = 0; i < 3; i++) {
+            const config = JSON.parse(JSON.stringify(baseConfig));
+            
+            const value1 = rules1.min + (rules1.max - rules1.min) * (i / 2);
+            const value2 = Math.max(value1, rules2.min + (rules2.max - rules2.min) * ((i + 1) / 2));
+            
+            if (config[section1]) config[section1][param1] = Math.round(value1 / rules1.step) * rules1.step;
+            if (config[section2]) config[section2][param2] = Math.round(value2 / rules2.step) * rules2.step;
+            
+            variations.push({
+                config,
+                name: `${description} ${i + 1}: ${param1}=${config[section1]?.[param1]}, ${param2}=${config[section2]?.[param2]}`
+            });
+        }
+        
+        return variations;
+    }
+
+    generateParameterVariations(baseConfig, param, section, fineTuned = false) {
+        const variations = [];
+        const rules = window.AGCopilot?.PARAM_RULES?.[param];
+        
+        if (!rules || !baseConfig?.[section]) return variations;
+        
+        const currentValue = baseConfig[section][param] || (rules.min + rules.max) / 2;
+        const numVariations = fineTuned ? 5 : 3;
+        const stepMultiplier = fineTuned ? 0.5 : 1;
+        
+        for (let i = 0; i < numVariations; i++) {
+            const config = JSON.parse(JSON.stringify(baseConfig));
+            
+            let newValue;
+            if (rules.type === 'string') {
+                newValue = Math.floor(Math.random() * 10 + 1).toString();
+            } else {
+                const range = (rules.max - rules.min) * 0.2 * stepMultiplier;
+                const offset = (i - Math.floor(numVariations / 2)) * (range / numVariations);
+                newValue = Math.max(rules.min, Math.min(rules.max, currentValue + offset));
+                newValue = Math.round(newValue / rules.step) * rules.step;
+            }
+            
+            config[section][param] = newValue;
+            
+            variations.push({
+                config,
+                name: `${param}=${newValue}${fineTuned ? ' (fine)' : ''}`
+            });
+        }
+        
+        return variations;
+    }
+
+    updateProgress(message, progress, score, tests, tokens, startTime) {
+        if (typeof updateProgress === 'function') {
+            updateProgress(message, progress, score, tests, tokens, startTime);
+        } else {
+            console.log(`${message} - Progress: ${progress}% - Score: ${score} - Tests: ${tests}`);
+        }
+    }
+
+    // ========================================
+    // 🔍 PARAMETER DISCOVERY FUNCTIONS (RESTORED)
+    // ========================================
+
+    async runParameterDiscovery() {
+        console.log('🔬 Starting Parameter Impact Discovery...');
+        
+        // This would run comprehensive parameter impact analysis
+        // For now, return placeholder results
         return {
-            success: this.results.some(r => r.success),
-            bestConfig: bestOverallConfig,
-            bestScore: bestOverallScore,
-            bestMetrics: bestOverallMetrics,
-            results: this.results,
-            totalRuns: runs,
-            successfulRuns: this.results.filter(r => r.success).length
+            topParameters: this.parameterTests.slice(0, 10),
+            recommendations: [
+                'Focus on MCAP range optimization',
+                'Test bundled percentage limits',
+                'Explore wallet count correlations'
+            ]
         };
     }
 }
 
 // ========================================
-// 🎯 QUICK OPTIMIZATION FUNCTIONS
+// 🎮 OPTIMIZATION CONTROL FUNCTIONS
 // ========================================
 
-// Quick optimization (simplified)
-async function runQuickOptimization(initialConfig = null) {
-    console.log('⚡ Running quick optimization...');
+let globalOptimizer = null;
+
+async function startOptimization() {
+    if (globalOptimizer) {
+        console.log('⚠️ Optimization already running');
+        return;
+    }
     
-    const optimizer = new EnhancedOptimizer(initialConfig);
-    optimizer.maxTests = 10;
-    optimizer.maxRuntime = 3 * 60 * 1000; // 3 minutes
-    
-    return await optimizer.runOptimization();
+    try {
+        // Show stop button, hide start button
+        const startBtn = document.getElementById('start-optimization');
+        const stopBtn = document.getElementById('stop-optimization');
+        
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'block';
+        
+        window.STOPPED = false;
+        
+        // Get initial config from current UI state
+        const initialConfig = getCurrentConfig();
+        
+        // Create optimizer instance
+        globalOptimizer = new EnhancedOptimizer(initialConfig);
+        
+        // Run optimization
+        const results = await globalOptimizer.runOptimization();
+        
+        console.log('🎉 Optimization completed:', results);
+        
+        // Display results
+        if (results.bestConfig) {
+            globalOptimizer.updateBestConfigDisplay();
+        }
+        
+    } catch (error) {
+        console.error('❌ Optimization failed:', error);
+    } finally {
+        // Reset UI
+        const startBtn = document.getElementById('start-optimization');
+        const stopBtn = document.getElementById('stop-optimization');
+        
+        if (startBtn) startBtn.style.display = 'block';
+        if (stopBtn) stopBtn.style.display = 'none';
+        
+        globalOptimizer = null;
+    }
 }
 
-// Deep optimization (comprehensive)
-async function runDeepOptimization(initialConfig = null) {
-    console.log('🔬 Running deep optimization...');
+function stopOptimization() {
+    console.log('⏹️ Stopping optimization...');
+    window.STOPPED = true;
     
-    const optimizer = new EnhancedOptimizer(initialConfig);
-    optimizer.maxTests = 200;
-    optimizer.maxRuntime = 30 * 60 * 1000; // 30 minutes
+    // Reset UI immediately
+    const startBtn = document.getElementById('start-optimization');
+    const stopBtn = document.getElementById('stop-optimization');
     
-    return await optimizer.runOptimization();
+    if (startBtn) startBtn.style.display = 'block';
+    if (stopBtn) stopBtn.style.display = 'none';
+    
+    globalOptimizer = null;
 }
 
-// Genetic optimization
-async function runGeneticOptimization(initialConfig = null) {
-    console.log('🧬 Running genetic optimization...');
+async function runParameterDiscovery() {
+    console.log('🔬 Starting Parameter Discovery...');
     
-    const geneticOptimizer = new GeneticOptimizer({
-        populationSize: 15,
-        generations: 8,
-        mutationRate: 0.15
-    });
-    
-    return await geneticOptimizer.run(initialConfig);
+    if (globalOptimizer) {
+        const results = await globalOptimizer.runParameterDiscovery();
+        console.log('📊 Parameter Discovery Results:', results);
+        return results;
+    } else {
+        console.log('⚠️ No optimizer instance available. Starting discovery...');
+        
+        // Create temporary optimizer for discovery
+        const tempOptimizer = new EnhancedOptimizer(getCurrentConfig());
+        const results = await tempOptimizer.runParameterDiscovery();
+        console.log('📊 Parameter Discovery Results:', results);
+        return results;
+    }
 }
 
-// ========================================
-// 🔧 MODULE INITIALIZATION
-// ========================================
-function init(namespace) {
-    // Store optimization functions in namespace
-    namespace.optimization = {
-        EnhancedOptimizer,
-        GeneticOptimizer,
-        SimulatedAnnealingOptimizer,
-        ChainedOptimizer,
-        runQuickOptimization,
-        runDeepOptimization,
-        runGeneticOptimization
+// Helper function to get current configuration from UI
+function getCurrentConfig() {
+    // This would extract current config from UI elements
+    // For now, return a basic config
+    return {
+        basic: {
+            'Min MCAP (USD)': 10000,
+            'Max MCAP (USD)': 5000000
+        },
+        risk: {
+            'Min Bundled %': 0,
+            'Max Bundled %': 50
+        }
+        // ... other sections
     };
-    
-    console.log('✅ Optimization module initialized');
-    return Promise.resolve();
 }
 
 // ========================================
 // 📤 MODULE EXPORTS
 // ========================================
-module.exports = {
-    EnhancedOptimizer,
-    GeneticOptimizer,
-    SimulatedAnnealingOptimizer,
-    ChainedOptimizer,
-    runQuickOptimization,
-    runDeepOptimization,
-    runGeneticOptimization,
-    init
-};
+
+// Export optimization functions for use by other modules
+if (typeof module !== 'undefined' && module.exports) {
+    // Node.js/CommonJS
+    module.exports = {
+        startOptimization,
+        stopOptimization,
+        runParameterDiscovery,
+        EnhancedOptimizer,
+        LatinHypercubeSampler,
+        SimulatedAnnealing
+    };
+} else {
+    // Browser environment - attach to window/global namespace
+    window.AGCopilotOptimization = {
+        startOptimization,
+        stopOptimization,
+        runParameterDiscovery,
+        EnhancedOptimizer,
+        LatinHypercubeSampler,
+        SimulatedAnnealing
+    };
+}

@@ -26,7 +26,7 @@
     // ========================================
     
     // GitHub repository base URL for modules
-    const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/AGCopilot';
+    const GITHUB_BASE_URL = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main';
     
     // Simple module loader (embedded for bootstrapping)
     async function loadModule(moduleName) {
@@ -41,9 +41,10 @@
             
             const code = await response.text();
             
-            // Create module scope with all necessary globals
+            // Create module scope with all necessary globals including CommonJS environment
             const moduleScope = { 
                 exports: {},
+                module: { exports: {} },
                 console,
                 window,
                 document,
@@ -58,69 +59,78 @@
                 Promise
             };
             
-            // Transform ES6 exports to CommonJS style
+            // Transform ES6 exports to CommonJS style and handle existing CommonJS
             let transformedCode = code;
             
             // First, comment out all import statements
             transformedCode = transformedCode.replace(/import\s+.*?from\s+['"][^'"]*['"];?\s*/g, '// $&');
             
-            // Simple regex-based transformation for exports
-            const exportMatches = [];
+            // Check if this is already a CommonJS module (has module.exports)
+            const hasModuleExports = /module\.exports\s*=/.test(transformedCode);
             
-            // Find all export patterns and collect them
-            transformedCode = transformedCode.replace(/export\s+(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, type, name) => {
-                exportMatches.push(name);
-                return `${type} ${name}`;
-            });
-            
-            transformedCode = transformedCode.replace(/export\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
-                exportMatches.push(name);
-                return `function ${name}`;
-            });
-            
-            // Handle export async function
-            transformedCode = transformedCode.replace(/export\s+async\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
-                exportMatches.push(name);
-                return `async function ${name}`;
-            });
-            
-            transformedCode = transformedCode.replace(/export\s+class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
-                exportMatches.push(name);
-                return `class ${name}`;
-            });
-            
-            // Handle export { ... } syntax
-            transformedCode = transformedCode.replace(/export\s*{\s*([^}]+)\s*};?\s*/g, (match, exportList) => {
-                const names = exportList.split(',').map(exp => exp.trim().split(' as ')[0].trim());
-                exportMatches.push(...names);
-                return '// ' + match; // Comment out the export line
-            });
-            
-            // Handle any remaining standalone export statements
-            transformedCode = transformedCode.replace(/export\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
-                exportMatches.push(name);
-                return name;
-            });
-            
-            // Remove any remaining export keywords as final cleanup
-            transformedCode = transformedCode.replace(/export\s+/g, '');
-            
-            // Add exports at the end
-            if (exportMatches.length > 0) {
-                const exportStatements = exportMatches.map(name => `exports.${name} = ${name};`).join('\n');
-                transformedCode += '\n\n// Auto-generated exports\n' + exportStatements;
+            if (hasModuleExports) {
+                // Already CommonJS, just ensure it works in browser
+                console.log(`✓ ${moduleName} uses CommonJS exports`);
+            } else {
+                // Transform ES6 exports to CommonJS
+                const exportMatches = [];
+                
+                // Find all export patterns and collect them
+                transformedCode = transformedCode.replace(/export\s+(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, type, name) => {
+                    exportMatches.push(name);
+                    return `${type} ${name}`;
+                });
+                
+                transformedCode = transformedCode.replace(/export\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
+                    exportMatches.push(name);
+                    return `function ${name}`;
+                });
+                
+                // Handle export async function
+                transformedCode = transformedCode.replace(/export\s+async\s+function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
+                    exportMatches.push(name);
+                    return `async function ${name}`;
+                });
+                
+                transformedCode = transformedCode.replace(/export\s+class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
+                    exportMatches.push(name);
+                    return `class ${name}`;
+                });
+                
+                // Handle export { ... } syntax
+                transformedCode = transformedCode.replace(/export\s*{\s*([^}]+)\s*};?\s*/g, (match, exportList) => {
+                    const names = exportList.split(',').map(exp => exp.trim().split(' as ')[0].trim());
+                    exportMatches.push(...names);
+                    return '// ' + match; // Comment out the export line
+                });
+                
+                // Handle any remaining standalone export statements
+                transformedCode = transformedCode.replace(/export\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g, (match, name) => {
+                    exportMatches.push(name);
+                    return name;
+                });
+                
+                // Remove any remaining export keywords as final cleanup
+                transformedCode = transformedCode.replace(/export\s+/g, '');
+                
+                // Add CommonJS exports at the end for ES6 modules
+                if (exportMatches.length > 0) {
+                    const exportObject = exportMatches.map(name => `  ${name}`).join(',\n');
+                    transformedCode += `\n\n// Auto-generated CommonJS exports\nmodule.exports = {\n${exportObject}\n};\n`;
+                    console.log(`✓ ${moduleName} converted from ES6 to CommonJS (${exportMatches.length} exports)`);
+                }
             }
             
             // Execute module with proper error handling
             try {
                 const moduleFunction = new Function(
-                    'exports', 'console', 'window', 'document', 'fetch', 'setTimeout', 'setInterval', 
+                    'exports', 'module', 'console', 'window', 'document', 'fetch', 'setTimeout', 'setInterval', 
                     'clearTimeout', 'clearInterval', 'Date', 'Math', 'JSON', 'Promise',
-                    transformedCode + '\nreturn exports;'
+                    transformedCode + '\nreturn module.exports || exports;'
                 );
                 
                 const exports = moduleFunction(
-                    moduleScope.exports, moduleScope.console, moduleScope.window, moduleScope.document,
+                    moduleScope.exports, moduleScope.module, moduleScope.console, moduleScope.window, moduleScope.document,
                     moduleScope.fetch, moduleScope.setTimeout, moduleScope.setInterval,
                     moduleScope.clearTimeout, moduleScope.clearInterval, moduleScope.Date,
                     moduleScope.Math, moduleScope.JSON, moduleScope.Promise
@@ -199,17 +209,20 @@
             runManualScan
         } = apiClientModule;
         
-        // Optimization Engine
+        // Optimization Engine (with optional LatinHypercubeSampler)
+        const optimizationExports = optimizationModule;
         const { 
             EnhancedOptimizer,
             GeneticOptimizer,
             SimulatedAnnealingOptimizer,
             ChainedOptimizer,
-            LatinHypercubeSampler,
             runQuickOptimization,
             runDeepOptimization,
             runGeneticOptimization
-        } = optimizationModule;
+        } = optimizationExports;
+        
+        // LatinHypercubeSampler might not be available in all versions
+        const LatinHypercubeSampler = optimizationExports.LatinHypercubeSampler;
         
         // UI Components
         const { 
@@ -538,8 +551,8 @@
             const optimizer = new EnhancedOptimizer(initialConfig);
             
             // Initialize advanced components if available
-            if (LatinHypercubeSampler && SimulatedAnnealing && GeneticOptimizer) {
-                optimizer.initializeAdvancedComponents(LatinHypercubeSampler, SimulatedAnnealing, GeneticOptimizer);
+            if (LatinHypercubeSampler && SimulatedAnnealingOptimizer && GeneticOptimizer) {
+                optimizer.initializeAdvancedComponents(LatinHypercubeSampler, SimulatedAnnealingOptimizer, GeneticOptimizer);
                 console.log('✅ Advanced optimization components initialized');
             } else {
                 console.log('⚠️ Some advanced optimization components not available');
@@ -871,7 +884,7 @@
             // Advanced optimization classes (if available)
             ...(LatinHypercubeSampler && { LatinHypercubeSampler }),
             ...(GeneticOptimizer && { GeneticOptimizer }),
-            ...(SimulatedAnnealing && { SimulatedAnnealing }),
+            ...(SimulatedAnnealingOptimizer && { SimulatedAnnealingOptimizer }),
             ...(EnhancedOptimizer && { EnhancedOptimizer }),
             ...(ChainedOptimizer && { ChainedOptimizer }),
             
@@ -977,8 +990,96 @@
                 createUI();
                 console.log('✅ UI created successfully');
                 
-                setupEventHandlers();
-                console.log('✅ Event handlers setup completed');
+                // Setup event handlers with proper error handling
+                try {
+                    setupEventHandlers();
+                    console.log('✅ Event handlers setup completed');
+                } catch (handlerError) {
+                    console.warn('⚠️ Event handler setup failed, using fallback:', handlerError);
+                    
+                    // Fallback: Setup basic event handlers manually
+                    setTimeout(() => {
+                        try {
+                            const quickBtn = document.getElementById('quick-optimize');
+                            const deepBtn = document.getElementById('deep-optimize');
+                            const geneticBtn = document.getElementById('genetic-optimize');
+                            const scanBtn = document.getElementById('manual-scan');
+                            const presetsBtn = document.getElementById('show-presets');
+                            const closeBtn = document.getElementById('close-panel');
+                            
+                            if (quickBtn) {
+                                quickBtn.onclick = async () => {
+                                    try {
+                                        console.log('🚀 Starting Quick Optimization...');
+                                        const result = await window.AGCopilot.runOptimization();
+                                        console.log('✅ Quick optimization completed:', result);
+                                    } catch (error) {
+                                        console.error('❌ Quick optimization failed:', error);
+                                    }
+                                };
+                            }
+                            
+                            if (deepBtn) {
+                                deepBtn.onclick = async () => {
+                                    try {
+                                        console.log('🔬 Starting Deep Optimization...');
+                                        const result = await window.AGCopilot.chainedOptimization(3);
+                                        console.log('✅ Deep optimization completed:', result);
+                                    } catch (error) {
+                                        console.error('❌ Deep optimization failed:', error);
+                                    }
+                                };
+                            }
+                            
+                            if (geneticBtn) {
+                                geneticBtn.onclick = async () => {
+                                    try {
+                                        console.log('🧬 Starting Genetic Optimization...');
+                                        if (window.AGCopilot.GeneticOptimizer) {
+                                            const genetic = new window.AGCopilot.GeneticOptimizer();
+                                            const result = await genetic.runOptimization();
+                                            console.log('✅ Genetic optimization completed:', result);
+                                        } else {
+                                            console.warn('❌ GeneticOptimizer not available');
+                                        }
+                                    } catch (error) {
+                                        console.error('❌ Genetic optimization failed:', error);
+                                    }
+                                };
+                            }
+                            
+                            if (scanBtn) {
+                                scanBtn.onclick = async () => {
+                                    try {
+                                        console.log('🔍 Running Quick Test...');
+                                        const result = await window.AGCopilot.quickTest();
+                                        console.log('✅ Quick test completed:', result);
+                                    } catch (error) {
+                                        console.error('❌ Quick test failed:', error);
+                                    }
+                                };
+                            }
+                            
+                            if (presetsBtn) {
+                                presetsBtn.onclick = () => {
+                                    console.log('📋 Available presets:', Object.keys(window.AGCopilot.PRESETS || {}));
+                                };
+                            }
+                            
+                            if (closeBtn) {
+                                closeBtn.onclick = () => {
+                                    const panel = document.getElementById('ag-copilot-panel');
+                                    if (panel) panel.remove();
+                                };
+                            }
+                            
+                            console.log('✅ Fallback event handlers setup completed');
+                            
+                        } catch (fallbackError) {
+                            console.warn('⚠️ Fallback event handler setup also failed:', fallbackError);
+                        }
+                    }, 100);
+                }
                 
             } catch (uiError) {
                 console.warn('⚠️ UI creation failed:', uiError);
