@@ -26,7 +26,11 @@
         
         // Outlier-resistant scoring system
         USE_ROBUST_SCORING: true,  // Use outlier-resistant metrics instead of raw TP PnL %
-        MIN_WIN_RATE: 60.0,        // Minimum win rate to consider config viable
+        MIN_WIN_RATE: 50.0,        // Win rate for small samples (<500 tokens)
+        MIN_WIN_RATE_MEDIUM_SAMPLE: 40.0, // Win rate for medium samples (500-999 tokens)
+        MIN_WIN_RATE_LARGE_SAMPLE: 30.0,  // Win rate for large samples (1000+ tokens)
+        MEDIUM_SAMPLE_THRESHOLD: 500,     // Token count threshold for medium sample tier
+        LARGE_SAMPLE_THRESHOLD: 1000,     // Token count threshold for large sample tier
         RELIABILITY_WEIGHT: 0.3,   // Weight for sample size and consistency (0.0-1.0)
         CONSISTENCY_WEIGHT: 0.4,   // Weight for win rate (0.0-1.0)
         RETURN_WEIGHT: 0.6,        // Weight for raw PnL (0.0-1.0)
@@ -57,7 +61,26 @@
         INTRA_BURST_DELAY: 100,      // 100ms delay between requests
         MAX_REQUESTS_PER_MINUTE: 50, // Conservative hard cap at 40 req/min (reduced from 60)
         USE_BURST_RATE_LIMITING: true, // Use burst mode for efficiency
-        SMART_BURST_SIZE: true        // Keep smart burst size learning for optimal discovery
+        SMART_BURST_SIZE: true,        // Keep smart burst size learning for optimal discovery
+        
+        // Rate limiting modes
+        RATE_LIMIT_MODE: 'normal', // 'normal' or 'slower'
+        RATE_LIMIT_MODES: {
+            normal: {
+                BACKTEST_WAIT: 20000,        // 20s
+                RATE_LIMIT_THRESHOLD: 20,    // 20 calls/burst
+                RATE_LIMIT_RECOVERY: 10000,  // 10s recovery
+                REQUEST_DELAY: 9360,         // 9.36s for signal analysis
+                INTRA_BURST_DELAY: 100       // 100ms
+            },
+            slower: {
+                BACKTEST_WAIT: 30000,        // 30s (50% slower)
+                RATE_LIMIT_THRESHOLD: 15,    // 15 calls/burst (25% fewer)
+                RATE_LIMIT_RECOVERY: 15000,  // 15s recovery (50% slower)
+                REQUEST_DELAY: 14000,        // 14s for signal analysis (50% slower)
+                INTRA_BURST_DELAY: 150       // 150ms (50% slower)
+            }
+        }
     };
 
     // Parameter validation rules (same as original AGCopilot)
@@ -145,72 +168,102 @@
     // Preset configurations (all original presets restored)
     const PRESETS = {
         9747: {
+            category: "Custom",
+            description: "Buy Ratio 97%+, Min V2MC 47%",
             risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
         },
         oldDeployer: { 
+            category: "Custom",
+            description: "Old Deployer",
             tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
         },
         oldishDeployer: { 
+            category: "Custom",
+            description: "Oldish Deployer",
             tokenDetails: { "Min Deployer Age (min)": 1200, "Min AG Score": "6" },
             risk: { "Max Bundled %": 5, "Min Buy Ratio %": 20, "Max Vol MCAP %": 40, "Max Drained Count": 6 },
             advanced: { "Max TTC (sec)": 400 }
         },
         minWinPred: { 
+            category: "Custom",
+            description: "Min Win Pred % 28",
             advanced: { "Min Win Pred %": 28 }
         },
         bundle1_74: { 
+            category: "Custom",
+            description: "Max Bundled % 1.74",
             risk: { "Max Bundled %": 1.74 } 
         },
         deployerBalance10: { 
+            category: "Custom",
+            description: "Min Deployer Balance 10 SOL",
             risk: { "Min Deployer Balance (SOL)": 10 } 
         },
         agScore7: { 
+            category: "Custom",
+            description: "Min AG Score 7",
             tokenDetails: { "Min AG Score": "7" } 
-        },
-        conservative: {
-            basic: { "Min MCAP (USD)": 10000, "Max MCAP (USD)": 50000 },
-            tokenDetails: { "Min AG Score": 4, "Min Deployer Age (min)": 60 },
-            wallets: { "Min Unique Wallets": 2, "Min KYC Wallets": 2, "Max Unique Wallets": 5 },
-            risk: { "Min Bundled %": 0, "Max Bundled %": 25 },
-            advanced: { "Min TTC (sec)": 30, "Max Liquidity %": 70 }
-        },
-        aggressive: {
-            basic: { "Min MCAP (USD)": 1000, "Max MCAP (USD)": 15000 },
-            tokenDetails: { "Min AG Score": 2 },
-            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 10 },
-            risk: { "Max Bundled %": 80, "Max Vol MCAP %": 200 },
-            advanced: { "Min TTC (sec)": 5, "Max Liquidity %": 90 }
         },
         
         // Discovery-based presets (from Parameter Impact Analysis)
-        highTTCFilter: {
+        TTCNineHundred: {
+            priority: 1,
+            category: "Param Discovery",
+            description: "Min TTC 900",
             advanced: { "Min TTC (sec)": 900 }
         },
-        exclusiveWallets: {
+        UnqWallet3: {
+            priority: 2,
+            category: "Param Discovery", 
+            description: "3+ Unq",
             wallets: { "Min Unique Wallets": 3 }
         },
-        mediumMcap: {
+        MinMcap10k: {
+            priority: 3,
+            category: "Param Discovery",
+            description: "Min MCAP 10K", 
             basic: { "Min MCAP (USD)": 10000 }
         },
         highAgScore: {
+            priority: 4,
+            category: "Param Discovery",
+            description: "Min AG Score 8",
             tokenDetails: { "Min AG Score": "8" }
         },
         moderateDrainTolerance: {
+            priority: 5,
+            category: "Param Discovery",
+            description: "Max Drained 50%",
             risk: { "Max Drained %": 50 }
         },
         kycRequired: {
+            priority: 6,
+            category: "Param Discovery",
+            description: "Min KYC Wallets 3",
             wallets: { "Min KYC Wallets": 3 }
         },
         zeroDrainTolerance: {
+            priority: 7,
+            category: "Param Discovery",
+            description: "Max Drained Count 0",
             risk: { "Max Drained Count": 0 }
         },
         mediumVolMcap: {
+            priority: 8,
+            category: "Param Discovery",
+            description: "Min Vol MCAP % 30",
             risk: { "Min Vol MCAP %": 30 }
         },
         agedTokens: {
+            priority: 9,
+            category: "Param Discovery",
+            description: "Min Token Age (sec) 10005",
             tokenDetails: { "Min Token Age (sec)": 10005 }
         },
         lowVolMcapCap: {
+            priority: 10,
+            category: "Param Discovery",
+            description: "Max Vol MCAP % 33",
             risk: { "Max Vol MCAP %": 33 }
         }
     };
@@ -219,6 +272,54 @@
     // �🛠️ UTILITIES
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    // Rate limiting mode toggle function
+    function toggleRateLimitingMode() {
+        const currentMode = CONFIG.RATE_LIMIT_MODE;
+        const newMode = currentMode === 'normal' ? 'slower' : 'normal';
+        
+        // Update CONFIG with new mode
+        CONFIG.RATE_LIMIT_MODE = newMode;
+        const modeSettings = CONFIG.RATE_LIMIT_MODES[newMode];
+        
+        // Apply the new settings
+        CONFIG.BACKTEST_WAIT = modeSettings.BACKTEST_WAIT;
+        CONFIG.RATE_LIMIT_THRESHOLD = modeSettings.RATE_LIMIT_THRESHOLD;
+        CONFIG.RATE_LIMIT_RECOVERY = modeSettings.RATE_LIMIT_RECOVERY;
+        CONFIG.REQUEST_DELAY = modeSettings.REQUEST_DELAY;
+        CONFIG.INTRA_BURST_DELAY = modeSettings.INTRA_BURST_DELAY;
+        
+        // Recreate rate limiters with new settings
+        if (window.burstRateLimiter) {
+            window.burstRateLimiter = new BurstRateLimiter(
+                CONFIG.RATE_LIMIT_THRESHOLD,
+                CONFIG.RATE_LIMIT_RECOVERY,
+                CONFIG.RATE_LIMIT_SAFETY_MARGIN
+            );
+        }
+        
+        if (window.rateLimiter) {
+            window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY);
+        }
+        
+        console.log(`🔄 Rate limiting switched to ${newMode.toUpperCase()} mode:`);
+        console.log(`   Backtest Wait: ${CONFIG.BACKTEST_WAIT/1000}s`);
+        console.log(`   Burst Size: ${CONFIG.RATE_LIMIT_THRESHOLD} calls`);
+        console.log(`   Recovery Time: ${CONFIG.RATE_LIMIT_RECOVERY/1000}s`);
+        
+        // Update UI button text
+        const rateLimitBtn = document.getElementById('toggle-rate-limit-btn');
+        if (rateLimitBtn) {
+            const modeDisplay = newMode === 'normal' ? 'Normal' : 'Slower';
+            rateLimitBtn.innerHTML = `⏱️ ${modeDisplay}`;
+            rateLimitBtn.title = `Currently using ${modeDisplay.toLowerCase()} rate limiting (${CONFIG.BACKTEST_WAIT/1000}s wait). Click to switch to ${newMode === 'normal' ? 'slower' : 'normal'} mode.`;
+        }
+        
+        updateStatus(`🔄 Rate limiting switched to ${newMode.toUpperCase()} mode (${CONFIG.BACKTEST_WAIT/1000}s wait)`);
+        
+        return newMode;
+    }
+    
     // Initialize window.STOPPED for global access
     window.STOPPED = false;
 
@@ -440,12 +541,16 @@
     }
 
     // Create rate limiter instances
-    const rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // For signal analysis
-    const burstRateLimiter = new BurstRateLimiter(
+    window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // For signal analysis
+    window.burstRateLimiter = new BurstRateLimiter(
         CONFIG.RATE_LIMIT_THRESHOLD, 
         CONFIG.RATE_LIMIT_RECOVERY, 
         CONFIG.RATE_LIMIT_SAFETY_MARGIN
     ); // For backtester API - Enhanced with adaptive behavior
+    
+    // Create local references for backward compatibility
+    const rateLimiter = window.rateLimiter;
+    const burstRateLimiter = window.burstRateLimiter;
 
     // Format functions for signal analysis
     function formatTimestamp(timestamp) {
@@ -519,16 +624,69 @@
             this.rateLimitFailures = 0; // Track only actual rate limiting failures
             this.startTime = null;
             this.isRunning = false;
+            
+            // NEW: Run tracking for chained runs and time estimates
+            this.currentRun = 0;
+            this.totalRuns = 1;
+            this.maxRuntimeMs = CONFIG.MAX_RUNTIME_MIN * 60 * 1000; // Will be updated in startOptimization
         }
 
-        startOptimization() {
+        startOptimization(totalRuns = 1) {
             this.isRunning = true;
             this.startTime = Date.now();
             this.totalTests = 0;
             this.failedTests = 0;
             this.rateLimitFailures = 0;
             this.currentBest = null;
+            this.currentRun = 1;
+            this.totalRuns = totalRuns;
+            this.maxRuntimeMs = CONFIG.MAX_RUNTIME_MIN * 60 * 1000 * totalRuns; // Total runtime for all runs
             this.updateBestConfigDisplay();
+        }
+        
+        // NEW: Set current run for chained runs
+        setCurrentRun(runNumber, totalRuns = null) {
+            this.currentRun = runNumber;
+            if (totalRuns) this.totalRuns = totalRuns;
+            this.updateBestConfigDisplay();
+        }
+        
+        // NEW: Calculate time remaining
+        getTimeRemaining() {
+            if (!this.startTime || !this.isRunning) return null;
+            
+            const elapsed = Date.now() - this.startTime;
+            const remaining = this.maxRuntimeMs - elapsed;
+            
+            return Math.max(0, remaining);
+        }
+        
+        // NEW: Format time remaining as human readable
+        formatTimeRemaining() {
+            const remainingMs = this.getTimeRemaining();
+            if (remainingMs === null || remainingMs <= 0) return null;
+            
+            const minutes = Math.floor(remainingMs / 60000);
+            const seconds = Math.floor((remainingMs % 60000) / 1000);
+            
+            if (minutes > 0) {
+                return `${minutes}m ${seconds}s`;
+            } else {
+                return `${seconds}s`;
+            }
+        }
+        
+        // NEW: Get estimated completion time
+        getEstimatedCompletionTime() {
+            const remainingMs = this.getTimeRemaining();
+            if (remainingMs === null || remainingMs <= 0) return null;
+            
+            const completionTime = new Date(Date.now() + remainingMs);
+            return completionTime.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: false 
+            });
         }
 
         stopOptimization() {
@@ -573,6 +731,11 @@
             
             // Get burst rate limiter stats
             const burstStats = burstRateLimiter.getStats();
+            
+            // Calculate time remaining
+            const timeRemaining = this.formatTimeRemaining();
+            const progressPercent = this.maxRuntimeMs > 0 ? 
+                Math.min(100, ((Date.now() - (this.startTime || Date.now())) / this.maxRuntimeMs) * 100) : 0;
 
             let content = `
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: bold;">
@@ -580,10 +743,31 @@
                     <div>Failed: <span style="color: ${this.failedTests > 0 ? '#ff9800' : '#666'};">${this.failedTests}</span></div>
                     <div>Runtime: <span style="color: #4CAF50;">${runtimeMin}m ${runtimeSec}s</span></div>
                     <div>Rate: <span style="color: #4CAF50;">${testsPerMin}/min</span></div>
-                     <div>🎯 Limit: <span style="color: #888;">${burstStats.maxRequestsPerMinute}/min</span></div>
-                    ${burstStats.rateLimitHits > 0 ? `<div>⚠️ Rate Hits: <span style="color: #ff4444;">${burstStats.rateLimitHits}</span></div>` : '<div>✅ No Rate Hits</div>'}
+                    <div>📊 Run: <span style="color: #4CAF50; font-weight: bold;">${this.currentRun}/${this.totalRuns}</span></div>
+                    ${burstStats.rateLimitHits > 0 ? 
+                        `<div>⚠️ Rate Hits: <span style="color: #ff4444;">${burstStats.rateLimitHits}</span></div>` : 
+                        '<div>✅ No Rate Hits</div>'
+                    }
                 </div>
             `;
+            
+            // Add progress bar for time remaining (only when running and time remaining is available)
+            if (timeRemaining && this.isRunning && this.maxRuntimeMs > 0) {
+                const progressColor = progressPercent > 80 ? '#ff4444' : progressPercent > 60 ? '#ff9800' : '#4CAF50';
+                const completionTime = this.getEstimatedCompletionTime();
+                content += `
+                    <div style="margin-bottom: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">
+                            <span style="color: #aaa;">Progress:</span>
+                            <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 10px; height: 6px; overflow: hidden;">
+                                <div style="width: ${progressPercent.toFixed(1)}%; height: 100%; background: ${progressColor}; transition: width 0.3s ease;"></div>
+                            </div>
+                            <span style="color: ${progressColor}; font-weight: bold;">${progressPercent.toFixed(0)}%</span>
+                        </div>
+                        ${completionTime ? `<div style="font-size: 9px; color: #aaa; margin-top: 2px; text-align: center;">📅 Est. completion: ${completionTime}</div>` : ''}
+                    </div>
+                `;
+            }
 
             if (this.currentBest && this.currentBest.metrics) {
                 const metrics = this.currentBest.metrics;
@@ -601,7 +785,10 @@
                     </div>
                 `;
 
-                // Update global reference for the apply buttons
+                // Update global tracker for the apply buttons
+                if (this.currentBest.metrics && this.currentBest.config && window.bestConfigTracker) {
+                    window.bestConfigTracker.update(this.currentBest.config, this.currentBest.metrics, this.currentBest.metrics.score || 0, 'Tracker Update');
+                }
                 window.currentBestConfig = this.currentBest.config;
             } else if (this.isRunning) {
                 content += `
@@ -626,6 +813,22 @@
 
     // Global optimization tracker instance
     window.optimizationTracker = new OptimizationTracker();
+
+    // Initialize bestConfigTracker placeholder if it doesn't exist
+    if (!window.bestConfigTracker) {
+        window.bestConfigTracker = {
+            update: function(config, metrics, score, source) {
+                // Placeholder - store values for backward compatibility
+                this.config = config;
+                this.metrics = metrics;
+                this.score = score;
+                this.source = source;
+                this.id = 'placeholder-' + Date.now();
+            },
+            getConfig: function() { return this.config; },
+            getDebugInfo: function() { return { config: this.config, metrics: this.metrics, score: this.score, source: this.source }; }
+        };
+    }
 
     // ========================================
     // 🌐 API FUNCTIONS (from AGSignalExtractor)
@@ -733,8 +936,8 @@
                 'Min AG Score': 'minAgScore',
                 
                 // Wallets
-                'Min Holders': 'minHolders',
-                'Max Holders': 'maxHolders',
+                'Min Holders': 'minHoldersCount',
+                'Max Holders': 'maxHoldersCount',
                 'Min Unique Wallets': 'minUniqueWallets',
                 'Max Unique Wallets': 'maxUniqueWallets',
                 'Min KYC Wallets': 'minKycWallets',
@@ -755,7 +958,11 @@
                 'Min TTC (sec)': 'minTtc',
                 'Max TTC (sec)': 'maxTtc',
                 'Max Liquidity %': 'maxLiquidityPct',
-                'Min Win Pred %': 'minWinPred',
+                'Min Win Pred %': 'minWinPredPercent',
+                
+                // Liquidity parameters
+                'Min Liquidity (USD)': 'minLiquidity',
+                'Max Liquidity (USD)': 'maxLiquidity',
                 
                 // Boolean fields
                 'Description': 'needsDescription',
@@ -806,12 +1013,11 @@
             if (triggerMode !== null) {
                 apiParams.triggerMode = triggerMode; // Use selected trigger mode (skip if null for Bullish Bonding)
             }
-            apiParams.excludeSpoofedTokens = true;
+            apiParams.excludeSpoofedTokens = true;            
             apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
-            // Note: Multiple TP parameters (tpSize/tpGain) are added directly in buildApiUrl()
             
             return apiParams;
-        }
+        }        
         
         // Flatten nested config structure
         flattenConfig(config) {
@@ -841,7 +1047,7 @@
                 ['minLiquidityPct', 'maxLiquidityPct'],
                 ['minUniqueWallets', 'maxUniqueWallets'],
                 ['minKycWallets', 'maxKycWallets'],
-                ['minHolders', 'maxHolders'],
+                ['minHoldersCount', 'maxHoldersCount'],  // Updated parameter name
                 ['minBundledPercent', 'maxBundledPercent'],
                 ['minBuyRatio', 'maxBuyRatio'],
                 ['minVolMcapPercent', 'maxVolMcapPercent'],
@@ -1176,7 +1382,7 @@
         
         try {
             console.log('%c🔬 Starting Parameter Impact Discovery', 'color: purple; font-size: 16px; font-weight: bold;');
-            window.optimizationTracker.startOptimization();
+            window.optimizationTracker.startOptimization(1); // Single run for parameter discovery
             
             // Step 1: Establish baseline with current UI configuration
             console.log('%c📊 Establishing baseline...', 'color: blue; font-weight: bold;');
@@ -1454,29 +1660,52 @@
         const tokensCount = metrics.totalTokens || 1; // Default to 1 to avoid log(0)
         const reliabilityFactor = Math.min(1.0, Math.log(tokensCount) / Math.log(100));
         
-        // Early exit for low win rate configs (likely unreliable)
-        if (winRate < CONFIG.MIN_WIN_RATE) {
+        // Adaptive win rate requirement based on sample size (three tiers)
+        let effectiveMinWinRate;
+        let sampleTier;
+        
+        if (tokensCount >= CONFIG.LARGE_SAMPLE_THRESHOLD) {
+            effectiveMinWinRate = CONFIG.MIN_WIN_RATE_LARGE_SAMPLE;
+            sampleTier = 'Large';
+        } else if (tokensCount >= CONFIG.MEDIUM_SAMPLE_THRESHOLD) {
+            effectiveMinWinRate = CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE;
+            sampleTier = 'Medium';
+        } else {
+            effectiveMinWinRate = CONFIG.MIN_WIN_RATE;
+            sampleTier = 'Small';
+        }
+        
+        // Reject configurations that don't meet minimum win rate requirements
+        if (winRate < effectiveMinWinRate) {
+            console.log(`❌ REJECTED: Win rate ${winRate.toFixed(1)}% below ${effectiveMinWinRate}% threshold (${tokensCount} tokens, ${sampleTier} sample)`);
             return {
-                score: -10, // Heavily penalize configs with poor win rates
+                score: -Infinity, // Ensure this config is never selected as best
+                rejected: true,
+                rejectionReason: `Win rate ${winRate.toFixed(1)}% below required ${effectiveMinWinRate}% for ${sampleTier.toLowerCase()} samples`,
                 components: {
                     rawPnL: metrics.tpPnlPercent,
                     winRate: winRate,
                     reliabilityFactor: reliabilityFactor,
-                    finalScore: -10,
-                    penalty: 'Low win rate'
+                    effectiveMinWinRate: effectiveMinWinRate,
+                    sampleTier: sampleTier,
+                    tokensCount: tokensCount
                 },
-                scoringMethod: 'Robust (Penalized for low win rate)'
+                scoringMethod: `REJECTED - ${sampleTier} Sample: ${effectiveMinWinRate}% min win rate required`
             };
         }
         
+        // If we get here, win rate meets requirements - no penalty needed
+        const winRatePenalty = 1.0;
+        
         // Calculate composite score
-        // Formula: (Raw_PnL * RETURN_WEIGHT) + (Win_Rate * CONSISTENCY_WEIGHT) * Reliability_Factor
+        // Formula: (Raw_PnL * RETURN_WEIGHT) + (Win_Rate * CONSISTENCY_WEIGHT) * Reliability_Factor * Win_Rate_Penalty
         const returnComponent = rawPnL * CONFIG.RETURN_WEIGHT;
         const consistencyComponent = winRate * CONFIG.CONSISTENCY_WEIGHT;
         const baseScore = returnComponent + consistencyComponent;
         
-        // Apply reliability weighting
-        const finalScore = baseScore * (1 - CONFIG.RELIABILITY_WEIGHT) + baseScore * reliabilityFactor * CONFIG.RELIABILITY_WEIGHT;
+        // Apply reliability weighting and win rate penalty
+        const reliabilityAdjustedScore = baseScore * (1 - CONFIG.RELIABILITY_WEIGHT) + baseScore * reliabilityFactor * CONFIG.RELIABILITY_WEIGHT;
+        const finalScore = reliabilityAdjustedScore * winRatePenalty;
         
         return {
             score: finalScore,
@@ -1484,12 +1713,16 @@
                 rawPnL: metrics.tpPnlPercent,
                 winRate: winRate,
                 reliabilityFactor: reliabilityFactor,
+                effectiveMinWinRate: effectiveMinWinRate,
+                sampleTier: sampleTier,
+                tokensCount: tokensCount,
                 returnComponent: returnComponent,
                 consistencyComponent: consistencyComponent,
                 baseScore: baseScore,
+                reliabilityAdjustedScore: reliabilityAdjustedScore,
                 finalScore: finalScore
             },
-            scoringMethod: 'Robust Multi-Factor (Uncapped)'
+            scoringMethod: `Robust Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min win rate met)`
         };
     }
 
@@ -1581,7 +1814,11 @@
             // Calculate robust score for logging
             const robustScoring = calculateRobustScore(metrics);
             if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
-                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                if (robustScoring.rejected) {
+                    console.log(`❌ ${testName}: REJECTED - ${robustScoring.rejectionReason} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%`);
+                } else {
+                    console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                }
             } else {
                 console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
             }
@@ -1600,64 +1837,7 @@
             };
         }
     }
-
-    // Test configuration via UI interaction (Legacy: kept as fallback)
-    async function testConfigurationUI(config, testName = 'UI Test') {
-        try {
-            console.log(`🧪 Testing: ${testName}`);
-            
-            // 1. Apply configuration to UI (this sends the requests automatically)
-            const completeConfig = ensureCompleteConfig(config);
-            const applySuccess = await applyConfigToUI(completeConfig);
-            if (!applySuccess) {
-                console.warn(`❌ Failed to apply configuration for ${testName}`);
-                return { success: false, error: 'Failed to apply configuration' };
-            }
-
-            // 2. Wait for UI to update (same as original AGCopilot) - with stop check
-            const waitTime = CONFIG.BACKTEST_WAIT;
-            const checkInterval = 500; // Check stop flag every 500ms
-            let elapsed = 0;
-            
-            while (elapsed < waitTime) {
-                if (window.STOPPED) {
-                    console.log('⏹️ Optimization stopped during UI wait');
-                    return { success: false, error: 'Stopped by user' };
-                }
-                const sleepTime = Math.min(checkInterval, waitTime - elapsed);
-                await sleep(sleepTime);
-                elapsed += sleepTime;
-            }
-
-            // 3. Extract metrics from UI (enhanced to get accurate TP PnL %)
-            const metrics = await extractMetricsFromUI();
-            if (!metrics) {
-                console.warn(`❌ Failed to extract metrics for ${testName}`);
-                return { success: false, error: 'Failed to extract metrics' };
-            }
-
-            // Calculate robust score for logging (but don't fail if it doesn't work)
-            const robustScoring = calculateRobustScore(metrics);
-            if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
-                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
-            } else {
-                console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
-            }
-
-            return {
-                success: true,
-                metrics,
-                source: 'UI'
-            };
-            
-        } catch (error) {
-            console.warn(`❌ ${testName} failed: ${error.message}`);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
+    
 
     // ========================================
     // � SIGNAL PROCESSING & CONFIG GENERATION (from AGSignalExtractor)
@@ -3013,29 +3193,32 @@
         updateBestConfigDisplay() {
             const display = document.getElementById('best-config-display');
             const stats = document.getElementById('best-config-stats');
+            const tracker = window.bestConfigTracker;
             
-            if (display && stats && this.bestMetrics) {
+            if (display && stats && tracker && tracker.metrics) {
                 display.style.display = 'block';
                 
-                let scoreDisplay = this.bestScore.toFixed(1);
+                let scoreDisplay = tracker.score.toFixed(1);
                 let methodDisplay = '';
+                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
                 
                 // Show robust scoring details if available
-                if (CONFIG.USE_ROBUST_SCORING && this.bestMetrics.robustScoring) {
-                    const rs = this.bestMetrics.robustScoring;
-                    scoreDisplay = `${this.bestScore.toFixed(1)} (Robust)`;
+                if (CONFIG.USE_ROBUST_SCORING && tracker.metrics.robustScoring) {
+                    const rs = tracker.metrics.robustScoring;
+                    scoreDisplay = `${tracker.score.toFixed(1)} (Robust)`;
                     methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
                 }
                 
                 stats.innerHTML = `
-                    <div><strong>Score:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.bestMetrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${this.bestMetrics?.winRate?.toFixed(1) || 0}%</div>
+                    <div><strong>Score:</strong> ${scoreDisplay} ${sourceInfo}</div>
+                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
                     ${methodDisplay}
                     <div><strong>Tests:</strong> ${this.testCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.startTime) / 1000)}s</div>
                 `;
             }
         }
 
-        // Main test function - uses API call (New: Direct API instead of UI interaction)
+        // Main test function
         async testConfig(config, testName) {
             if (window.STOPPED) return { success: false };
 
@@ -3132,6 +3315,31 @@
                     return failResult;
                 }
 
+                // Handle rejected configurations (win rate too low)
+                if (robustScoring.rejected) {
+                    const failResult = { 
+                        success: false, 
+                        reason: 'win_rate_rejection',
+                        rejectionReason: robustScoring.rejectionReason
+                    };
+                    
+                    // Track rejected test
+                    this.history.push({
+                        testName,
+                        config: completeConfig,
+                        success: false,
+                        reason: 'win_rate_rejection',
+                        rejectionReason: robustScoring.rejectionReason,
+                        testNumber: this.testCount,
+                        timestamp: new Date().toISOString()
+                    });
+                    
+                    if (CONFIG.USE_CONFIG_CACHING) {
+                        this.configCache.set(completeConfig, failResult);
+                    }
+                    return failResult;
+                }
+
                 let improvement = 0;
                 let currentScore = robustScoring.score;
                 
@@ -3153,7 +3361,12 @@
                         tpPnlPercent: metrics.tpPnlPercent || 0,
                         winRate: metrics.winRate || 0,
                         ...metrics // Include all other properties
-                    };
+                    };                    
+                    
+                    if (window.bestConfigTracker) {
+                        window.bestConfigTracker.update(completeConfig, metrics, currentScore, testName || 'Optimization');
+                    }
+                    window.currentBestConfig = completeConfig;
                     
                     // Update optimization tracker with current best
                     window.optimizationTracker.setCurrentBest({
@@ -3172,9 +3385,12 @@
                         console.log(`🎉 New best! ${testName}: ${currentScore.toFixed(1)}% (${metrics?.totalTokens || 0} tokens)`);
                     }
                     
-                    // Update global reference for UI
+                    // Update global tracker for UI
+                    if (window.bestConfigTracker) {
+                        window.bestConfigTracker.update(completeConfig, this.bestMetrics, this.bestScore, testName || 'Optimization');
+                    }
                     window.currentBestConfig = completeConfig;
-                    
+
                     // Update best config display in UI
                     this.updateBestConfigDisplay();
                     
@@ -3230,23 +3446,6 @@
                 const presetDropdown = document.getElementById('preset-dropdown');
                 const hasPresetSelected = presetDropdown && presetDropdown.value && presetDropdown.value !== '';
                 
-                if (hasPresetSelected) {
-                    console.log('📦 Using selected preset as baseline');
-                    // Use a simple default configuration when preset is selected
-                    baselineConfig = {
-                        basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                        tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
-                        wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
-                        risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
-                        advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
-                    };
-                    
-                    // Apply bundled constraints if enabled
-                    if (this.isLowBundledConstraintEnabled()) {
-                        console.log('🛡️ Applying low bundled % constraints to baseline');
-                        baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
-                    }
-                } else {
                     console.log('📖 Reading current page settings as baseline');
                     // Read current configuration from the UI
                     baselineConfig = await getCurrentConfigFromUI();
@@ -3274,7 +3473,6 @@
                     } else {
                         console.log('✅ Using current page settings as baseline configuration');
                     }
-                }
             }
             
             const result = await this.testConfig(baselineConfig, 'Baseline');
@@ -3282,7 +3480,10 @@
             if (result.success) {
                 console.log(`✅ Baseline established: ${this.bestScore.toFixed(1)}% PnL with ${this.bestMetrics?.totalTokens || 0} tokens`);
                 // Save the baseline config as the current best config
-                window.currentBestConfig = this.bestConfig;
+                if (window.bestConfigTracker) {
+                    window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Baseline');
+                }
+                window.currentBestConfig = this.bestConfig; // Keep for backward compatibility
                 
                 // Ensure optimization tracker shows the baseline as current best
                 if (window.optimizationTracker) {
@@ -3297,7 +3498,10 @@
                 this.bestConfig = baselineConfig;
                 this.bestScore = -999; // Very low score to ensure any real result is better
                 this.bestMetrics = { totalTokens: 0, tpPnlPercent: -999, winRate: 0 };
-                window.currentBestConfig = this.bestConfig;
+                if (window.bestConfigTracker) {
+                    window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Fallback Baseline');
+                }
+                window.currentBestConfig = this.bestConfig; // Keep for backward compatibility
                 
                 // Set fallback in optimization tracker too
                 if (window.optimizationTracker) {
@@ -3522,7 +3726,7 @@
             window.STOPPED = false;
 
             // Start optimization tracking
-            window.optimizationTracker.startOptimization();
+            window.optimizationTracker.startOptimization(1); // Single optimization run
 
             try {
                 // Clear cache at start and force fresh start
@@ -3794,8 +3998,8 @@
             this.timePerRun = timePerRunMin;
             this.chainStartTime = Date.now();
             
-            // Start optimization tracking
-            window.optimizationTracker.startOptimization();
+            // Start optimization tracking with total run count
+            window.optimizationTracker.startOptimization(runCount);
             
             console.log(`🔗 Starting chained optimization: ${runCount} runs × ${timePerRunMin} minutes each`);
             updateProgress(`🔗 Chained Optimization: Run 0/${runCount}`, 0, 0, 0, '--', this.chainStartTime);
@@ -3808,6 +4012,9 @@
 
                 this.currentRun = run;
                 const runStartTime = Date.now();
+                
+                // Update optimization tracker with current run number
+                window.optimizationTracker.setCurrentRun(run, runCount);
                 
                 console.log(`\n🔗 === CHAIN RUN ${run}/${runCount} ===`);
                 updateProgress(`🔗 Chain Run ${run}/${runCount} Starting`, 
@@ -3864,8 +4071,11 @@
                         this.globalBestScore = runResults.bestScore;
                         this.globalBestMetrics = runResults.bestMetrics;
                         
-                        // Update the global window reference
-                        window.currentBestConfig = this.globalBestConfig;
+                        // Update the global tracker
+                        if (window.bestConfigTracker) {
+                            window.bestConfigTracker.update(this.globalBestConfig, this.globalBestMetrics, this.globalBestScore, `Chained Run ${run}`);
+                        }
+                        window.currentBestConfig = this.globalBestConfig; // Keep for backward compatibility
                         
                         console.log(`🎉 New global best from Run ${run}! Score: ${this.globalBestScore.toFixed(1)}%`);
                     }
@@ -3985,22 +4195,25 @@
         updateBestConfigDisplay() {
             const display = document.getElementById('best-config-display');
             const stats = document.getElementById('best-config-stats');
+            const tracker = window.bestConfigTracker;
             
-            if (display && stats && this.globalBestMetrics) {
+            if (display && stats && tracker && tracker.metrics) {
                 display.style.display = 'block';
                 
-                let scoreDisplay = this.globalBestScore.toFixed(1);
+                let scoreDisplay = tracker.score.toFixed(1);
                 let methodDisplay = '';
+                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
                 
                 // Show robust scoring details if available
-                if (CONFIG.USE_ROBUST_SCORING && this.globalBestMetrics.robustScoring) {
-                    const rs = this.globalBestMetrics.robustScoring;
-                    scoreDisplay = `${this.globalBestScore.toFixed(1)} (Robust)`;
+                if (CONFIG.USE_ROBUST_SCORING && tracker.metrics.robustScoring) {
+                    const rs = tracker.metrics.robustScoring;
+                    scoreDisplay = `${tracker.score.toFixed(1)} (Robust)`;
                     methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
                 }
                 
                 stats.innerHTML = `
-                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} | <strong>Tokens:</strong> ${this.globalBestMetrics.totalTokens} | <strong>Win Rate:</strong> ${this.globalBestMetrics.winRate?.toFixed(1)}%</div>
+                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} ${sourceInfo}</div>
+                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
                     ${methodDisplay}
                     <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.chainStartTime) / 1000)}s</div>
                 `;
@@ -4365,7 +4578,7 @@
 
                     // Apply each field in the section
                     for (const [param, value] of Object.entries(sectionConfig)) {
-                        if (window.STOPPED) {
+                        if (!skipStopCheck && window.STOPPED) {
                             console.log('⏹️ Optimization stopped during field application');
                             return false;
                         }
@@ -4463,29 +4676,52 @@
     // 🎨 UI FUNCTIONS
     // ========================================
     
-    // Generate preset dropdown options dynamically from PRESETS object
+    // Generate preset dropdown options dynamically from PRESETS object with priority sorting
     function generatePresetOptions() {
         let options = '<option value="">-- Select a Preset --</option>';
         
-        // Add all presets from PRESETS object
-        Object.keys(PRESETS).forEach(presetKey => {
-            // Create display names with emojis for better UX
-            const displayName = getPresetDisplayName(presetKey);
+        // Convert PRESETS object to array with keys and sort by priority
+        const sortedPresets = Object.entries(PRESETS).sort(([keyA, configA], [keyB, configB]) => {
+            const priorityA = configA.priority || 999; // Default high priority if not set
+            const priorityB = configB.priority || 999;
+            return priorityA - priorityB;
+        });
+        
+        let currentCategory = null;
+        
+        // Add sorted presets with category headers
+        sortedPresets.forEach(([presetKey, presetConfig]) => {
+            // Add category separator if category changed
+            if (presetConfig.category && presetConfig.category !== currentCategory) {
+                currentCategory = presetConfig.category;
+                options += `<optgroup label="── ${currentCategory} ──">`;
+            }
+            
+            const displayName = getPresetDisplayName(presetKey, presetConfig);
             options += `<option value="${presetKey}">${displayName}</option>`;
         });
         
         return options;
     }
     
-    function getPresetDisplayName(presetKey) {
+    function getPresetDisplayName(presetKey, presetConfig) {        
+        // Use description if available, otherwise generate from key
+        if (presetConfig && presetConfig.description) {
+            // Add priority indicator for high priority items
+            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
+                                 (presetConfig.priority <= 5) ? '🔥 ' : 
+                                (presetConfig.priority <= 10) ? '⭐ ' : '';
+            return `${priorityIcon}${presetConfig.description}`;
+        }
+        
+        // Fallback to original naming logic
         let displayName = presetKey
             .replace(/([A-Z])/g, ' $1') // Add space before capital letters
             .replace(/([0-9]+)/g, ' $1') // Add space before numbers
             .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
             .trim();
             
-        // Add a default emoji for unmapped presets
-        return `${displayName}`;
+        return displayName;
     }
     
     function createUI() {
@@ -4688,20 +4924,36 @@
                 </button>
             </div>
             
-            <div style="margin-bottom: 15px;">
+            <!-- Inline Action Buttons -->
+            <div style="margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <button id="parameter-discovery" style="
-                    width: 100%; 
-                    padding: 10px; 
+                    padding: 10px 8px; 
                     background: linear-gradient(45deg, #9b59b6, #e74c3c); 
                     border: none; 
-                    border-radius: 8px; 
+                    border-radius: 6px; 
                     color: white; 
                     font-weight: bold; 
                     cursor: pointer;
-                    font-size: 13px;
+                    font-size: 11px;
                     transition: transform 0.2s;
                 " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    🔬 Parameter Impact Discovery
+                    🔬 Parameter Discovery
+                </button>
+                
+                <button id="toggle-rate-limit-btn" style="
+                    padding: 10px 8px; 
+                    background: linear-gradient(45deg, #17a2b8, #6f42c1); 
+                    border: none; 
+                    border-radius: 6px; 
+                    color: white; 
+                    font-weight: bold; 
+                    cursor: pointer;
+                    font-size: 11px;
+                    transition: transform 0.2s;
+                " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'"
+                   onclick="toggleRateLimitingMode()"
+                   title="Currently using normal rate limiting (20s wait). Click to switch to slower mode.">
+                    ⏱️ Normal
                 </button>
             </div>
             
@@ -4944,11 +5196,12 @@
         
         // Make functions globally available for onclick handlers
         window.applyBestConfigToUI = async function() {
-            if (window.currentBestConfig) {
-                console.log('⚙️ Applying best configuration to UI...');
-                const success = await applyConfigToUI(window.currentBestConfig, true); // Skip stop check for manual best config application
+            const tracker = window.bestConfigTracker;
+            if (tracker && tracker.config) {
+                console.log(`⚙️ Applying best configuration (ID: ${tracker.id.substring(0, 8)}) to UI...`);
+                const success = await applyConfigToUI(tracker.config, true); // Skip stop check for manual best config application
                 if (success) {
-                    console.log('✅ Best configuration applied to UI successfully!');
+                    console.log(`✅ Best configuration (ID: ${tracker.id.substring(0, 8)}) applied to UI successfully!`);
                 } else {
                     console.log('❌ Failed to apply best configuration to UI');
                 }
@@ -4958,10 +5211,18 @@
         };
         
         window.copyBestConfigToClipboard = function() {
-            if (window.currentBestConfig) {
-                const configText = JSON.stringify(window.currentBestConfig, null, 2);
-                navigator.clipboard.writeText(configText).then(() => {
-                    console.log('📋 Best configuration copied to clipboard!');
+            const tracker = window.bestConfigTracker;
+            if (tracker && tracker.config) {
+                const configText = JSON.stringify(tracker.config, null, 2);
+                
+                // Add metadata comment at the top
+                const metadataComment = 
+                    `// Best configuration (ID: ${tracker.id.substring(0, 8)})\n` + 
+                    `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
+                    `// Generated: ${new Date(tracker.timestamp).toLocaleString()}\n\n`;
+                
+                navigator.clipboard.writeText(metadataComment + configText).then(() => {
+                    console.log(`📋 Best configuration (ID: ${tracker.id.substring(0, 8)}) copied to clipboard!`);
                 }).catch(err => {
                     console.log('❌ Failed to copy configuration to clipboard');
                 });
@@ -4969,6 +5230,12 @@
                 console.log('❌ No best configuration available to copy');
             }
         };
+        
+        // Make toggleRateLimitingMode globally available
+        window.toggleRateLimitingMode = toggleRateLimitingMode;
+        
+        // Make CONFIG globally accessible for debugging/testing
+        window.CONFIG = CONFIG;
         
         return ui;
     }
@@ -5423,7 +5690,14 @@
                     } else {
                         console.log(`🎉 Optimization completed! Best score: ${results.bestScore.toFixed(1)}% after ${results.testCount} tests`);
                     }
-                    window.currentBestConfig = results.bestConfig;
+                    
+                    // Update tracker with final results
+                    const source = useChainedRuns ? `Chained Optimization (${chainRunCount} runs)` : 'Single Optimization';
+                    if (window.bestConfigTracker) {
+                        window.bestConfigTracker.update(results.bestConfig, results.bestMetrics, results.bestScore, source);
+                    }
+                    window.currentBestConfig = results.bestConfig; // Keep for backward compatibility
+                    
                     // Change background to green for successful completion
                     updateUIBackground(true);
                 } else {
@@ -5724,7 +5998,8 @@
     }
     
     console.log('✅ AG Co-Pilot Enhanced + Signal Analysis ready!');
-    console.log('🚀 Features: Direct API optimization, signal analysis, config generation');
+    console.log('� Rate Limiting: ' + CONFIG.RATE_LIMIT_MODE.toUpperCase() + ' mode (' + (CONFIG.BACKTEST_WAIT/1000) + 's wait, ' + CONFIG.RATE_LIMIT_THRESHOLD + ' burst)');
+    console.log('�🚀 Features: Direct API optimization, signal analysis, config generation');
     console.log('🔍 NEW: Analyze successful signals from contract addresses to generate optimal configs');
     console.log('⚙️ NEW: Auto-apply generated configs and start optimization in one click');
     console.log('� NEW: Intelligent chained runs - each run starts from previous best configuration!');
@@ -5748,6 +6023,10 @@
     console.log('   • window.resetRateLimiting() - Reset to optimal settings');
     console.log('   • window.optimizeRateLimiting() - Smart optimization');
     console.log('   • window.enableTurboMode() - Maximum speed mode (⚠️ aggressive)');
+    console.log('🆔 Configuration tracking:');
+    console.log('   • window.getConfigTracker() - Show current best config info with ID');
+    console.log('   • window.getBestConfig() - Display current best configuration');
+    console.log('   • window.bestConfigTracker.getDebugInfo() - Raw tracker debug info');
     
     // ========================================
     // 🛠️ UTILITY FUNCTIONS - Global Access
@@ -6076,6 +6355,37 @@
         }
         
         return { duration, success: result.success, rateLimited: result.error?.includes('429') };
+    };
+    
+    // Configuration Tracker Debug Functions
+    window.getConfigTracker = () => {
+        console.log('📋 Current Best Configuration Tracker:');
+        if (window.bestConfigTracker) {
+            const debug = window.bestConfigTracker.getDebugInfo();
+            Object.entries(debug).forEach(([key, value]) => {
+                console.log(`   • ${key}: ${value}`);
+            });
+            return debug;
+        } else {
+            console.log('   ⚠️ bestConfigTracker not initialized');
+            return null;
+        }
+    };
+    
+    window.getBestConfig = () => {
+        if (window.bestConfigTracker) {
+            const config = window.bestConfigTracker.getConfig();
+            if (config) {
+                console.log(`📋 Best Configuration (ID: ${window.bestConfigTracker.id.substring(0, 8)}):`);
+                console.log(JSON.stringify(config, null, 2));
+            } else {
+                console.log('❌ No best configuration available');
+            }
+            return config;
+        } else {
+            console.log('⚠️ bestConfigTracker not initialized');
+            return null;
+        }
     };
     
     // Test connectivity
