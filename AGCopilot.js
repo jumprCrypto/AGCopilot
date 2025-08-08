@@ -608,6 +608,96 @@
         return 4; // Default to Launchpads if no selection
     }
 
+    // Get date range from UI
+    function getDateRange() {
+        const fromDateElement = document.getElementById('from-date');
+        const toDateElement = document.getElementById('to-date');
+        
+        const fromDate = fromDateElement ? fromDateElement.value : null;
+        const toDate = toDateElement ? toDateElement.value : null;
+        
+        // Return null for empty strings to avoid adding empty parameters
+        return {
+            fromDate: fromDate && fromDate.trim() ? fromDate : null,
+            toDate: toDate && toDate.trim() ? toDate : null
+        };
+    }
+
+    // Calculate date range duration in days and scaling factor for token thresholds
+    function getDateRangeScaling() {
+        const dateRange = getDateRange();
+        const DEFAULT_DAYS = 7; // Base scaling factor for 7-day period
+        
+        if (!dateRange.fromDate || !dateRange.toDate) {
+            // No date range specified, use default scaling (1x)
+            return {
+                days: DEFAULT_DAYS,
+                scalingFactor: 1,
+                isDateFiltered: false
+            };
+        }
+        
+        try {
+            const fromDate = new Date(dateRange.fromDate);
+            const toDate = new Date(dateRange.toDate);
+            
+            // Calculate difference in days
+            const timeDiff = toDate.getTime() - fromDate.getTime();
+            const daysDiff = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24))); // At least 1 day
+            
+            // Calculate scaling factor (linear scaling based on days)
+            const scalingFactor = daysDiff / DEFAULT_DAYS;
+            
+            return {
+                days: daysDiff,
+                scalingFactor: scalingFactor,
+                isDateFiltered: true
+            };
+        } catch (error) {
+            console.warn('Error calculating date range scaling:', error);
+            return {
+                days: DEFAULT_DAYS,
+                scalingFactor: 1,
+                isDateFiltered: false
+            };
+        }
+    }
+
+    // Get scaled token thresholds based on date range
+    function getScaledTokenThresholds() {
+        const scaling = getDateRangeScaling();
+        
+        // Base thresholds for 7-day period
+        const BASE_THRESHOLDS = {
+            LARGE_SAMPLE_THRESHOLD: 1000,    // 143x days
+            MEDIUM_SAMPLE_THRESHOLD: 500,    // 71x days  
+            MIN_TOKENS: 75                    // 11x days (from UI default)
+        };
+        
+        // Apply scaling
+        const scaled = {
+            LARGE_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.LARGE_SAMPLE_THRESHOLD * scaling.scalingFactor),
+            MEDIUM_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.MEDIUM_SAMPLE_THRESHOLD * scaling.scalingFactor),
+            MIN_TOKENS: Math.round(BASE_THRESHOLDS.MIN_TOKENS * scaling.scalingFactor),
+            scalingInfo: scaling
+        };
+        
+        // Ensure minimum values
+        scaled.LARGE_SAMPLE_THRESHOLD = Math.max(100, scaled.LARGE_SAMPLE_THRESHOLD);
+        scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(50, scaled.MEDIUM_SAMPLE_THRESHOLD);
+        scaled.MIN_TOKENS = Math.max(10, scaled.MIN_TOKENS);
+        
+        // Ensure logical order: MIN_TOKENS < MEDIUM < LARGE
+        if (scaled.MEDIUM_SAMPLE_THRESHOLD >= scaled.LARGE_SAMPLE_THRESHOLD) {
+            scaled.MEDIUM_SAMPLE_THRESHOLD = Math.floor(scaled.LARGE_SAMPLE_THRESHOLD * 0.5);
+        }
+        if (scaled.MIN_TOKENS >= scaled.MEDIUM_SAMPLE_THRESHOLD) {
+            scaled.MIN_TOKENS = Math.floor(scaled.MEDIUM_SAMPLE_THRESHOLD * 0.15);
+        }
+        
+        return scaled;
+    }
+
     // Alias for parameter discovery compatibility
     async function getCurrentConfiguration() {
         return await getCurrentConfigFromUI();
@@ -1016,6 +1106,17 @@
             apiParams.excludeSpoofedTokens = true;            
             apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
             
+            // Add date range parameters if provided
+            const dateRange = getDateRange();
+            if (dateRange.fromDate) {
+                apiParams.fromDate = dateRange.fromDate;
+                console.log(`📅 Including fromDate parameter: ${dateRange.fromDate}`);
+            }
+            if (dateRange.toDate) {
+                apiParams.toDate = dateRange.toDate;
+                console.log(`📅 Including toDate parameter: ${dateRange.toDate}`);
+            }
+            
             return apiParams;
         }        
         
@@ -1138,7 +1239,12 @@
                     console.warn(`⚠️ Potential problematic parameters detected: ${problematicParams.join(', ')}`);
                 }
                 
-                console.log(`🔗 API URL: ${url.substring(0, 150)}...${url.includes('tpSize') ? ' (with multiple TPs)' : ''}`);
+                // Log date range information if present
+                if (apiParams.fromDate || apiParams.toDate) {
+                    console.log(`📅 Date range: ${apiParams.fromDate || 'No start'} to ${apiParams.toDate || 'No end'}`);
+                }
+                
+                console.log(`🔗 API URL: ${url.substring(0, 150)}...${url.includes('tpSize') ? ' (with multiple TPs)' : ''}${url.includes('fromDate') || url.includes('toDate') ? ' (with date range)' : ''}`);
                 
                 // Additional validation for AG Score in URL
                 if (url.includes('minAgScore=NaN') || url.includes('minAgScore=undefined')) {
@@ -1664,13 +1770,15 @@
         const reliabilityFactor = Math.min(1.0, Math.log(tokensCount) / Math.log(100));
         
         // Adaptive win rate requirement based on sample size (three tiers)
+        // Get scaled thresholds based on date range
+        const scaledThresholds = getScaledTokenThresholds();
         let effectiveMinWinRate;
         let sampleTier;
         
-        if (tokensCount >= CONFIG.LARGE_SAMPLE_THRESHOLD) {
+        if (tokensCount >= scaledThresholds.LARGE_SAMPLE_THRESHOLD) {
             effectiveMinWinRate = CONFIG.MIN_WIN_RATE_LARGE_SAMPLE;
             sampleTier = 'Large';
-        } else if (tokensCount >= CONFIG.MEDIUM_SAMPLE_THRESHOLD) {
+        } else if (tokensCount >= scaledThresholds.MEDIUM_SAMPLE_THRESHOLD) {
             effectiveMinWinRate = CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE;
             sampleTier = 'Medium';
         } else {
@@ -3277,8 +3385,11 @@
 
                 const metrics = result.metrics;
                 
-                // Validate metrics
-                if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < CONFIG.MIN_TOKENS) {
+                // Get scaled minimum tokens threshold based on date range
+                const scaledThresholds = getScaledTokenThresholds();
+                
+                // Validate metrics using scaled threshold
+                if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < scaledThresholds.MIN_TOKENS) {
                     const failResult = { success: false, reason: 'insufficient_tokens' };
                     
                     // Track failed test
@@ -4382,6 +4493,14 @@
             await sleep(200);
         }
 
+        // Read date range fields
+        const dateRange = getDateRange();
+        if (dateRange.fromDate || dateRange.toDate) {
+            config.dateRange = {};
+            if (dateRange.fromDate) config.dateRange.fromDate = dateRange.fromDate;
+            if (dateRange.toDate) config.dateRange.toDate = dateRange.toDate;
+        }
+
         console.log(`📖 Read ${fieldsRead} fields from UI, ${fieldsWithValues} have values set`);
         return config;
     }
@@ -4604,6 +4723,40 @@
                 }
             }
 
+            // Handle date range fields separately (they're not in the standard sections)
+            if (config.dateRange) {
+                if (config.dateRange.fromDate) {
+                    const fromDateElement = document.getElementById('from-date');
+                    if (fromDateElement) {
+                        fromDateElement.value = config.dateRange.fromDate;
+                        totalFields++;
+                        successCount++;
+                    }
+                }
+                if (config.dateRange.toDate) {
+                    const toDateElement = document.getElementById('to-date');
+                    if (toDateElement) {
+                        toDateElement.value = config.dateRange.toDate;
+                        totalFields++;
+                        successCount++;
+                    }
+                }
+            } else {
+                // Clear date fields if no dateRange is specified in config
+                const fromDateElement = document.getElementById('from-date');
+                const toDateElement = document.getElementById('to-date');
+                if (fromDateElement) {
+                    fromDateElement.value = '';
+                    totalFields++;
+                    successCount++;
+                }
+                if (toDateElement) {
+                    toDateElement.value = '';
+                    totalFields++;
+                    successCount++;
+                }
+            }
+
             const successRate = totalFields > 0 ? (successCount / totalFields * 100) : 0;
             updateStatus(`⚙️ Applied ${successCount}/${totalFields} fields (${successRate.toFixed(1)}% success rate)`);
             
@@ -4729,6 +4882,135 @@
         return displayName;
     }
     
+    // ========================================
+    // 🖥️ SPLIT-SCREEN LAYOUT FUNCTIONS
+    // ========================================
+    
+    // Track split-screen state
+    let isSplitScreenMode = false;
+    const COPILOT_WIDTH = 420; // Width of the AG Copilot panel
+    
+    function toggleSplitScreen() {
+        const ui = document.getElementById('ag-copilot-enhanced-ui');
+        const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        const body = document.body;
+        const html = document.documentElement;
+        
+        if (!ui) return;
+        
+        if (!isSplitScreenMode) {
+            // Switch to split-screen mode
+            enableSplitScreen();
+        } else {
+            // Switch back to floating mode
+            disableSplitScreen();
+        }
+    }
+    
+    function enableSplitScreen() {
+        const ui = document.getElementById('ag-copilot-enhanced-ui');
+        const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        const body = document.body;
+        const html = document.documentElement;
+        
+        if (!ui) return;
+        
+        // Check if screen is wide enough for split-screen (minimum 1200px)
+        if (window.innerWidth < 1200) {
+            console.log('⚠️ Screen too narrow for split-screen mode (minimum 1200px required)');
+            alert('Split-screen mode requires a minimum screen width of 1200px.\nCurrent width: ' + window.innerWidth + 'px');
+            return;
+        }
+        
+        // Store original body styles if not already stored
+        if (!body.dataset.originalMargin) {
+            body.dataset.originalMargin = body.style.marginRight || '0px';
+            body.dataset.originalWidth = body.style.width || 'auto';
+            body.dataset.originalMaxWidth = body.style.maxWidth || 'none';
+            body.dataset.originalOverflowX = body.style.overflowX || 'visible';
+        }
+        
+        // Adjust page layout to make room for AG Copilot
+        body.style.marginRight = `${COPILOT_WIDTH}px`; // Extra 40px for padding
+        body.style.transition = 'margin-right 0.3s ease';
+        body.style.overflowX = 'hidden'; // Prevent horizontal scrollbar
+        
+        // Position AG Copilot in the right slice
+        ui.style.position = 'fixed';
+        ui.style.top = '0px';
+        ui.style.right = '0px';
+        ui.style.width = `${COPILOT_WIDTH}px`;
+        ui.style.height = '100vh';
+        ui.style.borderRadius = '0px';
+        ui.style.maxHeight = '100vh';
+        ui.style.border = '2px solid #fff';
+        ui.style.borderRight = 'none';
+        ui.style.transition = 'all 0.3s ease';
+        
+        // Update collapsed UI position too
+        if (collapsedUI) {
+            collapsedUI.style.right = '10px';
+        }
+        
+        // Update toggle button
+        const splitToggleBtn = document.getElementById('split-screen-toggle');
+        if (splitToggleBtn) {
+            splitToggleBtn.innerHTML = '📱 Float';
+            splitToggleBtn.title = 'Switch to floating mode';
+        }
+        
+        isSplitScreenMode = true;
+        console.log('🖥️ Split-screen mode enabled');
+    }
+    
+    function disableSplitScreen() {
+        const ui = document.getElementById('ag-copilot-enhanced-ui');
+        const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        const body = document.body;
+        
+        if (!ui) return;
+        
+        // Restore original body styles
+        body.style.marginRight = body.dataset.originalMargin || '0px';
+        body.style.width = body.dataset.originalWidth || 'auto';
+        body.style.maxWidth = body.dataset.originalMaxWidth || 'none';
+        body.style.overflowX = body.dataset.originalOverflowX || 'visible';
+        body.style.transition = 'margin-right 0.3s ease';
+        
+        // Restore AG Copilot to floating mode
+        ui.style.position = 'fixed';
+        ui.style.top = '20px';
+        ui.style.right = '20px';
+        ui.style.width = `${COPILOT_WIDTH}px`;
+        ui.style.height = 'auto';
+        ui.style.borderRadius = '15px';
+        ui.style.maxHeight = '90vh';
+        ui.style.border = '2px solid #fff';
+        ui.style.transition = 'all 0.3s ease';
+        
+        // Update collapsed UI position
+        if (collapsedUI) {
+            collapsedUI.style.right = '20px';
+        }
+        
+        // Update toggle button
+        const splitToggleBtn = document.getElementById('split-screen-toggle');
+        if (splitToggleBtn) {
+            splitToggleBtn.innerHTML = '🖥️ Split';
+            splitToggleBtn.title = 'Switch to split-screen mode';
+        }
+        
+        isSplitScreenMode = false;
+        console.log('🖥️ Floating mode restored');
+    }
+    
+    // Clean up split-screen when UI is removed
+    function cleanupSplitScreen() {
+        if (isSplitScreenMode) {
+            disableSplitScreen();
+        }
+    }
+    
     function createUI() {
         // Remove existing UI
         const existingUI = document.getElementById('ag-copilot-enhanced-ui');
@@ -4763,22 +5045,39 @@
                             🤖 AG Copilot Enhanced
                         </h3>
                     </div>
-                    <button id="collapse-ui-btn" style="
-                        background: rgba(255,255,255,0.2); 
-                        border: 1px solid rgba(255,255,255,0.4); 
-                        border-radius: 6px; 
-                        color: white; 
-                        cursor: pointer; 
-                        padding: 6px 10px; 
-                        font-size: 12px;
-                        font-weight: bold;
-                        transition: all 0.2s;
-                        margin-left: 10px;
-                    " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
-                       onmouseout="this.style.background='rgba(255,255,255,0.2)'"
-                       title="Collapse to small box">
-                        ➖
-                    </button>
+                    <div style="display: flex; gap: 5px;">
+                        <button id="split-screen-toggle" style="
+                            background: rgba(255,255,255,0.2); 
+                            border: 1px solid rgba(255,255,255,0.4); 
+                            border-radius: 6px; 
+                            color: white; 
+                            cursor: pointer; 
+                            padding: 6px 10px; 
+                            font-size: 12px;
+                            font-weight: bold;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
+                           onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+                           onclick="toggleSplitScreen()"
+                           title="Will auto-enable split-screen mode (click to toggle to floating)">
+                            🖥️ Split
+                        </button>
+                        <button id="collapse-ui-btn" style="
+                            background: rgba(255,255,255,0.2); 
+                            border: 1px solid rgba(255,255,255,0.4); 
+                            border-radius: 6px; 
+                            color: white; 
+                            cursor: pointer; 
+                            padding: 6px 10px; 
+                            font-size: 12px;
+                            font-weight: bold;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
+                           onmouseout="this.style.background='rgba(255,255,255,0.2)'"
+                           title="Collapse to small box">
+                            ➖
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -4822,6 +5121,25 @@
                             <option value="5">Smart Tracker</option>
                         </select>
                     </div>
+                </div>
+                
+                <!-- Date Range Selection -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <label style="display: flex; flex-direction: column;">
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">From Date (optional):</span>
+                        <input type="date" id="from-date" 
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; color: black;"
+                               title="Filter tokens created on or after this date. Leave empty for no start date filter.">
+                    </label>
+                    <label style="display: flex; flex-direction: column;">
+                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">To Date (optional):</span>
+                        <input type="date" id="to-date" 
+                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; color: black;"
+                               title="Filter tokens created on or before this date. Leave empty for no end date filter.">
+                    </label>
+                </div>
+                <div style="font-size: 9px; color: #aaa; margin-bottom: 10px; text-align: center;">
+                    💡 Leave blank to analyze 1 week of data.
                 </div>
                 
                 <!-- Optimization settings in compact grid -->
@@ -5239,8 +5557,23 @@
         // Make toggleRateLimitingMode globally available
         window.toggleRateLimitingMode = toggleRateLimitingMode;
         
+        // Make split-screen functions globally available
+        window.toggleSplitScreen = toggleSplitScreen;
+        window.enableSplitScreen = enableSplitScreen;
+        window.disableSplitScreen = disableSplitScreen;
+        
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
+        
+        // Auto-enable split-screen mode by default (after a short delay to ensure DOM is ready)
+        setTimeout(() => {
+            if (window.innerWidth >= 1200) {
+                console.log('🖥️ Auto-enabling split-screen mode (default behavior)');
+                enableSplitScreen();
+            } else {
+                console.log('🖥️ Screen too narrow for auto-enabling split-screen mode, keeping floating mode');
+            }
+        }, 100);
         
         return ui;
     }
@@ -5562,6 +5895,11 @@
         const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
         
         if (mainUI && collapsedUI) {
+            // If in split-screen mode, disable it first to prevent layout issues
+            if (isSplitScreenMode) {
+                disableSplitScreen();
+            }
+            
             mainUI.style.display = 'none';
             collapsedUI.style.display = 'block';
         }
@@ -5574,6 +5912,14 @@
         if (mainUI && collapsedUI) {
             collapsedUI.style.display = 'none';
             mainUI.style.display = 'block';
+            
+            // Auto-enable split-screen mode if screen is wide enough (consistent with default behavior)
+            setTimeout(() => {
+                if (window.innerWidth >= 1200 && !isSplitScreenMode) {
+                    console.log('🖥️ Auto-enabling split-screen mode on expand');
+                    enableSplitScreen();
+                }
+            }, 100);
         }
     }
 
@@ -5625,8 +5971,18 @@
             
             // Update config
             CONFIG.TARGET_PNL = targetPnl;
-            CONFIG.MIN_TOKENS = minTokens;
+            
+            // Apply date-range based token threshold scaling
+            const scaledThresholds = getScaledTokenThresholds();
+            CONFIG.MIN_TOKENS = Math.max(minTokens, scaledThresholds.MIN_TOKENS); // Use higher of UI value or scaled value
             CONFIG.MAX_RUNTIME_MIN = runtimeMin;
+            
+            // Log scaling information if date filtering is active
+            if (scaledThresholds.scalingInfo.isDateFiltered) {
+                console.log(`📅 Date range scaling applied (${scaledThresholds.scalingInfo.days} days, ${scaledThresholds.scalingInfo.scalingFactor.toFixed(2)}x):`);
+                console.log(`   📊 Token thresholds: Large=${scaledThresholds.LARGE_SAMPLE_THRESHOLD}, Medium=${scaledThresholds.MEDIUM_SAMPLE_THRESHOLD}, Min=${scaledThresholds.MIN_TOKENS}`);
+                console.log(`   🎯 Using minimum tokens: ${CONFIG.MIN_TOKENS} (UI: ${minTokens}, Scaled: ${scaledThresholds.MIN_TOKENS})`);
+            }
             CONFIG.USE_ROBUST_SCORING = robustScoring;
             CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
             CONFIG.USE_MULTIPLE_STARTING_POINTS = multipleStartingPoints;
@@ -5829,6 +6185,8 @@
         
         // Close button
         safeAddEventListener('close-btn', 'click', () => {
+            cleanupSplitScreen();
+            
             const mainUI = document.getElementById('ag-copilot-enhanced-ui');
             const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
             if (mainUI) mainUI.remove();
@@ -6405,5 +6763,13 @@
     } catch (error) {
         console.log(`❌ UI connectivity test failed: ${error.message}`);
     }
+    
+    // Add window resize listener to automatically disable split-screen on narrow screens
+    window.addEventListener('resize', () => {
+        if (isSplitScreenMode && window.innerWidth < 1200) {
+            console.log('⚠️ Screen became too narrow, disabling split-screen mode');
+            disableSplitScreen();
+        }
+    });
     
 })();
