@@ -723,6 +723,7 @@
 
         startOptimization(totalRuns = 1) {
             this.isRunning = true;
+            updateBestConfigHeader('running');  // Update header to show optimization is running
             this.startTime = Date.now();
             this.totalTests = 0;
             this.failedTests = 0;
@@ -781,6 +782,7 @@
 
         stopOptimization() {
             this.isRunning = false;
+            updateBestConfigHeader('idle');  // Reset header when optimization is manually stopped
             // Keep display showing final results
         }
 
@@ -810,9 +812,6 @@
             const statsElement = document.getElementById('best-config-stats');
             
             if (!displayElement || !statsElement) return;
-
-            // Show the section
-            displayElement.style.display = 'block';
 
             const runtime = this.startTime ? (Date.now() - this.startTime) / 1000 : 0;
             const runtimeMin = Math.floor(runtime / 60);
@@ -872,6 +871,36 @@
                             <div>Win Rate: <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
                         </div>
                         <div style="font-size: 9px; color: #aaa; margin-top: 4px;">Method: ${this.currentBest.method}</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                            <button onclick="applyBestConfigToUI()" style="
+                                padding: 8px;
+                                background: rgba(59, 130, 246, 0.2);
+                                border: 1px solid rgba(59, 130, 246, 0.4);
+                                border-radius: 4px;
+                                color: #63b3ed;
+                                font-size: 11px;
+                                cursor: pointer;
+                                font-weight: 500;
+                                transition: all 0.2s;
+                            " onmouseover="this.style.background='rgba(59, 130, 246, 0.3)'" 
+                               onmouseout="this.style.background='rgba(59, 130, 246, 0.2)'">
+                                ⚙️ Apply Best Config
+                            </button>
+                            <button onclick="copyBestConfigToClipboard()" style="
+                                padding: 8px;
+                                background: rgba(139, 92, 246, 0.2);
+                                border: 1px solid rgba(139, 92, 246, 0.4);
+                                border-radius: 4px;
+                                color: #a78bfa;
+                                font-size: 11px;
+                                cursor: pointer;
+                                font-weight: 500;
+                                transition: all 0.2s;
+                            " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
+                               onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
+                                📋 Copy Best Config
+                            </button>
+                        </div>
                     </div>
                 `;
 
@@ -4943,20 +4972,13 @@
         ui.style.height = '100vh';
         ui.style.borderRadius = '0px';
         ui.style.maxHeight = '100vh';
-        ui.style.border = '2px solid #fff';
+        ui.style.border = '1px solid #2d3748';
         ui.style.borderRight = 'none';
         ui.style.transition = 'all 0.3s ease';
         
         // Update collapsed UI position too
         if (collapsedUI) {
             collapsedUI.style.right = '10px';
-        }
-        
-        // Update toggle button
-        const splitToggleBtn = document.getElementById('split-screen-toggle');
-        if (splitToggleBtn) {
-            splitToggleBtn.innerHTML = '📱 Float';
-            splitToggleBtn.title = 'Switch to floating mode';
         }
         
         isSplitScreenMode = true;
@@ -4983,21 +5005,14 @@
         ui.style.right = '20px';
         ui.style.width = `${COPILOT_WIDTH}px`;
         ui.style.height = 'auto';
-        ui.style.borderRadius = '15px';
+        ui.style.borderRadius = '8px';
         ui.style.maxHeight = '90vh';
-        ui.style.border = '2px solid #fff';
+        ui.style.border = '1px solid #2d3748';
         ui.style.transition = 'all 0.3s ease';
         
         // Update collapsed UI position
         if (collapsedUI) {
             collapsedUI.style.right = '20px';
-        }
-        
-        // Update toggle button
-        const splitToggleBtn = document.getElementById('split-screen-toggle');
-        if (splitToggleBtn) {
-            splitToggleBtn.innerHTML = '🖥️ Split';
-            splitToggleBtn.title = 'Switch to split-screen mode';
         }
         
         isSplitScreenMode = false;
@@ -5025,452 +5040,925 @@
             top: 20px;
             right: 20px;
             width: 420px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: 2px solid #fff;
-            border-radius: 15px;
-            padding: 20px;
+            background: #1a2332;
+            border: 1px solid #2d3748;
+            border-radius: 8px;
+            padding: 0;
             z-index: 10000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: white;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            color: #e2e8f0;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
             max-height: 90vh;
-            overflow-y: auto;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         `;
 
         ui.innerHTML = `
-            <div id="ui-header" style="margin-bottom: 20px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                    <div style="flex: 1; text-align: center;">
-                        <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+            <div id="ui-header" style="
+                padding: 16px 20px;
+                background: #2d3748;
+                border-bottom: 1px solid #4a5568;
+                border-radius: 8px 8px 0 0;
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="
+                            width: 8px;
+                            height: 8px;
+                            background: #48bb78;
+                            border-radius: 50%;
+                            animation: pulse 2s infinite;
+                        "></div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #f7fafc;">
                             🤖 AG Copilot Enhanced
                         </h3>
                     </div>
-                    <div style="display: flex; gap: 5px;">
-                        <button id="split-screen-toggle" style="
-                            background: rgba(255,255,255,0.2); 
-                            border: 1px solid rgba(255,255,255,0.4); 
-                            border-radius: 6px; 
-                            color: white; 
-                            cursor: pointer; 
-                            padding: 6px 10px; 
-                            font-size: 12px;
-                            font-weight: bold;
-                            transition: all 0.2s;
-                        " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
-                           onmouseout="this.style.background='rgba(255,255,255,0.2)'"
-                           onclick="toggleSplitScreen()"
-                           title="Will auto-enable split-screen mode (click to toggle to floating)">
-                            🖥️ Split
-                        </button>
+                    <div style="display: flex; gap: 8px;">
                         <button id="collapse-ui-btn" style="
-                            background: rgba(255,255,255,0.2); 
-                            border: 1px solid rgba(255,255,255,0.4); 
-                            border-radius: 6px; 
-                            color: white; 
-                            cursor: pointer; 
-                            padding: 6px 10px; 
-                            font-size: 12px;
-                            font-weight: bold;
+                            background: #4a5568;
+                            border: 1px solid #718096;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                            cursor: pointer;
+                            padding: 6px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
                             transition: all 0.2s;
-                        " onmouseover="this.style.background='rgba(255,255,255,0.3)'" 
-                           onmouseout="this.style.background='rgba(255,255,255,0.2)'"
-                           title="Collapse to small box">
+                        " onmouseover="this.style.background='#718096'" 
+                           onmouseout="this.style.background='#4a5568'"
+                           title="Minimize window">
                             ➖
+                        </button>
+                        <button id="close-ui-btn" style="
+                            background: #e53e3e;
+                            border: 1px solid #c53030;
+                            border-radius: 4px;
+                            color: white;
+                            cursor: pointer;
+                            padding: 6px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='#c53030'" 
+                           onmouseout="this.style.background='#e53e3e'"
+                           title="Close AG Copilot">
+                            ✕
                         </button>
                     </div>
                 </div>
             </div>
             
-            <div id="ui-content">
-            <!-- Configuration & Optimization Section -->
-            <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">⚙️ Configuration & Optimization</h4>
-                    <button id="toggle-config-section" style="
-                        background: rgba(255,255,255,0.1); 
-                        border: 1px solid rgba(255,255,255,0.3); 
-                        border-radius: 4px; 
-                        color: white; 
-                        cursor: pointer; 
-                        padding: 4px 8px; 
-                        font-size: 10px;
-                        transition: background 0.2s;
-                    " onmouseover="this.style.background='rgba(255,255,255,0.2)'" 
-                       onmouseout="this.style.background='rgba(255,255,255,0.1)'">
-                        ➖ Hide
+            <div id="ui-content" style="
+                flex: 1;
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: #4a5568 transparent;
+            ">
+                <style>
+                    #ui-content::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    #ui-content::-webkit-scrollbar-track {
+                        background: transparent;
+                    }
+                    #ui-content::-webkit-scrollbar-thumb {
+                        background: #4a5568;
+                        border-radius: 3px;
+                    }
+                    #ui-content::-webkit-scrollbar-thumb:hover {
+                        background: #718096;
+                    }
+                    @keyframes pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0.5; }
+                    }
+                    .tab-button {
+                        padding: 12px 20px;
+                        background: #2d3748;
+                        border: none;
+                        border-bottom: 2px solid transparent;
+                        color: #a0aec0;
+                        font-size: 13px;
+                        font-weight: 500;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        flex: 1;
+                    }
+                    .tab-button:hover {
+                        background: #4a5568;
+                        color: #e2e8f0;
+                    }
+                    .tab-button.active {
+                        background: #1a2332;
+                        color: #63b3ed;
+                        border-bottom-color: #63b3ed;
+                    }
+                    .tab-content {
+                        display: none;
+                        padding: 16px 20px;
+                    }
+                    .tab-content.active {
+                        display: block;
+                    }
+                </style>
+
+                <!-- Tab Navigation -->
+                <div style="
+                    display: flex;
+                    background: #2d3748;
+                    border-bottom: 1px solid #4a5568;
+                ">
+                    <button class="tab-button active" onclick="switchTab('config-tab')" id="config-tab-btn">
+                        ⚙️ Configuration
+                    </button>
+                    <button class="tab-button" onclick="switchTab('signal-tab')" id="signal-tab-btn">
+                        🔍 Signal Analysis
                     </button>
                 </div>
-                <div id="config-section-content">
-                
-                <!-- Presets and Trigger Mode -->
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 10px;">
-                    <div>
-                        <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Quick Presets:</label>
-                        <select id="preset-dropdown" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
-                            ${generatePresetOptions()}
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-size: 12px; font-weight: bold; margin-bottom: 3px; display: block;">Trigger Mode:</label>
-                        <select id="trigger-mode-select" style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; color: black; background: white;">
-                            <option value="0">Bullish Bonding</option>
-                            <option value="1">God Mode</option>
-                            <option value="2">Moon Finder</option>
-                            <option value="3">Fomo</option>
-                            <option value="4" selected>Launchpads</option>
-                            <option value="5">Smart Tracker</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- Date Range Selection -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">From Date (optional):</span>
-                        <input type="date" id="from-date" 
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; color: black;"
-                               title="Filter tokens created on or after this date. Leave empty for no start date filter.">
-                    </label>
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">To Date (optional):</span>
-                        <input type="date" id="to-date" 
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; color: black;"
-                               title="Filter tokens created on or before this date. Leave empty for no end date filter.">
-                    </label>
-                </div>
-                <div style="font-size: 9px; color: #aaa; margin-bottom: 10px; text-align: center;">
-                    💡 Leave blank to analyze 1 week of data.
-                </div>
-                
-                <!-- Optimization settings in compact grid -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px;">
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Target PnL %:</span>
-                        <input type="number" id="target-pnl" value="100" min="5" max="50" step="0.5"
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
-                    </label>
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Min Tokens:</span>
-                        <input type="number" id="min-tokens" value="75" min="1" max="100" step="1"
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
-                    </label>
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runtime (min):</span>
-                        <input type="number" id="runtime-min" value="15" min="5" max="120" step="5"
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
-                    </label>
-                    <label style="display: flex; flex-direction: column;">
-                        <span style="font-size: 11px; font-weight: bold; margin-bottom: 3px;">Runs:</span>
-                        <input type="number" id="chain-run-count" value="4" min="1" max="100" step="1"
-                               style="padding: 5px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
-                    </label>
-                </div>
-                
-                <!-- Advanced Optimization Features -->
-                <div style="margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;">
-                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #4ECDC4;">🚀 Optimization Methods:</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 10px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Uses statistical methods to reduce impact of outlier data points">
-                            <input type="checkbox" id="robust-scoring" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">🛡️ Outlier-Resistant</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
-                            <input type="checkbox" id="simulated-annealing" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">🔥 Simulated Annealing</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Tests all available presets as starting points for comprehensive coverage">
-                            <input type="checkbox" id="multiple-starting-points" style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">🎯 Multiple Starts</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Statistical sampling method that ensures even distribution across parameter space">
-                            <input type="checkbox" id="latin-hypercube" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">📐 Latin Hypercube</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
-                            <input type="checkbox" id="correlated-params" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">🔗 Correlated Params</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Fine-grained testing of the most effective parameters with smaller increments">
-                            <input type="checkbox" id="deep-dive" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold;">🔬 Deep Dive</span>
-                        </label>
-                    </div>
-                    <div style="font-size: 8px; opacity: 0.7; margin-top: 4px; line-height: 1.2;">
-                        💡 Advanced optimization phases for parameter exploration. Hover over options for details.
-                    </div>
+
+                <!-- Configuration Tab -->
+                <div id="config-tab" class="tab-content active">
                     
-                    <!-- Low Bundled % Constraint -->
-                    <div style="margin-top: 8px; padding: 6px; background: rgba(255,215,0,0.15); border: 1px solid rgba(255,215,0,0.3); border-radius: 4px;">
-                        <label style="display: flex; align-items: center; cursor: pointer;" title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
-                            <input type="checkbox" id="low-bundled-constraint" checked style="margin-right: 5px; transform: scale(1.0);">
-                            <span style="font-weight: bold; font-size: 11px; color: #FFD700;">🛡️ Low Bundled % Constraint</span>
-                        </label>
-                        <div style="font-size: 8px; opacity: 0.8; margin-top: 2px; line-height: 1.2;">
-                            Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                        <!-- Presets and Trigger Mode -->
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Quick Presets</label>
+                                <select id="preset-dropdown" style="
+                                    width: 100%;
+                                    padding: 6px 10px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 11px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                    ${generatePresetOptions()}
+                                </select>
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Trigger Mode</label>
+                                <select id="trigger-mode-select" style="
+                                    width: 100%;
+                                    padding: 6px 10px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 11px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                    <option value="0">Bullish Bonding</option>
+                                    <option value="1">God Mode</option>
+                                    <option value="2">Moon Finder</option>
+                                    <option value="3">Fomo</option>
+                                    <option value="4" selected>Launchpads</option>
+                                    <option value="5">Smart Tracker</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Date Range Selection -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">From Date (optional)</label>
+                                <input type="date" id="from-date" style="
+                                    width: 100%;
+                                    padding: 4px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">To Date (optional)</label>
+                                <input type="date" id="to-date" style="
+                                    width: 100%;
+                                    padding: 4px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                        </div>
+
+                        <!-- Optimization Settings Grid -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Target PnL %</label>
+                                <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Min Tokens</label>
+                                <input type="number" id="min-tokens" value="75" min="10" max="1000" step="5" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Runtime (min)</label>
+                                <input type="number" id="runtime-min" value="15" min="5" max="120" step="5" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Chain Runs</label>
+                                <input type="number" id="chain-run-count" value="4" min="1" max="10" step="1" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                        </div>
+                        
+                        <!-- Advanced Optimization Features -->
+                        <div style="
+                            margin-bottom: 4px;
+                            padding: 4px;
+                            background: #2d3748;
+                            border-radius: 6px;
+                            border: 1px solid #4a5568;
+                        ">
+                            <div style="
+                                font-size: 10px;
+                                font-weight: 600;
+                                margin-bottom: 4px;
+                                color: #63b3ed;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🚀 Optimization Methods
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px 6px;">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Uses statistical methods to reduce impact of outlier data points">
+                                    <input type="checkbox" id="robust-scoring" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🛡️ Outlier-Resistant</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
+                                    <input type="checkbox" id="simulated-annealing" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔥 Simulated Annealing</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Tests all available presets as starting points for comprehensive coverage">
+                                    <input type="checkbox" id="multiple-starting-points" style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🎯 Multiple Starts</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Statistical sampling method that ensures even distribution across parameter space">
+                                    <input type="checkbox" id="latin-hypercube" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">📐 Latin Hypercube</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
+                                    <input type="checkbox" id="correlated-params" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔗 Correlated Params</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Fine-grained testing of the most effective parameters with smaller increments">
+                                    <input type="checkbox" id="deep-dive" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔬 Deep Dive</span>
+                                </label>
+                            </div>
+                            
+                            <!-- Low Bundled % Constraint -->
+                            <div style="
+                                margin-top: 4px;
+                                padding: 4px;
+                                background: rgba(255, 193, 7, 0.1);
+                                border: 1px solid rgba(255, 193, 7, 0.3);
+                                border-radius: 4px;
+                            ">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #ffc107;
+                                    font-weight: 500;
+                                " title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
+                                    <input type="checkbox" id="low-bundled-constraint" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #ffc107;
+                                    ">
+                                    <span>🛡️ Low Bundled % Constraint</span>
+                                </label>
+                                <div style="
+                                    font-size: 8px;
+                                    color: #a0aec0;
+                                    margin-top: 1px;
+                                    margin-left: 16px;
+                                    line-height: 1.2;
+                                ">
+                                    Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                                </div>
+                            </div>
+                        </div>
+                </div>
+
+                <!-- Signal Analysis Tab -->
+                <div id="signal-tab" class="tab-content">
+                    <div style="padding: 20px;">
+                        <!-- Contract Input -->
+                        <div style="margin-bottom: 12px;">
+                            <label style="
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: #a0aec0;
+                                display: block;
+                                margin-bottom: 6px;
+                            ">Contract Addresses</label>
+                            <textarea id="signal-contract-input" placeholder="Contract addresses (one per line)..." style="
+                                width: 100%;
+                                padding: 12px;
+                                background: #2d3748;
+                                border: 1px solid #4a5568;
+                                border-radius: 4px;
+                                color: #e2e8f0;
+                                font-size: 12px;
+                                height: 80px;
+                                resize: vertical;
+                                outline: none;
+                                transition: border-color 0.2s;
+                                font-family: 'Monaco', 'Menlo', monospace;
+                            " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'"></textarea>
+                        </div>
+                        
+                        <div style="
+                            font-size: 11px;
+                            color: #718096;
+                            text-align: center;
+                            margin-bottom: 16px;
+                            padding: 8px;
+                            background: #2d3748;
+                            border-radius: 4px;
+                            border: 1px solid #4a5568;
+                        ">
+                            💡 Analyze successful signals to generate optimal configs
+                        </div>
+                        
+                        <!-- Settings Grid -->
+                        <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px;">
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Signals/Token</label>
+                                <input type="number" id="signals-per-token" value="6" min="1" max="999" style="
+                                    width: 60px;
+                                    padding: 6px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 11px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Buffer %</label>
+                                <input type="number" id="config-buffer" value="10" min="0" max="50" style="
+                                    width: 55px;
+                                    padding: 6px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 11px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: center;">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 11px;
+                                    color: #e2e8f0;
+                                    font-weight: 500;
+                                ">
+                                    <input type="checkbox" id="enable-signal-clustering" checked style="
+                                        margin-right: 6px;
+                                        transform: scale(1.0);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    🎯 Clustering
+                                </label>
+                            </div>
+                            <button id="analyze-signals-btn" style="
+                                padding: 8px 16px;
+                                background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                                border: none;
+                                border-radius: 4px;
+                                color: white;
+                                font-weight: 500;
+                                cursor: pointer;
+                                font-size: 12px;
+                                transition: all 0.2s;
+                            " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                🔍 Analyze
+                            </button>
+                        </div>
+                        
+                        <!-- Outlier Filtering -->
+                        <div style="margin-bottom: 16px;">
+                            <label style="
+                                font-size: 12px;
+                                font-weight: 500;
+                                color: #a0aec0;
+                                display: block;
+                                margin-bottom: 8px;
+                            ">Outlier Filter</label>
+                            <div style="
+                                background: #2d3748;
+                                border: 1px solid #4a5568;
+                                border-radius: 4px;
+                                padding: 8px;
+                                display: grid;
+                                grid-template-columns: repeat(4, 1fr);
+                                gap: 8px;
+                            ">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 11px;
+                                    color: #e2e8f0;
+                                    padding: 4px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" style="
+                                        margin-right: 4px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span>None</span>
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 11px;
+                                    color: #e2e8f0;
+                                    padding: 4px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" checked style="
+                                        margin-right: 4px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span>IQR</span>
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 11px;
+                                    color: #e2e8f0;
+                                    padding: 4px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="
+                                        margin-right: 4px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span>Percentile</span>
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 11px;
+                                    color: #e2e8f0;
+                                    padding: 4px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="
+                                        margin-right: 4px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span>Z-Score</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Analysis Results -->
+                        <div id="signal-analysis-results" style="
+                            background: #2d3748;
+                            border: 1px solid #4a5568;
+                            border-radius: 6px;
+                            padding: 12px;
+                            font-size: 12px;
+                            min-height: 60px;
+                            max-height: 150px;
+                            overflow-y: auto;
+                            display: none;
+                            scrollbar-width: thin;
+                            scrollbar-color: #4a5568 transparent;
+                        ">
+                            <div style="color: #a0aec0;">Analysis results will appear here...</div>
+                        </div>
+                        
+                        <!-- Cluster Selection Section -->
+                        <div id="cluster-selection" style="margin-top: 16px; display: none;">
+                            <div style="
+                                font-size: 12px;
+                                font-weight: 600;
+                                margin-bottom: 8px;
+                                color: #63b3ed;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🎯 Select Config
+                            </div>
+                            <div id="cluster-buttons" style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
+                                <!-- Cluster buttons will be added dynamically -->
+                            </div>
+                        </div>
+                        
+                        <!-- Generated Config Actions -->
+                        <div id="generated-config-actions" style="margin-top: 16px; display: none;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                                <button id="apply-generated-config-btn" style="
+                                    padding: 10px 8px;
+                                    background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+                                    border: none;
+                                    border-radius: 4px;
+                                    color: white;
+                                    font-size: 11px;
+                                    cursor: pointer;
+                                    font-weight: 500;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    ⚙️ Apply
+                                </button>
+                                <button id="optimize-generated-config-btn" style="
+                                    padding: 10px 8px;
+                                    background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+                                    border: none;
+                                    border-radius: 4px;
+                                    color: white;
+                                    font-size: 11px;
+                                    cursor: pointer;
+                                    font-weight: 500;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    🚀 Optimize
+                                </button>
+                                <button id="copy-config-btn" style="
+                                    padding: 10px 8px;
+                                    background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+                                    border: none;
+                                    border-radius: 4px;
+                                    color: white;
+                                    font-size: 11px;
+                                    cursor: pointer;
+                                    font-weight: 500;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    📋 Copy
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Permanent Results Section at Bottom -->
+                <div style="
+                    border-top: 1px solid #2d3748;
+                    background: rgba(72, 187, 120, 0.05);
+                ">
+                    <div id="best-config-display" style="
+                        background: rgba(72, 187, 120, 0.1);
+                        border: 1px solid rgba(72, 187, 120, 0.3);
+                        border-radius: 6px;
+                        padding: 16px;
+                        margin: 16px 20px;
+                        display: block;
+                    ">
+                        <h5 id="best-config-header" style="
+                            margin: 0 0 12px 0;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #48bb78;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                        ">⏳ Optimization Configuration</h5>
+                        <div id="best-config-stats" style="
+                            font-size: 12px;
+                            margin-bottom: 12px;
+                            color: #e2e8f0;
+                        "></div>
+                        <div style="margin-bottom: 12px;">
+                            <!-- Main Action Buttons -->
+                            <div style="margin-bottom: 12px;">
+                                <button id="start-optimization" style="
+                                    width: 100%;
+                                    padding: 12px;
+                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 600;
+                                    cursor: pointer;
+                                    font-size: 14px;
+                                    transition: all 0.2s;
+                                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                                " onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 8px rgba(0, 0, 0, 0.15)'" 
+                                   onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0, 0, 0, 0.1)'">
+                                    🚀 Start Enhanced Optimization
+                                </button>
+                            </div>
+                            
+                            <div style="margin-bottom: 12px;">
+                                <button id="stop-optimization" style="
+                                    width: 100%;
+                                    padding: 10px;
+                                    background: #e53e3e;
+                                    border: 1px solid #c53030;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    display: none;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#c53030'" onmouseout="this.style.background='#e53e3e'">
+                                    ⏹️ Stop Optimization
+                                </button>
+                            </div>
+                            
+                            <!-- Secondary Action Buttons Grid -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                                <button id="parameter-discovery" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    🔬 Parameter Discovery
+                                </button>
+                                
+                                <button id="toggle-rate-limit-btn" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" 
+                                   onmouseout="this.style.transform='translateY(0)'"
+                                   onclick="toggleRateLimitingMode()"
+                                   title="Currently using normal rate limiting (20s wait). Click to switch to slower mode.">
+                                    ⏱️ Normal
+                                </button>
+                            </div>   
                         </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Control Buttons -->
-            <div style="margin-bottom: 15px;">
-                <button id="start-optimization" style="
-                    width: 100%; 
-                    padding: 12px; 
-                    background: linear-gradient(45deg, #FF6B6B, #4ECDC4); 
-                    border: none; 
-                    border-radius: 8px; 
-                    color: white; 
-                    font-weight: bold; 
-                    cursor: pointer;
-                    font-size: 14px;
-                    transition: transform 0.2s;
-                " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    🚀 Start Enhanced Optimization
-                </button>
-            </div>
-            
-            <div style="margin-bottom: 15px;">
-                <button id="stop-optimization" style="
-                    width: 100%; 
-                    padding: 8px; 
-                    background: rgba(255,255,255,0.2); 
-                    border: 1px solid rgba(255,255,255,0.3); 
-                    border-radius: 8px; 
-                    color: white; 
-                    font-weight: bold; 
-                    cursor: pointer;
-                    font-size: 12px;
-                    display: none;
-                ">
-                    ⏹️ Stop Optimization
-                </button>
-            </div>
-            
-            <!-- Inline Action Buttons -->
-            <div style="margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <button id="parameter-discovery" style="
-                    padding: 10px 8px; 
-                    background: linear-gradient(45deg, #9b59b6, #e74c3c); 
-                    border: none; 
-                    border-radius: 6px; 
-                    color: white; 
-                    font-weight: bold; 
-                    cursor: pointer;
-                    font-size: 11px;
-                    transition: transform 0.2s;
-                " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    🔬 Parameter Discovery
-                </button>
-                
-                <button id="toggle-rate-limit-btn" style="
-                    padding: 10px 8px; 
-                    background: linear-gradient(45deg, #17a2b8, #6f42c1); 
-                    border: none; 
-                    border-radius: 6px; 
-                    color: white; 
-                    font-weight: bold; 
-                    cursor: pointer;
-                    font-size: 11px;
-                    transition: transform 0.2s;
-                " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'"
-                   onclick="toggleRateLimitingMode()"
-                   title="Currently using normal rate limiting (20s wait). Click to switch to slower mode.">
-                    ⏱️ Normal
-                </button>
-            </div>
-            
-            <!-- Results Section -->
-            <div id="best-config-display" style="
-                background: rgba(76, 175, 80, 0.2); 
-                border: 1px solid rgba(76, 175, 80, 0.4); 
-                border-radius: 5px; 
-                padding: 10px; 
-                margin-bottom: 15px;
-                display: none;
-            ">
-                <h5 style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #4CAF50;">🏆 Best Configuration Found:</h5>
-                <div id="best-config-stats" style="font-size: 11px; margin-bottom: 8px;"></div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <button onclick="applyBestConfigToUI()" style="padding: 8px; background: rgba(33, 150, 243, 0.3); border: 1px solid rgba(33, 150, 243, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">⚙️ Apply to UI</button>
-                    <button onclick="copyBestConfigToClipboard()" style="padding: 8px; background: rgba(156, 39, 176, 0.3); border: 1px solid rgba(156, 39, 176, 0.6); border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">📋 Copy Config</button>
-                </div>
-                </div> <!-- End config-section-content -->
-            </div>
-            
-            <!-- Signal Analysis Section -->
-            <div style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <h4 style="margin: 0; font-size: 14px; opacity: 0.9;">🔍 Signal Analysis & Config generation</h4>
-                    <button id="toggle-signal-section" style="
-                        background: rgba(255,255,255,0.1); 
-                        border: 1px solid rgba(255,255,255,0.3); 
-                        border-radius: 4px; 
-                        color: white; 
-                        cursor: pointer; 
-                        padding: 4px 8px; 
-                        font-size: 10px;
-                        transition: background 0.2s;
-                    " onmouseover="this.style.background='rgba(255,255,255,0.2)'" 
-                       onmouseout="this.style.background='rgba(255,255,255,0.1)'">
-                        ➖ Hide
-                    </button>
-                </div>
-                <div id="signal-section-content">
-                
-                <!-- Contract input more compact -->
-                <textarea id="signal-contract-input" placeholder="Contract addresses (one per line)..." 
-                       style="width: 100%; padding: 6px; border: none; border-radius: 4px; font-size: 11px; height: 50px; resize: vertical; color: black; margin-bottom: 8px;">
-                </textarea>
-                <div style="font-size: 9px; opacity: 0.7; margin-bottom: 8px;">
-                    💡 Analyze successful signals to generate optimal configs
-                </div>
-                
-                <!-- Settings in one compact row -->
-                <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; font-size: 10px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 2px; font-weight: bold;">Signals/Token:</label>
-                        <input type="number" id="signals-per-token" value="6" min="1" max="999" 
-                               style="width: 50px; padding: 3px; border: 1px solid white; border-radius: 3px; font-size: 10px; text-align: center;">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 2px; font-weight: bold;">Buffer %:</label>
-                        <input type="number" id="config-buffer" value="10" min="0" max="50" 
-                               style="width: 45px; padding: 3px; border: 1px solid white; border-radius: 3px; font-size: 10px; text-align: center;">
-                    </div>
-                    <div>
-                        <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" id="enable-signal-clustering" checked style="margin-right: 4px; transform: scale(0.9);">
-                            <span style="font-size: 10px; font-weight: bold;">🎯 Clustering</span>
-                        </label>
-                    </div>
-                    <button id="analyze-signals-btn" style="
-                        padding: 6px 12px; 
-                        background: linear-gradient(45deg, #28a745, #20c997); 
-                        border: none; 
-                        border-radius: 4px; 
-                        color: white; 
-                        font-weight: bold; 
-                        cursor: pointer;
-                        font-size: 11px;
-                        transition: transform 0.2s;
-                    " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                        🔍 Analyze
-                    </button>
-                </div>
-                
-                <!-- Outlier filtering more compact -->
-                <div style="margin-bottom: 8px;">
-                    <label style="display: block; margin-bottom: 3px; font-weight: bold; font-size: 10px;">Outlier Filter:</label>
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 4px; padding: 4px; display: flex; gap: 5px; flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" style="margin-right: 2px;">
-                            <span style="font-size: 9px;">None</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" checked style="margin-right: 2px;">
-                            <span style="font-size: 9px;">IQR</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 60px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="margin-right: 2px;">
-                            <span style="font-size: 9px;">Percentile</span>
-                        </label>
-                        <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 50px;">
-                            <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="margin-right: 2px;">
-                            <span style="font-size: 9px;">Z-Score</span>
-                        </label>
-                    </div>
-                </div>
-                
-                <div id="signal-analysis-results" style="
-                    background: rgba(0,0,0,0.2); 
-                    border-radius: 5px; 
-                    padding: 8px; 
-                    font-size: 11px; 
-                    min-height: 35px;
-                    max-height: 100px;
-                    overflow-y: auto;
-                    display: none;
-                ">
-                    <div style="opacity: 0.8;">Analysis results will appear here...</div>
-                </div>
-                
-                <!-- Cluster Selection Section -->
-                <div id="cluster-selection" style="margin-top: 10px; display: none;">
-                    <div style="font-size: 11px; font-weight: bold; margin-bottom: 5px; color: #4ECDC4;">
-                        🎯 Select Config:
-                    </div>
-                    <div id="cluster-buttons" style="margin-bottom: 8px;">
-                        <!-- Cluster buttons will be added dynamically -->
-                    </div>
-                </div>
-                
-                <div id="generated-config-actions" style="margin-top: 10px; display: none;">
-                    <button id="apply-generated-config-btn" style="
-                        width: 30%; 
-                        padding: 8px; 
-                        background: linear-gradient(45deg, #FF6B6B, #FF8E53); 
-                        border: none; 
-                        border-radius: 4px; 
-                        color: white; 
-                        font-size: 10px; 
-                        cursor: pointer;
-                        font-weight: bold;
-                        margin-right: 2%;
-                    ">
-                        ⚙️ Apply
-                    </button>
-                    <button id="optimize-generated-config-btn" style="
-                        width: 30%; 
-                        padding: 8px; 
-                        background: linear-gradient(45deg, #4ECDC4, #44A08D); 
-                        border: none; 
-                        border-radius: 4px; 
-                        color: white; 
-                        font-size: 10px; 
-                        cursor: pointer;
-                        font-weight: bold;
-                        margin-right: 2%;
-                    ">
-                        🚀 Optimize
-                    </button>
-                    <button id="copy-config-btn" style="
-                        width: 30%; 
-                        padding: 8px; 
-                        background: linear-gradient(45deg, #9B59B6, #8E44AD); 
-                        border: none; 
-                        border-radius: 4px; 
-                        color: white; 
-                        font-size: 10px; 
-                        cursor: pointer;
-                        font-weight: bold;
-                    ">
-                        📋 Copy
-                    </button>
-                </div>
-                </div> <!-- End signal-section-content -->
-            </div>
-            
-            <!-- Footer -->
-            <div style="margin-top: 15px; text-align: center;">
-                <button id="close-btn" style="
-                    padding: 5px 15px; 
-                    background: rgba(255,255,255,0.2); 
-                    border: 1px solid rgba(255,255,255,0.3); 
-                    border-radius: 15px; 
-                    color: white; 
-                    font-size: 11px; 
-                    cursor: pointer;
-                ">
-                    ✕ Close
-                </button>
-            </div>
-            </div> <!-- End ui-content -->
         `;
 
         document.body.appendChild(ui);
         
-        // Create collapsed state UI
+        // Add the switchTab function
+        window.switchTab = function(activeTabId) {
+            // Remove active class from all tab buttons
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Remove active class from all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Add active class to the clicked button
+            const activeButton = document.getElementById(activeTabId + '-btn');
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
+            
+            // Add active class to the corresponding content
+            const activeContent = document.getElementById(activeTabId);
+            if (activeContent) {
+                activeContent.classList.add('active');
+            }
+        };
+        
+        // Create collapsed state UI with matching theme
         const collapsedUI = document.createElement('div');
         collapsedUI.id = 'ag-copilot-collapsed-ui';
         collapsedUI.style.cssText = `
@@ -5479,24 +5967,39 @@
             right: 20px;
             width: 120px;
             height: 60px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: 2px solid #fff;
-            border-radius: 12px;
+            background: #1a2332;
+            border: 1px solid #2d3748;
+            border-radius: 8px;
             padding: 8px;
             z-index: 10000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: white;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            color: #e2e8f0;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             cursor: pointer;
             display: none;
             transition: all 0.3s ease;
         `;
         
         collapsedUI.innerHTML = `
-            <div style="text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center;">
-                <div style="font-size: 16px; margin-bottom: 2px;">🤖</div>
-                <div style="font-size: 9px; font-weight: bold; opacity: 0.9;">AG Co-Pilot</div>
-                <div style="font-size: 7px; opacity: 0.7;">Click to expand</div>
+            <div style="
+                text-align: center;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+            ">
+                <div style="
+                    width: 8px;
+                    height: 8px;
+                    background: #48bb78;
+                    border-radius: 50%;
+                    margin-bottom: 4px;
+                    animation: pulse 2s infinite;
+                "></div>
+                <div style="font-size: 14px; margin-bottom: 2px;">🤖</div>
+                <div style="font-size: 9px; font-weight: 600; opacity: 0.9;">AG Copilot</div>
+                <div style="font-size: 7px; opacity: 0.7; color: #a0aec0;">Click to expand</div>
             </div>
         `;
         
@@ -5507,12 +6010,12 @@
         // Add hover effects to collapsed UI
         collapsedUI.addEventListener('mouseenter', () => {
             collapsedUI.style.transform = 'scale(1.05)';
-            collapsedUI.style.boxShadow = '0 8px 25px rgba(0,0,0,0.4)';
+            collapsedUI.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)';
         });
         
         collapsedUI.addEventListener('mouseleave', () => {
             collapsedUI.style.transform = 'scale(1)';
-            collapsedUI.style.boxShadow = '0 5px 15px rgba(0,0,0,0.3)';
+            collapsedUI.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
         });
         
         document.body.appendChild(collapsedUI);
@@ -5565,14 +6068,10 @@
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
         
-        // Auto-enable split-screen mode by default (after a short delay to ensure DOM is ready)
+        // Always use split-screen mode (after a short delay to ensure DOM is ready)
         setTimeout(() => {
-            if (window.innerWidth >= 1200) {
-                console.log('🖥️ Auto-enabling split-screen mode (default behavior)');
-                enableSplitScreen();
-            } else {
-                console.log('🖥️ Screen too narrow for auto-enabling split-screen mode, keeping floating mode');
-            }
+            console.log('🖥️ Enabling split-screen mode (always-on)');
+            enableSplitScreen();
         }, 100);
         
         return ui;
@@ -5584,15 +6083,92 @@
         console.log(`${icon} ${message}`);
     }
 
+    function updateBestConfigHeader(state = 'idle') {
+        const header = document.getElementById('best-config-header');
+        if (!header) return;
+        
+        switch (state) {
+            case 'idle':
+                header.textContent = '⏳ Optimization Configuration';
+                header.style.color = '#48bb78';
+                break;
+            case 'running':
+                header.textContent = '🔄 Finding Best Configuration...';
+                header.style.color = '#60a5fa';
+                break;
+            case 'completed':
+                header.textContent = '🏆 Best Configuration Found';
+                header.style.color = '#48bb78';
+                break;
+        }
+    }
+
     function updateUIBackground(isCompleted = false) {
         const ui = document.getElementById('ag-copilot-enhanced-ui');
+        const header = document.getElementById('ui-header');
+        const bestConfigDisplay = document.getElementById('best-config-display');
+        
         if (ui) {
             if (isCompleted) {
-                // Green gradient for completed optimization
-                ui.style.background = 'linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)';
+                // Only animate the best config section - keep main UI unchanged
+                
+                // Add pulsing animation to Best Configuration Found section
+                if (bestConfigDisplay) {
+                    bestConfigDisplay.style.border = '2px solid #48bb78';
+                    bestConfigDisplay.style.borderRadius = '6px';
+                    bestConfigDisplay.style.animation = 'successPulse 1.5s ease-in-out infinite';
+                    bestConfigDisplay.style.boxShadow = '0 0 15px rgba(72, 187, 120, 0.3)';
+                }
+                
+                // Update best config header to show completion
+                updateBestConfigHeader('completed');
+                
+                // Show the Apply/Copy config buttons
+                const resultButtons = document.getElementById('optimization-result-buttons');
+                if (resultButtons) {
+                    resultButtons.style.display = 'block';
+                }
+                
+                // Add enhanced CSS animation for border-only pulsing
+                if (!document.getElementById('success-pulse-animation')) {
+                    const style = document.createElement('style');
+                    style.id = 'success-pulse-animation';
+                    style.textContent = `
+                        @keyframes successPulse {
+                            0%, 100% { 
+                                border-color: #48bb78;
+                                box-shadow: 0 0 15px rgba(72, 187, 120, 0.3);
+                            }
+                            50% { 
+                                border-color: #68d391;
+                                box-shadow: 0 0 30px rgba(72, 187, 120, 0.6);
+                            }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+                
+                // Console celebration
+                console.log('🎉 ===== OPTIMIZATION COMPLETED! =====');
+                console.log('✅ Check the Best Configuration Found section above!');
+                
             } else {
-                // Original blue gradient for active/starting optimization
-                ui.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                // Reset best config display animation
+                if (bestConfigDisplay) {
+                    bestConfigDisplay.style.border = '1px solid #2d3748';
+                    bestConfigDisplay.style.animation = 'none';
+                    bestConfigDisplay.style.boxShadow = 'none';
+                    bestConfigDisplay.style.transform = 'none';
+                }
+                
+                // Reset best config header to idle state
+                updateBestConfigHeader('idle');
+                
+                // Hide the Apply/Copy config buttons
+                const resultButtons = document.getElementById('optimization-result-buttons');
+                if (resultButtons) {
+                    resultButtons.style.display = 'none';
+                }
             }
         }
     }
@@ -5893,39 +6469,41 @@
     function collapseUI() {
         const mainUI = document.getElementById('ag-copilot-enhanced-ui');
         const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        const body = document.body;
         
         if (mainUI && collapsedUI) {
-            // If in split-screen mode, disable it first to prevent layout issues
-            if (isSplitScreenMode) {
-                disableSplitScreen();
-            }
-            
+            // Hide the main panel
             mainUI.style.display = 'none';
-            collapsedUI.style.display = 'block';
+
+            // Restore the page width so we don't leave an empty white strip
+            if (body && body.dataset) {
+                body.style.marginRight = body.dataset.originalMargin || '0px';
+                body.style.width = body.dataset.originalWidth || 'auto';
+                body.style.maxWidth = body.dataset.originalMaxWidth || 'none';
+                body.style.overflowX = body.dataset.originalOverflowX || 'visible';
+            }
+
+            // Mark split-screen mode as off so expandUI reapplies it cleanly
+            if (typeof isSplitScreenMode !== 'undefined') {
+                isSplitScreenMode = false;
+            }
+
+            // Show the compact collapsed launcher
+            collapsedUI.style.display = 'flex';
         }
     }
     
     function expandUI() {
         const mainUI = document.getElementById('ag-copilot-enhanced-ui');
         const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
-        
         if (mainUI && collapsedUI) {
             collapsedUI.style.display = 'none';
             mainUI.style.display = 'block';
-            
-            // Auto-enable split-screen mode if screen is wide enough (consistent with default behavior)
-            setTimeout(() => {
-                if (window.innerWidth >= 1200 && !isSplitScreenMode) {
-                    console.log('🖥️ Auto-enabling split-screen mode on expand');
-                    enableSplitScreen();
-                }
-            }, 100);
+            // Re-enable split screen
+            setTimeout(() => enableSplitScreen && enableSplitScreen(), 50);
         }
     }
 
-    // ========================================
-    // 🎮 EVENT HANDLERS
-    // ========================================
     function setupEventHandlers() {
         // Helper function to safely add event listener
         const safeAddEventListener = (elementId, event, handler) => {
@@ -5936,22 +6514,6 @@
                 console.warn(`⚠️ Element with ID '${elementId}' not found, skipping event listener`);
             }
         };
-
-        // Auto-apply preset when selected
-        safeAddEventListener('preset-dropdown', 'change', async () => {
-            const selectedPreset = document.getElementById('preset-dropdown').value;
-            if (selectedPreset) {
-                console.log(`📦 Applying preset: ${selectedPreset}...`);
-                await applyPreset(selectedPreset);
-                // Reset dropdown after applying
-                document.getElementById('preset-dropdown').value = '';
-            }
-        });
-
-        // Chain run count handler
-        safeAddEventListener('chain-run-count', 'change', (e) => {
-            CONFIG.CHAIN_RUN_COUNT = parseInt(e.target.value) || 3;
-        });
 
         // Start optimization button
         safeAddEventListener('start-optimization', 'click', async () => {
@@ -6016,16 +6578,29 @@
             if (startBtn) startBtn.style.display = 'none';
             if (stopBtn) stopBtn.style.display = 'block';
             
-            // Auto-hide the Configuration & Optimization section when starting
-            console.log('📱 Auto-hiding Configuration & Optimization section...');
-            const toggleConfigButton = document.getElementById('toggle-config-section');
-            if (toggleConfigButton && toggleConfigButton.textContent.includes('Hide')) {
-                toggleConfigButton.click();
+            // Auto-collapse both sections when starting
+            console.log('📱 Auto-collapsing sections for cleaner optimization view...');
+            
+            // Collapse Configuration section if it's open
+            const configContent = document.getElementById('config-section-content');
+            const configArrow = document.getElementById('config-section-arrow');
+            if (configContent && configContent.style.display !== 'none') {
+                configContent.style.display = 'none';
+                if (configArrow) {
+                    configArrow.style.transform = 'rotate(-90deg)';
+                    configArrow.textContent = '▶';
+                }
             }
-
-            const toggleSignalButton = document.getElementById('toggle-signal-section');
-            if (toggleSignalButton && toggleSignalButton.textContent.includes('Hide')) {
-                toggleSignalButton.click();
+            
+            // Collapse Signal Analysis section if it's open
+            const signalContent = document.getElementById('signal-section-content');
+            const signalArrow = document.getElementById('signal-section-arrow');
+            if (signalContent && signalContent.style.display !== 'none') {
+                signalContent.style.display = 'none';
+                if (signalArrow) {
+                    signalArrow.style.transform = 'rotate(-90deg)';
+                    signalArrow.textContent = '▶';
+                }
             }
             
             // Reset stopped flag
@@ -6119,6 +6694,31 @@
                     startBtn.disabled = true;
                 }
                 
+                // Auto-collapse both sections for cleaner discovery view
+                console.log('📱 Auto-collapsing sections for parameter discovery...');
+                
+                // Collapse Configuration section if it's open
+                const configContent = document.getElementById('config-section-content');
+                const configArrow = document.getElementById('config-section-arrow');
+                if (configContent && configContent.style.display !== 'none') {
+                    configContent.style.display = 'none';
+                    if (configArrow) {
+                        configArrow.style.transform = 'rotate(-90deg)';
+                        configArrow.textContent = '▶';
+                    }
+                }
+                
+                // Collapse Signal Analysis section if it's open
+                const signalContent = document.getElementById('signal-section-content');
+                const signalArrow = document.getElementById('signal-section-arrow');
+                if (signalContent && signalContent.style.display !== 'none') {
+                    signalContent.style.display = 'none';
+                    if (signalArrow) {
+                        signalArrow.style.transform = 'rotate(-90deg)';
+                        signalArrow.textContent = '▶';
+                    }
+                }
+                
                 updateStatus('🔬 Starting Parameter Impact Discovery...', true);
                 
                 // Run parameter discovery
@@ -6183,42 +6783,40 @@
             }
         });
         
-        // Close button
-        safeAddEventListener('close-btn', 'click', () => {
-            cleanupSplitScreen();
-            
-            const mainUI = document.getElementById('ag-copilot-enhanced-ui');
-            const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
-            if (mainUI) mainUI.remove();
-            if (collapsedUI) collapsedUI.remove();
-        });
-
         // Collapse button
         safeAddEventListener('collapse-ui-btn', 'click', () => {
             collapseUI();
         });
 
-        // Section toggle handlers
-        safeAddEventListener('toggle-config-section', 'click', () => {
-            const content = document.getElementById('config-section-content');
-            const button = document.getElementById('toggle-config-section');
-            if (content && button) {
-                const isHidden = content.style.display === 'none';
-                content.style.display = isHidden ? 'block' : 'none';
-                button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+        // Close button (red X)
+        safeAddEventListener('close-ui-btn', 'click', () => {
+            // Ensure any running optimization is stopped before closing
+            try {
+                if (window.STOPPED === false) {
+                    window.STOPPED = true;
+                    console.log('⏹️ Optimization stop requested via close button');
+                }
+                if (window.optimizationTracker && window.optimizationTracker.isRunning) {
+                    window.optimizationTracker.stopOptimization();
+                    console.log('🧹 Optimization tracker stopped via close button');
+                }
+            } catch (e) {
+                console.warn('Close button stop sequence issue:', e);
             }
-        });
-
-        safeAddEventListener('toggle-signal-section', 'click', () => {
-            const content = document.getElementById('signal-section-content');
-            const button = document.getElementById('toggle-signal-section');
-            if (content && button) {
-                const isHidden = content.style.display === 'none';
-                content.style.display = isHidden ? 'block' : 'none';
-                button.textContent = isHidden ? '➖ Hide' : '➕ Show';
+            // Clean up split-screen mode if active
+            if (typeof cleanupSplitScreen === 'function') {
+                cleanupSplitScreen();
             }
+            
+            // Remove both main and collapsed UI
+            const mainUI = document.getElementById('ag-copilot-enhanced-ui');
+            const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+            if (mainUI) mainUI.remove();
+            if (collapsedUI) collapsedUI.remove();
+            
+            console.log('🚫 AG Copilot closed');
         });
-    }
+    } // end setupEventHandlers
 
 // Apply generated config to backtester UI using correct field mappings
     async function applyConfigToBacktester(config) {
@@ -6345,7 +6943,7 @@
     // ========================================
     // 🎬 INITIALIZATION
     // ========================================
-    console.log('🔧 Initializing AG Co-Pilot Enhanced + Signal Analysis...');
+    console.log('🔧 Initializing AG Copilot Enhanced + Signal Analysis...');
     
     // Create and setup UI
     try {
@@ -6355,12 +6953,69 @@
         setupEventHandlers();
         console.log('✅ Event handlers setup completed');
         
+        // Make functions globally available for onclick handlers
+        window.applyBestConfigToUI = async function() {
+            const tracker = window.bestConfigTracker;
+            if (tracker && tracker.config) {
+                console.log(`⚙️ Applying best configuration (ID: ${tracker.id.substring(0, 8)}) to UI...`);
+                const success = await applyConfigToUI(tracker.config, true);
+                if (success) {
+                    console.log('✅ Best configuration applied to backtester UI');
+                } else {
+                    console.log('❌ Failed to apply best configuration to UI');
+                }
+            } else {
+                console.log('❌ No best configuration available to apply');
+            }
+        };
+        
+        window.copyBestConfigToClipboard = function() {
+            const tracker = window.bestConfigTracker;
+            if (tracker && tracker.config) {
+                const configText = JSON.stringify(tracker.config, null, 2);
+                
+                // Add metadata comment at the top
+                const metadataComment = 
+                    `// Best configuration (ID: ${tracker.id.substring(0, 8)})\n` + 
+                    `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
+                    `// Generated: ${new Date(tracker.timestamp).toLocaleString()}\n\n`;
+                
+                navigator.clipboard.writeText(metadataComment + configText).then(() => {
+                    console.log('📋 Best configuration copied to clipboard with metadata');
+                }).catch(err => {
+                    console.error('Failed to copy to clipboard:', err);
+                });
+            } else {
+                console.log('❌ No best configuration available to copy');
+            }
+        };
+        
+        // Make other functions globally available
+        window.toggleRateLimitingMode = toggleRateLimitingMode;
+        window.toggleSplitScreen = toggleSplitScreen;
+        window.enableSplitScreen = enableSplitScreen;
+        window.disableSplitScreen = disableSplitScreen;
+        
+        // Make CONFIG globally accessible for debugging/testing
+        window.CONFIG = CONFIG;
+        
+        // Auto-enable split-screen mode by default (after a short delay to ensure DOM is ready)
+        setTimeout(() => {
+            if (window.innerWidth >= 1200) {
+                console.log('🖥️ Auto-enabling split-screen mode (default behavior)');
+                enableSplitScreen();
+            } else {
+                console.log('🖥️ Screen too narrow for auto-enabling split-screen mode, keeping floating mode');
+            }
+        }, 100);
+        
+        return ui;
     } catch (error) {
         console.error('❌ Initialization error:', error);
         throw error;
     }
     
-    console.log('✅ AG Co-Pilot Enhanced + Signal Analysis ready!');
+    console.log('✅ AG Copilot Enhanced + Signal Analysis ready!');
     console.log('� Rate Limiting: ' + CONFIG.RATE_LIMIT_MODE.toUpperCase() + ' mode (' + (CONFIG.BACKTEST_WAIT/1000) + 's wait, ' + CONFIG.RATE_LIMIT_THRESHOLD + ' burst)');
     console.log('�🚀 Features: Direct API optimization, signal analysis, config generation');
     console.log('🔍 NEW: Analyze successful signals from contract addresses to generate optimal configs');
