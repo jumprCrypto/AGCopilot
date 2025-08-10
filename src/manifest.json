@@ -1,0 +1,16 @@
+{
+  "version": 9,
+  "modules": [
+    "constants.js",
+    "utils.js",
+    "rateLimiter.js",
+    "api.js",
+    "scoring.js",
+    "signalAnalysis.js",
+    "optimizer.js",
+    "ui.js",
+    "main.js",
+    "bridge.js"
+  ],
+  "entry": "constants.js"
+}

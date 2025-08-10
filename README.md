@@ -249,6 +249,10 @@ window.optimizationTracker.history
 ### Architecture
 - **Direct API Integration** – Bypasses UI scraping for 10x faster performance
 - **Modular Design** – Separate classes for optimization, rate limiting, and progress tracking  
+- **Loader + Manifest** – `src/loader.js` sequentially loads modules defined in `src/manifest.json` (zero build, bookmarklet friendly)
+- **Bridge Layer** – `src/bridge.js` exposes modular namespaces under legacy globals for backward compatibility
+- **Versioning** – `AG.constants.VERSION` surfaces current modular version (e.g. `2.0.0-modular-beta`)
+- **Re-Init Guard** – Legacy monolith includes a flag preventing double initialization when bookmarklet clicked twice
 - **Robust Error Handling** – Graceful degradation and comprehensive error recovery
 - **Memory Efficient** – Smart caching with LRU eviction and size limits
 - **Browser Compatible** – Works across all modern browsers without dependencies
@@ -259,6 +263,17 @@ window.optimizationTracker.history
 - **Outlier-Resistant Scoring** – Statistical methods to handle extreme values
 - **Progressive Optimization** – Each chained run builds on previous discoveries  
 - **Real-Time UI Updates** – Non-blocking progress updates with smooth animations
+- **Smoke Tests** – `smokeTest.js` (Node) and `browserSmoke.js` (browser) provide quick health checks
+
+### Smoke Testing
+```javascript
+// In Node (from repo root)
+node AGCopilot/smokeTest.js
+
+// In browser console after loader finishes
+window.AG.smoke.run();
+```
+Expected: confirmation that all core modules are present.
 
 ### Performance Characteristics
 - **Speed**: ~50-100 configurations tested per minute (with rate limiting)
