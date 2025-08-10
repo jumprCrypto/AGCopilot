@@ -6496,14 +6496,21 @@
     function expandUI() {
         const mainUI = document.getElementById('ag-copilot-enhanced-ui');
         const collapsedUI = document.getElementById('ag-copilot-collapsed-ui');
+        
         if (mainUI && collapsedUI) {
             collapsedUI.style.display = 'none';
             mainUI.style.display = 'block';
-            // Re-enable split screen
-            setTimeout(() => enableSplitScreen && enableSplitScreen(), 50);
+            
+            // Always enable split-screen mode when expanding
+            setTimeout(() => {
+                enableSplitScreen();
+            }, 100);
         }
     }
 
+    // ========================================
+    // 🎮 EVENT HANDLERS
+    // ========================================
     function setupEventHandlers() {
         // Helper function to safely add event listener
         const safeAddEventListener = (elementId, event, handler) => {
@@ -6514,6 +6521,28 @@
                 console.warn(`⚠️ Element with ID '${elementId}' not found, skipping event listener`);
             }
         };
+
+        // Auto-apply preset when selected (with robust error handling)
+        safeAddEventListener('preset-dropdown', 'change', async () => {
+            const dropdown = document.getElementById('preset-dropdown');
+            if (!dropdown) return;
+            const selectedPreset = dropdown.value;
+            if (!selectedPreset) return;
+            console.log(`📦 Applying preset: ${selectedPreset}...`);
+            try {
+                await applyPreset(selectedPreset);
+                // Only clear AFTER successful application so user can re-select quickly; keep if want persistent selection
+                dropdown.value = '';
+                console.log(`✅ Preset ${selectedPreset} applied`);
+            } catch (err) {
+                console.error(`❌ Failed applying preset ${selectedPreset}:`, err);
+            }
+        });
+
+        // Chain run count handler
+        safeAddEventListener('chain-run-count', 'change', (e) => {
+            CONFIG.CHAIN_RUN_COUNT = parseInt(e.target.value) || 3;
+        });
 
         // Start optimization button
         safeAddEventListener('start-optimization', 'click', async () => {
@@ -6816,9 +6845,9 @@
             
             console.log('🚫 AG Copilot closed');
         });
-    } // end setupEventHandlers
+    }
 
-// Apply generated config to backtester UI using correct field mappings
+    // Apply generated config to backtester UI using correct field mappings
     async function applyConfigToBacktester(config) {
         console.log('applyConfigToBacktester received config:', config);
         let appliedFields = 0;
