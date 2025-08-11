@@ -46,14 +46,41 @@
 
   // Minimal token processing utilities (subset of original)
   function processTokenData(tokenInfo, swaps){
+    swaps = Array.isArray(swaps)? swaps.slice().sort((a,b)=> (b.timestamp||0)-(a.timestamp||0)) : [];
+    const firstSwap = swaps[swaps.length-1];
+    const lastSwap = swaps[0];
+    const tp = v=> (v===null||v===undefined)? 'N/A': `${v.toFixed? v.toFixed(2): v}%`;
+    const fm = m=> { if(!m) return 'N/A'; if(m>=1_000_000) return `$${(m/1_000_000).toFixed(2)}M`; if(m>=1000) return `$${(m/1000).toFixed(2)}K`; return `$${m}`; };
+    const ft = t=> t? new Date(t*1000).toISOString().replace('T',' ').split('.')[0] : 'N/A';
+    const totalSignals = swaps.length;
+    const winPreds = swaps.map(s=> s.winPredPercent||0);
+    const avgWinPred = winPreds.length? tp(winPreds.reduce((a,b)=>a+b,0)/winPreds.length): 'N/A';
+    const maxWinPred = winPreds.length? tp(Math.max(...winPreds)): 'N/A';
+    const minWinPred = winPreds.length? tp(Math.min(...winPreds)): 'N/A';
+    const athMultRaw = (tokenInfo.athMcap && tokenInfo.signalMcap)? (tokenInfo.athMcap/tokenInfo.signalMcap):0;
     return {
       tokenAddress: tokenInfo.tokenAddress,
       tokenName: tokenInfo.token,
       symbol: tokenInfo.symbol,
+      currentMcap: fm(tokenInfo.currentMcap),
       currentMcapRaw: tokenInfo.currentMcap,
+      athMcap: fm(tokenInfo.athMcap),
       athMcapRaw: tokenInfo.athMcap,
+      athTime: ft(tokenInfo.athTime),
+      atlMcap: fm(tokenInfo.atlMcap),
       atlMcapRaw: tokenInfo.atlMcap,
-      swapCount: Array.isArray(swaps)? swaps.length:0
+      atlTime: ft(tokenInfo.atlTime),
+      athMultiplier: athMultRaw? `${athMultRaw.toFixed(2)}x`:'N/A',
+      athMultiplierRaw: athMultRaw||0,
+      currentFromAth: (tokenInfo.athMcap && tokenInfo.currentMcap)? tp(((tokenInfo.currentMcap-tokenInfo.athMcap)/tokenInfo.athMcap)*100): 'N/A',
+      totalSignals,
+      firstSignalTime: ft(firstSwap?.timestamp),
+      lastSignalTime: ft(lastSwap?.timestamp),
+      firstSignalMcap: fm(firstSwap?.signalMcap),
+      lastSignalMcap: fm(lastSwap?.signalMcap),
+      avgWinPred, maxWinPred, minWinPred,
+      triggerModes: [...new Set(swaps.map(s=> s.triggerMode))].join(', '),
+      latestCriteria: tokenInfo.criteria
     };
   }
 

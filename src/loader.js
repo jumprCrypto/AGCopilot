@@ -4,7 +4,7 @@
   window.AG.__loaderActive = true;
 
   const LOADER_VERSION = '1.0.0';
-  const REPO_BASE = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGCopilot/src';
+  const REPO_BASE = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/modules/src';
   const MANIFEST_URL = `${REPO_BASE}/manifest.json`;
 
   async function fetchText(url){
