@@ -704,6 +704,371 @@
     }
 
     // ========================================
+    // 📌 PIN SETTINGS FEATURE
+    // ========================================
+    
+    // Global pin settings state
+    window.pinnedSettings = {
+        enabled: false,
+        settings: {},
+        timeout: 10000 // 10 seconds
+    };
+
+    // Show pin settings dialog
+    function showPinSettingsDialog(currentConfig, callback) {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'pin-settings-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 20000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        `;
+
+        // Create dialog
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: #1a2332;
+            border: 1px solid #2d3748;
+            border-radius: 12px;
+            padding: 20px;
+            min-width: 500px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            color: #e2e8f0;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        `;
+
+        // Flatten config for easier processing
+        const flatConfig = {};
+        Object.values(currentConfig).forEach(section => {
+            if (typeof section === 'object' && section !== null) {
+                Object.assign(flatConfig, section);
+            }
+        });
+
+        // Filter out undefined/null values and group by category
+        const validSettings = {};
+        Object.entries(flatConfig).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '' && key !== 'fromDate' && key !== 'toDate') {
+                validSettings[key] = value;
+            }
+        });
+
+        // Group settings by category for better organization
+        const settingCategories = {
+            'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+            'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
+            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders'],
+            'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer'],
+            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+        };
+
+        let dialogHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #f7fafc; display: flex; align-items: center; gap: 8px;">
+                    📌 Pin Settings for Optimization
+                </h3>
+                <div id="pin-countdown" style="
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: #ffd700;
+                    background: rgba(255, 215, 0, 0.1);
+                    padding: 6px 12px;
+                    border-radius: 20px;
+                    border: 1px solid rgba(255, 215, 0, 0.3);
+                ">10s</div>
+            </div>
+            
+            <div style="
+                background: rgba(59, 130, 246, 0.1);
+                border: 1px solid rgba(59, 130, 246, 0.3);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
+                font-size: 13px;
+                line-height: 1.5;
+            ">
+                💡 <strong>Pin Settings:</strong> Select settings to keep <strong>constant</strong> during optimization. 
+                Pinned settings will never change, while unpinned settings will be optimized normally.
+            </div>
+
+            <div style="
+                font-size: 12px;
+                color: #a0aec0;
+                margin-bottom: 16px;
+                text-align: center;
+            ">
+                Found ${Object.keys(validSettings).length} configured settings
+            </div>
+        `;
+
+        // Add checkboxes organized by category
+        Object.entries(settingCategories).forEach(([categoryName, categorySettings]) => {
+            const categoryValidSettings = categorySettings.filter(setting => validSettings.hasOwnProperty(setting));
+            
+            if (categoryValidSettings.length > 0) {
+                dialogHTML += `
+                    <div style="margin-bottom: 16px;">
+                        <h4 style="
+                            margin: 0 0 8px 0;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #63b3ed;
+                            border-bottom: 1px solid #2d3748;
+                            padding-bottom: 4px;
+                        ">${categoryName}</h4>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                `;
+
+                categoryValidSettings.forEach(setting => {
+                    const value = validSettings[setting];
+                    const displayValue = typeof value === 'boolean' 
+                        ? (value ? 'Yes' : 'No') 
+                        : (typeof value === 'number' ? value.toLocaleString() : value);
+
+                    dialogHTML += `
+                        <label style="
+                            display: flex;
+                            align-items: center;
+                            cursor: pointer;
+                            font-size: 11px;
+                            color: #e2e8f0;
+                            padding: 6px 8px;
+                            border-radius: 4px;
+                            transition: background 0.2s;
+                            background: rgba(255, 255, 255, 0.02);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                        " onmouseover="this.style.background='rgba(255, 255, 255, 0.05)'" 
+                          onmouseout="this.style.background='rgba(255, 255, 255, 0.02)'">
+                            <input type="checkbox" class="pin-setting-checkbox" data-setting="${setting}" style="
+                                margin-right: 8px;
+                                transform: scale(0.9);
+                                accent-color: #ffd700;
+                            ">
+                            <div>
+                                <div style="font-weight: 500; color: #f7fafc;">${setting}</div>
+                                <div style="font-size: 10px; color: #a0aec0; margin-top: 2px;">Current: ${displayValue}</div>
+                            </div>
+                        </label>
+                    `;
+                });
+
+                dialogHTML += `
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        // Add action buttons
+        dialogHTML += `
+            <div style="
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 12px;
+                margin-top: 20px;
+                padding-top: 16px;
+                border-top: 1px solid #2d3748;
+            ">
+                <button id="pin-select-all" style="
+                    padding: 10px;
+                    background: rgba(99, 179, 237, 0.2);
+                    border: 1px solid rgba(99, 179, 237, 0.4);
+                    border-radius: 6px;
+                    color: #63b3ed;
+                    font-size: 12px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(99, 179, 237, 0.3)'" 
+                   onmouseout="this.style.background='rgba(99, 179, 237, 0.2)'">
+                    ✅ Select All
+                </button>
+                
+                <button id="pin-cancel" style="
+                    padding: 10px;
+                    background: rgba(237, 100, 166, 0.2);
+                    border: 1px solid rgba(237, 100, 166, 0.4);
+                    border-radius: 6px;
+                    color: #ed64a6;
+                    font-size: 12px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(237, 100, 166, 0.3)'" 
+                   onmouseout="this.style.background='rgba(237, 100, 166, 0.2)'">
+                    ❌ Cancel
+                </button>
+                
+                <button id="pin-ok" style="
+                    padding: 10px;
+                    background: rgba(72, 187, 120, 0.2);
+                    border: 1px solid rgba(72, 187, 120, 0.4);
+                    border-radius: 6px;
+                    color: #48bb78;
+                    font-size: 12px;
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
+                   onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
+                    📌 Pin & Continue
+                </button>
+            </div>
+        `;
+
+        dialog.innerHTML = dialogHTML;
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        // Countdown timer
+        let remainingSeconds = 10;
+        const countdownElement = dialog.querySelector('#pin-countdown');
+        const countdownInterval = setInterval(() => {
+            remainingSeconds--;
+            if (remainingSeconds > 0) {
+                countdownElement.textContent = `${remainingSeconds}s`;
+                if (remainingSeconds <= 3) {
+                    countdownElement.style.color = '#ff6b6b';
+                    countdownElement.style.background = 'rgba(255, 107, 107, 0.1)';
+                    countdownElement.style.borderColor = 'rgba(255, 107, 107, 0.3)';
+                }
+            } else {
+                clearInterval(countdownInterval);
+                // Timeout - proceed with default optimization (no pins)
+                cleanup();
+                callback({ pinned: false, settings: {} });
+            }
+        }, 1000);
+
+        // Event handlers
+        function cleanup() {
+            clearInterval(countdownInterval);
+            document.body.removeChild(overlay);
+        }
+
+        function getPinnedSettings() {
+            const checkboxes = dialog.querySelectorAll('.pin-setting-checkbox:checked');
+            const pinnedSettings = {};
+            checkboxes.forEach(checkbox => {
+                const setting = checkbox.getAttribute('data-setting');
+                pinnedSettings[setting] = validSettings[setting];
+            });
+            return pinnedSettings;
+        }
+
+        // Select All button
+        dialog.querySelector('#pin-select-all').onclick = () => {
+            const checkboxes = dialog.querySelectorAll('.pin-setting-checkbox');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => cb.checked = !allChecked);
+            
+            // Update button text
+            const selectAllBtn = dialog.querySelector('#pin-select-all');
+            selectAllBtn.textContent = allChecked ? '✅ Select All' : '❌ Clear All';
+        };
+
+        // Cancel button
+        dialog.querySelector('#pin-cancel').onclick = () => {
+            cleanup();
+            callback({ cancelled: true, pinned: false, settings: {} });
+        };
+
+        // OK button
+        dialog.querySelector('#pin-ok').onclick = () => {
+            const pinnedSettings = getPinnedSettings();
+            cleanup();
+            if (Object.keys(pinnedSettings).length > 0) {
+                callback({ pinned: true, settings: pinnedSettings });
+            } else {
+                callback({ pinned: false, settings: {} });
+            }
+        };
+
+        // ESC key handler
+        function handleKeyPress(e) {
+            if (e.key === 'Escape') {
+                cleanup();
+                document.removeEventListener('keydown', handleKeyPress);
+                callback({ pinned: false, settings: {} });
+            }
+        }
+        document.addEventListener('keydown', handleKeyPress);
+
+        console.log(`📌 Pin Settings Dialog shown with ${Object.keys(validSettings).length} settings available for pinning`);
+    }
+
+    // Apply pinned settings constraint during optimization
+    function applyPinnedSettingsConstraint(testConfig, pinnedSettings) {
+        if (!pinnedSettings || Object.keys(pinnedSettings).length === 0) {
+            return testConfig; // No pinned settings, return config unchanged
+        }
+
+        const constrainedConfig = deepClone(testConfig);
+        
+        // Apply pinned settings to each section
+        Object.entries(constrainedConfig).forEach(([sectionKey, sectionData]) => {
+            if (typeof sectionData === 'object' && sectionData !== null) {
+                Object.entries(pinnedSettings).forEach(([pinnedKey, pinnedValue]) => {
+                    if (sectionData.hasOwnProperty(pinnedKey)) {
+                        sectionData[pinnedKey] = pinnedValue;
+                    }
+                });
+            }
+        });
+
+        return constrainedConfig;
+    }
+
+    // Update results display to show pinned settings
+    function updateResultsWithPinnedSettings(pinnedSettings) {
+        if (!pinnedSettings || Object.keys(pinnedSettings).length === 0) return;
+
+        const resultsDiv = document.getElementById('best-config-stats');
+        if (resultsDiv) {
+            // Add pinned settings info to results
+            const pinnedCount = Object.keys(pinnedSettings).length;
+            const pinnedInfo = document.createElement('div');
+            pinnedInfo.style.cssText = `
+                margin-top: 8px;
+                padding: 8px;
+                background: rgba(255, 215, 0, 0.1);
+                border: 1px solid rgba(255, 215, 0, 0.3);
+                border-radius: 4px;
+                font-size: 10px;
+                color: #ffd700;
+            `;
+            
+            pinnedInfo.innerHTML = `
+                📌 <strong>${pinnedCount} Settings Pinned:</strong><br>
+                ${Object.entries(pinnedSettings).map(([key, value]) => 
+                    `• ${key}: ${typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value}`
+                ).join('<br>')}
+            `;
+
+            // Insert after existing stats but before buttons
+            const firstButton = resultsDiv.querySelector('button');
+            if (firstButton) {
+                resultsDiv.insertBefore(pinnedInfo, firstButton);
+            } else {
+                resultsDiv.appendChild(pinnedInfo);
+            }
+        }
+    }
+
+    // ========================================
     // 🖥️ BEST CONFIG DISPLAY SYSTEM - Updates existing UI section
     // ========================================
     class OptimizationTracker {
@@ -3376,7 +3741,12 @@
                 window.optimizationTracker.updateProgress(this.testCount, totalFailures, rateLimitFailures);
                 
                 // Ensure config is complete before testing
-                const completeConfig = ensureCompleteConfig(config);
+                let completeConfig = ensureCompleteConfig(config);
+                
+                // 📌 Apply pinned settings constraint
+                if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                    completeConfig = applyPinnedSettingsConstraint(completeConfig, window.pinnedSettings.settings);
+                }
                 
                 // Check cache first (if enabled)
                 if (CONFIG.USE_CONFIG_CACHING && this.configCache.has(completeConfig)) {
@@ -3517,15 +3887,23 @@
                         config: completeConfig
                     }, testName);
                     
-                    // Enhanced logging with robust scoring details
+                    // Enhanced logging with robust scoring details and pinned settings info
                     if (CONFIG.USE_ROBUST_SCORING && metrics.robustScoring) {
                         const rs = metrics.robustScoring;
                         console.log(`🎉 New best! ${testName}:`);
                         console.log(`   📊 Robust Score: ${currentScore.toFixed(1)} (${rs.scoringMethod})`);
                         console.log(`   📈 Raw TP PnL: ${rs.components.rawPnL.toFixed(1)}%`);
                         console.log(`   🎯 Win Rate: ${rs.components.winRate.toFixed(1)}% | Tokens: ${metrics?.totalTokens || 0} | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%`);
+                        if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                            const pinnedCount = Object.keys(window.pinnedSettings.settings).length;
+                            console.log(`   📌 Pinned Settings: ${pinnedCount} settings kept constant`);
+                        }
                     } else {
                         console.log(`🎉 New best! ${testName}: ${currentScore.toFixed(1)}% (${metrics?.totalTokens || 0} tokens)`);
+                        if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                            const pinnedCount = Object.keys(window.pinnedSettings.settings).length;
+                            console.log(`   📌 Pinned Settings: ${pinnedCount} settings kept constant`);
+                        }
                     }
                     
                     // Update global tracker for UI
@@ -3808,7 +4186,25 @@
                 throw new Error('No baseline configuration established');
             }
 
-            const parameters = Object.keys(PARAM_RULES);
+            const allParameters = Object.keys(PARAM_RULES);
+            
+            // 📌 Filter out pinned parameters from optimization
+            let parameters = allParameters;
+            if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                const pinnedParams = Object.keys(window.pinnedSettings.settings);
+                parameters = allParameters.filter(param => !pinnedParams.includes(param));
+                
+                if (pinnedParams.length > 0) {
+                    console.log(`📌 Skipping ${pinnedParams.length} pinned parameters: ${pinnedParams.join(', ')}`);
+                    console.log(`🔍 Testing ${parameters.length} unpinned parameters out of ${allParameters.length} total`);
+                }
+            }
+            
+            if (parameters.length === 0) {
+                console.log('⚠️ All parameters are pinned - skipping parameter phase');
+                return;
+            }
+            
             console.log(`🔍 Testing ${parameters.length} parameters:`, parameters.slice(0, 5));
             
             for (const param of parameters) {
@@ -3959,7 +4355,19 @@
             updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Focus on top parameters for LHS
-            const topParams = this.parameterTests.slice(0, 6).map(p => p.param);
+            let topParams = this.parameterTests.slice(0, 6).map(p => p.param);
+            
+            // 📌 Filter out pinned parameters from Latin Hypercube sampling
+            if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                const pinnedParams = Object.keys(window.pinnedSettings.settings);
+                topParams = topParams.filter(param => !pinnedParams.includes(param));
+                
+                if (topParams.length === 0) {
+                    console.log('⚠️ All top parameters are pinned - skipping Latin Hypercube phase');
+                    return;
+                }
+            }
+            
             const variations = this.generateLatinHypercubeVariations(this.bestConfig, topParams, 8);
 
             for (const variation of variations) {
@@ -4036,7 +4444,18 @@
             updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
             // Deep dive on top 3 most effective parameters
-            const topParams = this.parameterTests.slice(0, 3);
+            let topParams = this.parameterTests.slice(0, 3);
+            
+            // 📌 Filter out pinned parameters from Deep Dive
+            if (window.pinnedSettings && window.pinnedSettings.enabled) {
+                const pinnedParams = Object.keys(window.pinnedSettings.settings);
+                topParams = topParams.filter(paramTest => !pinnedParams.includes(paramTest.param));
+                
+                if (topParams.length === 0) {
+                    console.log('⚠️ All top parameters are pinned - skipping Deep Dive phase');
+                    return;
+                }
+            }
             
             for (const paramTest of topParams) {
                 if (window.STOPPED || this.getRemainingTime() <= 0.02) break;
@@ -6601,6 +7020,40 @@
                 console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
             }
             
+            // 📌 PIN SETTINGS FEATURE: Get current configuration and show pin dialog
+            try {
+                console.log('📌 Reading current backtester configuration for pin settings...');
+                const currentConfig = await getCurrentConfigFromUI();
+                
+                // Show pin settings dialog with 10 second timeout
+                const pinResult = await new Promise((resolve) => {
+                    showPinSettingsDialog(currentConfig, resolve);
+                });
+                
+                // Check if user cancelled
+                if (pinResult.cancelled) {
+                    console.log('❌ Optimization cancelled by user via Pin Settings dialog');
+                    return; // Exit the function, stopping optimization
+                }
+                
+                // Store pin settings globally
+                window.pinnedSettings.enabled = pinResult.pinned;
+                window.pinnedSettings.settings = pinResult.settings;
+                
+                if (pinResult.pinned && Object.keys(pinResult.settings).length > 0) {
+                    console.log(`📌 ${Object.keys(pinResult.settings).length} settings pinned:`, pinResult.settings);
+                    console.log('🔒 These settings will remain constant during optimization');
+                } else {
+                    console.log('📌 No settings pinned - proceeding with standard optimization');
+                }
+                
+            } catch (error) {
+                console.warn('❌ Pin settings dialog error:', error);
+                // Proceed with no pinned settings
+                window.pinnedSettings.enabled = false;
+                window.pinnedSettings.settings = {};
+            }
+            
             // UI state changes
             const startBtn = document.getElementById('start-optimization');
             const stopBtn = document.getElementById('stop-optimization');
@@ -6662,6 +7115,9 @@
                         window.bestConfigTracker.update(results.bestConfig, results.bestMetrics, results.bestScore, source);
                     }
                     window.currentBestConfig = results.bestConfig; // Keep for backward compatibility
+                    
+                    // Update results display to show pinned settings
+                    updateResultsWithPinnedSettings(window.pinnedSettings.settings);
                     
                     // Change background to green for successful completion
                     updateUIBackground(true);
