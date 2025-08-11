@@ -10,6 +10,7 @@
     "optimizer.js",
     "ui.js",
     "main.js",
+    "compat.js",
     "bridge.js"
   ],
   "entry": "constants.js"

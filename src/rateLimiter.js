@@ -15,6 +15,14 @@
       this.requestTimestamps = [];
       this.lastRateLimitTime = 0;
       this.dynamicBurstSize = this.calculateInitialBurstSize();
+  // Parity stats
+  this.rateLimitHits = 0;
+  this.totalCalls = 0;
+  this.successfulBursts = 0;
+  this.currentBurstCount = 0;
+  // Monolith-style burst tracking (for throttle parity)
+  this._burstStart = 0;
+  this._burstCalls = 0;
     }
     calculateInitialBurstSize(){
       return Math.max(3, Math.floor(this.maxRequestsPerMinute / 4));
@@ -53,8 +61,10 @@
         console.log(`[AG][rateLimiter] Rate limited. Waiting ${waitTime}ms`);
         await utils.sleep ? utils.sleep(waitTime) : new Promise(r=>setTimeout(r, waitTime));
         this.lastRateLimitTime = Date.now();
+        this.rateLimitHits++;
       }
       const results = [];
+      this.currentBurstCount = 0;
       for(const fn of batch){
         try{
           const res = await fn();
@@ -63,10 +73,13 @@
           results.push({status:'rejected', reason: err});
         }
         this.requestTimestamps.push(Date.now());
+        this.totalCalls++;
+        this.currentBurstCount++;
         if(this.intraBurstDelay){
           await (utils.sleep ? utils.sleep(this.intraBurstDelay) : new Promise(r=>setTimeout(r,this.intraBurstDelay)));
         }
       }
+      this.successfulBursts++;
       return results;
     }
     isRateLimited(now){
@@ -75,6 +88,87 @@
     }
     pruneOldRequests(now){
       this.requestTimestamps = this.requestTimestamps.filter(ts => now - ts < 60000);
+    }
+    getStats(){
+      const now = Date.now();
+      this.pruneOldRequests(now);
+      const recent = this.requestTimestamps.filter(ts => now - ts < 60000);
+      return {
+        requestsPerMinute: recent.length,
+        currentBurstCount: this.currentBurstCount,
+        burstLimit: this.threshold,
+        totalCalls: this.totalCalls,
+        rateLimitHits: this.rateLimitHits,
+        successfulBursts: this.successfulBursts,
+        recoveryTime: this.recoveryTime,
+        intraBurstDelay: this.intraBurstDelay,
+        dynamicBurstSize: this.dynamicBurstSize,
+        mode: this.mode
+      };
+    }
+    adaptToBurstLimit(){
+      // Placeholder adaptation: adjust dynamicBurstSize based on rateLimitHits ratio
+      const stats = this.getStats();
+      if(stats.rateLimitHits>2 && this.dynamicBurstSize>2){ this.dynamicBurstSize--; }
+      else if(stats.requestsPerMinute < this.maxRequestsPerMinute*0.5 && this.dynamicBurstSize < 12){ this.dynamicBurstSize++; }
+      return this.dynamicBurstSize;
+    }
+    // Added for monolith parity: single-call throttle used by API module
+    async throttle(){
+      const now = Date.now();
+      this.pruneOldRequests(now);
+      // Start new burst if needed
+      if(!this._burstStart || (now - this._burstStart) > this.recoveryTime){
+        if(this._burstCalls>0) this.successfulBursts++; // completed previous burst
+        this._burstStart = now;
+        this._burstCalls = 0;
+        this.currentBurstCount = 0;
+      }
+      // Hard per‑minute limiting (conservative)
+      const recent = this.requestTimestamps.filter(ts => now - ts < 60000);
+      if(recent.length >= (this.maxRequestsPerMinute * 0.95)){ // pre-empt at 95%
+        const wait = 1000; // brief backoff
+        console.log(`[AG][rateLimiter] Pre-emptive wait ${wait}ms (RPM=${recent.length})`);
+        await (utils.sleep? utils.sleep(wait): new Promise(r=>setTimeout(r,wait)));
+      }
+      // Burst threshold check with safety margin
+      if(this._burstCalls >= Math.min(this.dynamicBurstSize, this.threshold)){
+        const elapsed = now - this._burstStart;
+        if(elapsed < this.recoveryTime){
+          const waitTime = this.recoveryTime - elapsed;
+          console.log(`[AG][rateLimiter] Burst pause ${waitTime}ms (${this._burstCalls}/${this.dynamicBurstSize})`);
+          await (utils.sleep? utils.sleep(waitTime): new Promise(r=>setTimeout(r,waitTime)));
+        }
+        this._burstStart = Date.now();
+        this._burstCalls = 0;
+        this.currentBurstCount = 0;
+      }
+      // Rate limit guard (simple safety)
+      if(this.isRateLimited(now)){
+        const waitTime = this.recoveryTime;
+        console.log(`[AG][rateLimiter] Rate limited. Waiting ${waitTime}ms`);
+        await (utils.sleep? utils.sleep(waitTime): new Promise(r=>setTimeout(r,waitTime)));
+        this.lastRateLimitTime = Date.now();
+        this.rateLimitHits++;
+        this._burstStart = Date.now();
+        this._burstCalls = 0;
+        this.currentBurstCount = 0;
+      }
+      // Intra-burst spacing
+      if(this.intraBurstDelay){
+        const lastTs = this.requestTimestamps[this.requestTimestamps.length-1];
+        if(lastTs){
+          const gap = Date.now() - lastTs;
+          if(gap < this.intraBurstDelay){
+            await (utils.sleep? utils.sleep(this.intraBurstDelay-gap): new Promise(r=>setTimeout(r,this.intraBurstDelay-gap)));
+          }
+        }
+      }
+      // Record call
+      this.requestTimestamps.push(Date.now());
+      this.totalCalls++;
+      this._burstCalls++;
+      this.currentBurstCount = this._burstCalls;
     }
   }
 
