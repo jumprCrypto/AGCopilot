@@ -521,7 +521,7 @@
         }
     }
 
-    // Legacy APIRateLimiter for signal analysis (still uses simple delay)
+    // Legacy APIRateLimiter (now unused - signal analysis uses BurstRateLimiter)
     class APIRateLimiter {
         constructor(delay = 500) {
             this.delay = delay;
@@ -541,12 +541,13 @@
     }
 
     // Create rate limiter instances
-    window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // For signal analysis
+    // Note: Signal analysis now uses BurstRateLimiter for consistency and performance
+    window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // Legacy - kept for backward compatibility
     window.burstRateLimiter = new BurstRateLimiter(
         CONFIG.RATE_LIMIT_THRESHOLD, 
         CONFIG.RATE_LIMIT_RECOVERY, 
         CONFIG.RATE_LIMIT_SAFETY_MARGIN
-    ); // For backtester API - Enhanced with adaptive behavior
+    ); // Used by both optimization and signal analysis
     
     // Create local references for backward compatibility
     const rateLimiter = window.rateLimiter;
@@ -1318,7 +1319,7 @@
     // 🌐 API FUNCTIONS (from AGSignalExtractor)
     // ========================================
     async function fetchWithRetry(url, maxRetries = CONFIG.MAX_RETRIES) {
-        await rateLimiter.throttle();
+        await burstRateLimiter.throttle(); // Use the same burst rate limiter as the main optimization
         
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -1327,20 +1328,17 @@
                 
                 if (!response.ok) {
                     if (response.status === 429) {
-                        // Rate limited - use exponential backoff with longer delays
-                        const baseDelay = 3000; // 3 seconds base delay for rate limits
-                        const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-                        const maxDelay = 30000; // Cap at 30 seconds
-                        const delay = Math.min(exponentialDelay, maxDelay);
-                        
-                        console.log(`⏳ Rate limited (429), waiting ${delay / 1000}s before retry ${attempt}/${maxRetries}...`);
-                        throw new Error(`Rate limited (HTTP 429). Waiting ${delay / 1000}s before retry.`);
+                        // Rate limited - let burst rate limiter handle it
+                        burstRateLimiter.adaptToBurstLimit();
+                        console.log(`⏳ Rate limited (429), burst rate limiter adapted for next requests...`);
+                        throw new Error(`Rate limited (HTTP 429). Burst rate limiter handling recovery.`);
                     } else {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                 }
                 
                 const data = await response.json();
+                burstRateLimiter.adaptToSuccess(); // Report success to burst rate limiter
                 console.log(`✅ Successfully fetched data`);
                 return data;
                 
@@ -1351,19 +1349,16 @@
                     throw new Error(`Failed to fetch after ${maxRetries} attempts: ${error.message}`);
                 }
                 
-                // Determine retry delay based on error type
-                let retryDelay;
+                // For rate limits, let the burst rate limiter handle delays
                 if (error.message.includes('Rate limited')) {
-                    // For rate limits, use the exponential backoff calculated above
-                    const baseDelay = 3000;
-                    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-                    retryDelay = Math.min(exponentialDelay, 30000);
+                    // BurstRateLimiter will handle the next throttle() call appropriately
+                    // Add a small additional delay for rate limit errors
+                    await sleep(1000);
                 } else {
                     // For other errors, use standard retry delay
-                    retryDelay = CONFIG.RETRY_DELAY * attempt;
+                    const retryDelay = CONFIG.RETRY_DELAY * attempt;
+                    await sleep(retryDelay);
                 }
-                
-                await sleep(retryDelay);
             }
         }
     }
@@ -2728,7 +2723,8 @@
                             tightness: cluster.avgDistance,
                             threshold: cluster.threshold,
                             analysis: clusterAnalysis,
-                            signals: cluster.signals
+                            signals: cluster.signals,
+                            tokens: cluster.tokens // Add the contract addresses to the cluster data
                         });
                     } catch (error) {
                         console.warn(`Failed to analyze cluster ${index + 1}:`, error);
@@ -2776,9 +2772,11 @@
     function generateAnalysisFromSignals(signals, bufferPercent, outlierMethod) {
         
         // Helper function to apply buffer to bounds
+        // For INCLUSIVE filtering: min values should be LOWER, max values should be HIGHER
         const applyBuffer = (value, isMin = true, isPercent = false) => {
             if (value === null || value === undefined) return null;
             
+            // Fixed buffer logic: min values need to be lowered, max values raised for inclusivity
             const multiplier = isMin ? (1 - bufferPercent / 100) : (1 + bufferPercent / 100);
             let result = value * multiplier;
             
@@ -2817,24 +2815,29 @@
                     originalCount: rawMcaps.length, filteredCount: 0, outlierMethod 
                 };
                 
-                const min = Math.min(...mcaps);
-                const max = Math.max(...mcaps);
+                const rawMin = Math.min(...mcaps);
+                const rawMax = Math.max(...mcaps);
                 const avg = mcaps.reduce((sum, m) => sum + m, 0) / mcaps.length;
                 
                 // Sort MCaps to find a reasonable tightest max (75th percentile)
                 const sortedMcaps = [...mcaps].sort((a, b) => a - b);
                 const percentile75Index = Math.floor(sortedMcaps.length * 0.75);
-                const tightestMax = sortedMcaps[percentile75Index] || max;
+                const tightestMax = sortedMcaps[percentile75Index] || rawMax;
+                
+                // Apply buffer to make ranges INCLUSIVE (min lower, max higher)
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min for inclusivity
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max for inclusivity
+                const bufferedTightestMax = Math.round(applyBuffer(tightestMax, false)); // Increase 75th percentile
                 
                 return {
-                    min: Math.round(min),
-                    max: Math.round(applyBuffer(max, false)), // Max with buffer
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: mcaps.length,
                     originalCount: rawMcaps.length,
                     filteredCount: mcaps.length,
                     outliersRemoved: rawMcaps.length - mcaps.length,
-                    tightestMax: Math.round(applyBuffer(tightestMax, false)), // 75th percentile with buffer
+                    tightestMax: bufferedTightestMax,
                     outlierMethod: outlierMethod
                 };
             })(),
@@ -2844,53 +2847,63 @@
                 const scores = getValidValues('agScore');
                 if (scores.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
-                const min = Math.min(...scores);
-                const max = Math.max(...scores);
+                const rawMin = Math.min(...scores);
+                const rawMax = Math.max(...scores);
                 const avg = scores.reduce((sum, s) => sum + s, 0) / scores.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: scores.length
                 };
             })(),
             
-            // Token Age Analysis (convert from seconds to minutes)
+            // Token Age Analysis (keep in seconds - don't convert to minutes)
             tokenAge: (() => {
                 const ages = getValidValues('tokenAge');
-                if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 };
+                if (ages.length === 0) return { min: 0, max: 604800, avg: 0, count: 0 }; // Default max 7 days in seconds
                 
-                // Convert from seconds to minutes (API returns seconds, UI expects minutes)
-                const agesInMinutes = ages.map(ageInSeconds => ageInSeconds / 60);
+                // Keep values in seconds (API returns seconds, UI expects seconds)
+                const rawMin = Math.min(...ages);
+                const rawMax = Math.max(...ages);
+                const avg = ages.reduce((sum, a) => sum + a, 0) / ages.length;
                 
-                const min = Math.min(...agesInMinutes);
-                const max = Math.max(...agesInMinutes);
-                const avg = agesInMinutes.reduce((sum, a) => sum + a, 0) / agesInMinutes.length;
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
                 
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
-                    count: agesInMinutes.length
+                    count: ages.length
                 };
             })(),
             
-            // Deployer Age Analysis (convert from seconds to minutes)
+            // Deployer Age Analysis (convert from seconds to minutes for Deployer Age field)
             deployerAge: (() => {
                 const ages = getValidValues('deployerAge');
-                if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 };
+                if (ages.length === 0) return { min: 0, max: 10080, avg: 0, count: 0 }; // Default max 7 days in minutes
                 
-                // Convert from seconds to minutes (API returns seconds, UI expects minutes)
+                // Convert from seconds to minutes (API returns seconds, Deployer Age UI expects minutes)
                 const agesInMinutes = ages.map(ageInSeconds => ageInSeconds / 60);
                 
-                const min = Math.min(...agesInMinutes);
-                const max = Math.max(...agesInMinutes);
+                const rawMin = Math.min(...agesInMinutes);
+                const rawMax = Math.max(...agesInMinutes);
                 const avg = agesInMinutes.reduce((sum, a) => sum + a, 0) / agesInMinutes.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: agesInMinutes.length
                 };
@@ -2901,13 +2914,17 @@
                 const balances = getValidValues('deployerBalance');
                 if (balances.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
                 
-                const min = Math.min(...balances);
-                const max = Math.max(...balances);
+                const rawMin = Math.min(...balances);
+                const rawMax = Math.max(...balances);
                 const avg = balances.reduce((sum, b) => sum + b, 0) / balances.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = applyBuffer(rawMin, true); // Decrease min
+                const bufferedMax = applyBuffer(rawMax, false); // Increase max
+                
                 return {
-                    min: applyBuffer(min, true),
-                    max: applyBuffer(max, false),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg * 100) / 100,
                     count: balances.length
                 };
@@ -2918,13 +2935,17 @@
                 const counts = getValidValues('uniqueCount');
                 if (counts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
                 
-                const min = Math.min(...counts);
-                const max = Math.max(...counts);
+                const rawMin = Math.min(...counts);
+                const rawMax = Math.max(...counts);
                 const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: counts.length
                 };
@@ -2935,13 +2956,17 @@
                 const counts = getValidValues('kycCount');
                 if (counts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
-                const min = Math.min(...counts);
-                const max = Math.max(...counts);
+                const rawMin = Math.min(...counts);
+                const rawMax = Math.max(...counts);
                 const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: counts.length
                 };
@@ -2952,13 +2977,17 @@
                 const counts = getValidValues('holdersCount');
                 if (counts.length === 0) return { min: 0, max: 1000, avg: 0, count: 0 };
                 
-                const min = Math.min(...counts);
-                const max = Math.max(...counts);
+                const rawMin = Math.min(...counts);
+                const rawMax = Math.max(...counts);
                 const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: counts.length
                 };
@@ -2969,13 +2998,17 @@
                 const liquids = getValidValues('liquidity');
                 if (liquids.length === 0) return { min: 0, max: 100000, avg: 0, count: 0 };
                 
-                const min = Math.min(...liquids);
-                const max = Math.max(...liquids);
+                const rawMin = Math.min(...liquids);
+                const rawMax = Math.max(...liquids);
                 const avg = liquids.reduce((sum, l) => sum + l, 0) / liquids.length;
                 
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg),
                     count: liquids.length
                 };
@@ -2986,10 +3019,14 @@
                 const pcts = getValidValues('liquidityPct');
                 if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
+                const rawMin = Math.min(...pcts);
+                const rawMax = Math.max(...pcts);
+                const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
+                
                 return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    min: applyBuffer(rawMin, true, true), // Decrease min, treat as percentage
+                    max: applyBuffer(rawMax, false, true), // Increase max, treat as percentage
+                    avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
             })(),
@@ -2998,10 +3035,14 @@
                 const pcts = getValidValues('buyVolumePct');
                 if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
+                const rawMin = Math.min(...pcts);
+                const rawMax = Math.max(...pcts);
+                const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
+                
                 return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    min: applyBuffer(rawMin, true, true), // Decrease min, treat as percentage
+                    max: applyBuffer(rawMax, false, true), // Increase max, treat as percentage
+                    avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
             })(),
@@ -3010,10 +3051,14 @@
                 const pcts = getValidValues('bundledPct');
                 if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
+                const rawMin = Math.min(...pcts);
+                const rawMax = Math.max(...pcts);
+                const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
+                
                 return {
-                    min: applyBuffer(Math.min(...pcts), true, true),
-                    max: applyBuffer(Math.max(...pcts), false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    min: applyBuffer(rawMin, true, true), // Decrease min, treat as percentage
+                    max: applyBuffer(rawMax, false, true), // Increase max, treat as percentage
+                    avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
             })(),
@@ -3022,13 +3067,14 @@
                 const pcts = getValidValues('drainedPct');
                 if (pcts.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
-                const min = Math.min(...pcts);
-                const max = Math.max(...pcts);
+                const rawMin = Math.min(...pcts);
+                const rawMax = Math.max(...pcts);
+                const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
                 
                 return {
-                    min: applyBuffer(min, true, true),
-                    max: applyBuffer(max, false, true),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    min: applyBuffer(rawMin, true, true), // Decrease min, treat as percentage
+                    max: applyBuffer(rawMax, false, true), // Increase max, treat as percentage
+                    avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
             })(),
@@ -3037,10 +3083,14 @@
                 const pcts = getValidValues('volMcapPct');
                 if (pcts.length === 0) return { min: 0, max: 300, avg: 0, count: 0 };
                 
+                const rawMin = Math.min(...pcts);
+                const rawMax = Math.max(...pcts);
+                const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
+                
                 return {
-                    min: applyBuffer(Math.min(...pcts), true),
-                    max: applyBuffer(Math.max(...pcts), false),
-                    avg: Math.round((pcts.reduce((sum, p) => sum + p, 0) / pcts.length) * 100) / 100,
+                    min: applyBuffer(rawMin, true), // Decrease min
+                    max: applyBuffer(rawMax, false), // Increase max
+                    avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
             })(),
@@ -3050,13 +3100,13 @@
                 const winPreds = getValidValues('winPredPercent');
                 if (winPreds.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
                 
-                const min = Math.min(...winPreds);
-                const max = Math.max(...winPreds);
+                const rawMin = Math.min(...winPreds);
+                const rawMax = Math.max(...winPreds);
                 const avg = winPreds.reduce((sum, w) => sum + w, 0) / winPreds.length;
                 
                 return {
-                    min: applyBuffer(min, true, true), // Apply buffer as percentage
-                    max: applyBuffer(max, false, true),
+                    min: applyBuffer(rawMin, true, true), // Apply buffer as percentage, decrease min
+                    max: applyBuffer(rawMax, false, true), // Apply buffer as percentage, increase max
                     avg: Math.round(avg * 100) / 100,
                     count: winPreds.length
                 };
@@ -3067,13 +3117,13 @@
                 const ttcs = getValidValues('ttc');
                 if (ttcs.length === 0) return { min: 0, max: 3600, avg: 0, count: 0 };
                 
-                const min = Math.min(...ttcs);
-                const max = Math.max(...ttcs);
+                const rawMin = Math.min(...ttcs);
+                const rawMax = Math.max(...ttcs);
                 const avg = ttcs.reduce((sum, t) => sum + t, 0) / ttcs.length;
                 
                 return {
-                    min: Math.round(applyBuffer(min, true)),
-                    max: Math.round(applyBuffer(max, false)),
+                    min: Math.round(applyBuffer(rawMin, true)), // Decrease min
+                    max: Math.round(applyBuffer(rawMax, false)), // Increase max
                     avg: Math.round(avg),
                     count: ttcs.length
                 };
@@ -6692,6 +6742,7 @@
     // Switch to a different cluster config
     function selectClusterConfig(configId, clusters, fallbackAnalysis) {
         let selectedConfig;
+        let selectedCluster = null;
         
         if (configId === 'fallback') {
             selectedConfig = generateTightestConfig(fallbackAnalysis);
@@ -6699,6 +6750,9 @@
         } else {
             selectedConfig = window[`clusterConfig_${configId}`];
             window.lastGeneratedConfig = selectedConfig;
+            
+            // Find the selected cluster to get the contract addresses
+            selectedCluster = clusters.find(cluster => cluster.id === configId);
         }
         
         // Update button states
@@ -6736,6 +6790,27 @@
         const configType = configId === 'fallback' ? 'All Signals Config' : `Cluster ${configId.replace('cluster_', '')} Config`;
         updateSignalStatus(`🔄 Switched to: ${configType}`);
         console.log(`\n=== SELECTED: ${configType} ===`);
+        
+        // Log contract addresses for the selected cluster
+        if (selectedCluster && selectedCluster.tokens) {
+            console.log(`📋 Contract Addresses in ${selectedCluster.name}:`);
+            selectedCluster.tokens.forEach((address, index) => {
+                console.log(`   ${index + 1}. ${address}`);
+            });
+            console.log(`📊 Total: ${selectedCluster.tokens.length} contract addresses`);
+        } else if (configId === 'fallback') {
+            // For fallback, show all contract addresses from the original input
+            const contractAddresses = document.getElementById('signal-contract-input').value
+                .split('\n')
+                .map(addr => addr.trim())
+                .filter(addr => addr.length > 0);
+            console.log(`📋 Contract Addresses in All Signals Config:`);
+            contractAddresses.forEach((address, index) => {
+                console.log(`   ${index + 1}. ${address}`);
+            });
+            console.log(`📊 Total: ${contractAddresses.length} contract addresses`);
+        }
+        
         console.log(formatConfigForDisplay(selectedConfig));
     }
     
@@ -6759,6 +6834,10 @@
             // Clear previous results
             document.getElementById('signal-analysis-results').innerHTML = '';
             updateSignalStatus(`Starting analysis of ${contractAddresses.length} tokens...`);
+            
+            // Show rate limiter info
+            const burstStats = burstRateLimiter.getStats();
+            updateSignalStatus(`🚦 Using burst rate limiting: ${burstStats.currentBurstSize}/${CONFIG.RATE_LIMIT_THRESHOLD} burst, ${CONFIG.INTRA_BURST_DELAY}ms delays`);
             
             const allTokenData = [];
             const errors = [];
@@ -6827,6 +6906,12 @@
                     const formattedConfig = formatConfigForDisplay(generatedConfig);
                     
                     console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${cluster.tightness.toFixed(3)}) ===`);
+                    console.log(`🔍 DEBUG: Raw cluster analysis data:`, cluster.analysis);
+                    console.log(`🔍 DEBUG: Generated config data:`, generatedConfig);
+                    
+                    // Validate config against the signals it was based on
+                    validateConfigAgainstSignals(generatedConfig, cluster.signals, cluster.name);
+                    
                     console.log(formattedConfig);
                     
                     // Store cluster config
@@ -6844,6 +6929,20 @@
                 window.fallbackConfig = fallbackConfig;
                 
                 console.log(`\n=== FALLBACK CONFIG (All ${analysis.totalSignals} signals) ===`);
+                // Validate fallback config against all signals
+                const allSignalsArray = [];
+                allTokenData.forEach(tokenData => {
+                    tokenData.swaps.forEach(swap => {
+                        if (swap.criteria) {
+                            allSignalsArray.push({
+                                ...swap.criteria,
+                                signalMcap: swap.signalMcap,
+                                athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
+                            });
+                        }
+                    });
+                });
+                validateConfigAgainstSignals(fallbackConfig, allSignalsArray, 'Fallback Config');
                 console.log(formatConfigForDisplay(fallbackConfig));
                 
                 updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs + 1 fallback - details logged to console`);
@@ -6852,6 +6951,7 @@
                 
                 // Create cluster selection UI
                 createClusterSelectionUI(analysis.clusters, analysis.fallback);
+                updateSignalStatus(`⚠️ Remember to set your Start and End Dates in the Backtester`);
                 
             } else {
                 // Handle standard analysis
@@ -7416,13 +7516,74 @@
             ['Min Win Pred %', config['Min Win Pred %']]
         ]);
         
-        return {
+        const appliedResults = {
             success: appliedFields > 0,
             appliedFields,
             totalFields,
             successRate: totalFields > 0 ? ((appliedFields / totalFields) * 100).toFixed(1) : 0,
             results
         };
+        
+        // Log detailed application results
+        console.log(`🔍 Config application results:`, appliedResults);
+        results.forEach(result => console.log(result));
+        
+        return appliedResults;
+    }
+    
+    // Validate that a generated config would match the original signals it was based on
+    function validateConfigAgainstSignals(config, originalSignals, configName = 'Config') {
+        let matchingSignals = 0;
+        const failReasons = {};
+        
+        originalSignals.forEach((signal, index) => {
+            const failures = [];
+            
+            // Check each config parameter against the signal
+            if (config['Min MCAP (USD)'] !== undefined && signal.signalMcap < config['Min MCAP (USD)']) {
+                failures.push(`MCAP ${signal.signalMcap} < Min ${config['Min MCAP (USD)']}`);
+            }
+            if (config['Max MCAP (USD)'] !== undefined && signal.signalMcap > config['Max MCAP (USD)']) {
+                failures.push(`MCAP ${signal.signalMcap} > Max ${config['Max MCAP (USD)']}`);
+            }
+            
+            if (config['Min AG Score'] !== undefined && signal.agScore < config['Min AG Score']) {
+                failures.push(`AG Score ${signal.agScore} < Min ${config['Min AG Score']}`);
+            }
+            
+            if (config['Min Token Age (sec)'] !== undefined && signal.tokenAge < config['Min Token Age (sec)']) {
+                failures.push(`Token Age ${signal.tokenAge} < Min ${config['Min Token Age (sec)']}`);
+            }
+            if (config['Max Token Age (sec)'] !== undefined && signal.tokenAge > config['Max Token Age (sec)']) {
+                failures.push(`Token Age ${signal.tokenAge} > Max ${config['Max Token Age (sec)']}`);
+            }
+            
+            // Add more validation checks as needed...
+            
+            if (failures.length === 0) {
+                matchingSignals++;
+            } else {
+                failReasons[index] = failures;
+            }
+        });
+        
+        const matchRate = ((matchingSignals / originalSignals.length) * 100).toFixed(1);
+        
+        console.log(`🔍 ${configName} Validation: ${matchingSignals}/${originalSignals.length} signals match (${matchRate}%)`);
+        
+        if (matchingSignals === 0) {
+            console.log('❌ Config validation failed - NO signals would match!');
+            console.log('🔍 First 3 failure reasons:');
+            Object.entries(failReasons).slice(0, 3).forEach(([index, failures]) => {
+                console.log(`   Signal ${index}: ${failures.join(', ')}`);
+            });
+        } else if (matchingSignals < originalSignals.length * 0.5) {
+            console.log(`⚠️ Config validation warning - Only ${matchRate}% of signals would match`);
+        } else {
+            console.log(`✅ Config validation passed - ${matchRate}% of signals would match`);
+        }
+        
+        return { matchingSignals, totalSignals: originalSignals.length, matchRate: parseFloat(matchRate), failReasons };
     }
 
     // ========================================
