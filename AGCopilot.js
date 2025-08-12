@@ -90,7 +90,7 @@
         'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
 
         // Token Details
-        'Min Deployer Age (min)': { min: 0, max: 1440, step: 5, type: 'integer' },
+        'Min Deployer Age (min)': { min: 0, max: 10080, step: 5, type: 'integer' },
         'Min Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Max Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
         'Min AG Score': { min: 0, max: 10, step: 1, type: 'integer' },
@@ -115,8 +115,8 @@
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 3600, step: 5, type: 'integer' },
-        'Max TTC (sec)': { min: 10, max: 3600, step: 10, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 604800, step: 5, type: 'integer' },
+        'Max TTC (sec)': { min: 10, max: 604800, step: 10, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
@@ -2602,11 +2602,6 @@
                     }
                 });
                 
-                // Debug: show cluster info
-                if (cluster.length >= 2) {
-                    console.log(`🔍 Potential cluster: ${cluster.length} signals from ${clusterTokens.size} tokens (need ${minClusterTokens} tokens)`);
-                }
-                
                 // Only keep clusters that meet minimum TOKEN count requirement
                 if (clusterTokens.size >= minClusterTokens) {
                     currentClusters.push({
@@ -2689,7 +2684,6 @@
             // Calculate minimum cluster size based on number of unique tokens (CAs)
             const uniqueTokens = new Set(allTokenData.map(t => t.address)).size;
             const minClusterSize = Math.max(2, Math.min(6, Math.ceil(uniqueTokens * 0.3)));
-            console.log(`🔍 Clustering Debug: ${allSignals.length} signals from ${uniqueTokens} tokens, min cluster size: ${minClusterSize} tokens`);
             
             const clusters = findSignalClusters(allSignals, allTokenData, minClusterSize);
             console.log(`🔍 Found ${clusters.length} clusters:`, clusters.map(c => `${c.size} signals from ${c.uniqueTokens} tokens (threshold: ${c.threshold})`));
@@ -2773,10 +2767,9 @@
         
         // Helper function to apply buffer to bounds
         // For INCLUSIVE filtering: min values should be LOWER, max values should be HIGHER
-        const applyBuffer = (value, isMin = true, isPercent = false) => {
+        const applyBuffer = (value, isMin = true, isPercent = false) => {            
             if (value === null || value === undefined) return null;
             
-            // Fixed buffer logic: min values need to be lowered, max values raised for inclusivity
             const multiplier = isMin ? (1 - bufferPercent / 100) : (1 + bufferPercent / 100);
             let result = value * multiplier;
             
@@ -2845,7 +2838,7 @@
             // AG Score Analysis
             agScore: (() => {
                 const scores = getValidValues('agScore');
-                if (scores.length === 0) return { min: 0, max: 100, avg: 0, count: 0 };
+                if (scores.length === 0) return { min: 0, max: 10, avg: 0, count: 0 };
                 
                 const rawMin = Math.min(...scores);
                 const rawMax = Math.max(...scores);
@@ -2866,7 +2859,7 @@
             // Token Age Analysis (keep in seconds - don't convert to minutes)
             tokenAge: (() => {
                 const ages = getValidValues('tokenAge');
-                if (ages.length === 0) return { min: 0, max: 604800, avg: 0, count: 0 }; // Default max 7 days in seconds
+                if (ages.length === 0) return { min: 0, max: 2592000, avg: 0, count: 0 };
                 
                 // Keep values in seconds (API returns seconds, UI expects seconds)
                 const rawMin = Math.min(...ages);
@@ -3361,7 +3354,7 @@
             lines.push(`MCAP: $${min} - $${max}`);
         }
         if (config['Min AG Score'] !== undefined) {
-            lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 100}`);
+            lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 10}`);
         }
         if (config['Min Token Age (sec)'] !== undefined || config['Max Token Age (sec)'] !== undefined) {
             const min = config['Min Token Age (sec)'] || 0;
@@ -6828,7 +6821,8 @@
             }
             
             const signalsPerToken = parseInt(document.getElementById('signals-per-token').value) || 3;
-            const bufferPercent = parseFloat(document.getElementById('config-buffer').value) || 10;
+            const bufferInput = document.getElementById('config-buffer');
+            const bufferPercent = bufferInput && bufferInput.value !== '' ? parseFloat(bufferInput.value) : 0;
             const outlierMethod = getSignalOutlierFilterMethod();
             
             // Clear previous results
@@ -6884,8 +6878,6 @@
             const useClusteringCheckbox = document.getElementById('enable-signal-clustering');
             const useClustering = useClusteringCheckbox ? useClusteringCheckbox.checked : false;
             
-            console.log(`🔍 Clustering Debug: checkbox=${!!useClusteringCheckbox}, checked=${useClustering}`);
-            
             const analysis = analyzeSignalCriteria(allTokenData, bufferPercent, outlierMethod, useClustering);
             
             if (analysis.type === 'clustered') {
@@ -6906,9 +6898,6 @@
                     const formattedConfig = formatConfigForDisplay(generatedConfig);
                     
                     console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${cluster.tightness.toFixed(3)}) ===`);
-                    console.log(`🔍 DEBUG: Raw cluster analysis data:`, cluster.analysis);
-                    console.log(`🔍 DEBUG: Generated config data:`, generatedConfig);
-                    
                     // Validate config against the signals it was based on
                     validateConfigAgainstSignals(generatedConfig, cluster.signals, cluster.name);
                     
