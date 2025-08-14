@@ -253,6 +253,7 @@
                 'TTC',
                 'Buyer Label',
                 'Deployer Balance',
+                'Deployer Balance at Mint',
                 'Fresh Deployer',
                 'Funding Address',
                 'Deployer Age',
@@ -333,6 +334,7 @@
                     swap.criteria.ttc,
                     swap.criteria.buyerLabel,
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
+                    swap.criteria?.deployerBalanceAtMint || '',               // Deployer Balance at Mint
                     swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Fresh Deployer
                     '',                                                       // Funding Address (not available in current data)
                     deployerAge,                                              // Deployer Age
