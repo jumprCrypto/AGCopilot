@@ -159,7 +159,10 @@
             "Max TTC (sec)": undefined,
             "Max Liquidity %": undefined,
             "Min Win Pred %": undefined
-        }
+    },
+    // Optional, filled from UI if present
+    tpSettings: {},
+    takeProfits: []
     };
 
     // ========================================
@@ -772,10 +775,16 @@
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer'],
-            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %'],
+            // Dynamically add TP fields if present
+            'Take Profits': Object.keys(validSettings).filter(k => /TP \d+ % (Gain|Sell)/.test(k))
         };
 
-        let dialogHTML = `
+    // Dynamic countdown duration: 30s if many settings, else 10s
+    const totalSettingsCount = Object.keys(validSettings).length;
+    const initialSeconds = totalSettingsCount > 10 ? 30 : 10;
+
+    let dialogHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #f7fafc; display: flex; align-items: center; gap: 8px;">
                     📌 Pin Settings for Optimization
@@ -788,7 +797,7 @@
                     padding: 6px 12px;
                     border-radius: 20px;
                     border: 1px solid rgba(255, 215, 0, 0.3);
-                ">10s</div>
+        ">${initialSeconds}s</div>
             </div>
             
             <div style="
@@ -834,6 +843,7 @@
                 `;
 
                 categoryValidSettings.forEach(setting => {
+                    const isTpSetting = /TP \d+ % (Gain|Sell)/.test(setting);
                     const value = validSettings[setting];
                     const displayValue = typeof value === 'boolean' 
                         ? (value ? 'Yes' : 'No') 
@@ -857,7 +867,7 @@
                                 margin-right: 8px;
                                 transform: scale(0.9);
                                 accent-color: #ffd700;
-                            ">
+                            " ${isTpSetting ? 'checked' : ''}>
                             <div>
                                 <div style="font-weight: 500; color: #f7fafc;">${setting}</div>
                                 <div style="font-size: 10px; color: #a0aec0; margin-top: 2px;">Current: ${displayValue}</div>
@@ -935,7 +945,7 @@
         document.body.appendChild(overlay);
 
         // Countdown timer
-        let remainingSeconds = 10;
+        let remainingSeconds = initialSeconds;
         const countdownElement = dialog.querySelector('#pin-countdown');
         const countdownInterval = setInterval(() => {
             remainingSeconds--;
@@ -948,9 +958,14 @@
                 }
             } else {
                 clearInterval(countdownInterval);
-                // Timeout - proceed with default optimization (no pins)
+                // Timeout - proceed with any preselected pins (TPs are auto-selected)
+                const pinnedSettings = getPinnedSettings();
                 cleanup();
-                callback({ pinned: false, settings: {} });
+                if (Object.keys(pinnedSettings).length > 0) {
+                    callback({ pinned: true, settings: pinnedSettings });
+                } else {
+                    callback({ pinned: false, settings: {} });
+                }
             }
         }, 1000);
 
@@ -1401,6 +1416,25 @@
             
             // Flatten the config structure first
             const flatConfig = this.flattenConfig(config);
+            // Attach TP settings for downstream use
+            if (config && Array.isArray(config.takeProfits) && config.takeProfits.length > 0) {
+                apiParams.__takeProfits = config.takeProfits
+                    .filter(tp => tp && !isNaN(Number(tp.size)) && !isNaN(Number(tp.gain)))
+                    .map(tp => ({ size: Number(tp.size), gain: Number(tp.gain) }));
+            } else if (config && config.tpSettings) {
+                // Build from labeled tpSettings if present
+                const tps = [];
+                for (let i = 1; i <= 6; i++) {
+                    const g = config.tpSettings[`TP ${i} % Gain`];
+                    const s = config.tpSettings[`TP ${i} % Sell`];
+                    const gain = g !== undefined ? Number(g) : undefined;
+                    const size = s !== undefined ? Number(s) : undefined;
+                    if (!isNaN(gain) && !isNaN(size)) {
+                        tps.push({ size, gain });
+                    }
+                }
+                if (tps.length > 0) apiParams.__takeProfits = tps;
+            }
             
             // Parameter mapping from AGCopilot names to API names
             const parameterMap = {
@@ -1562,10 +1596,12 @@
         }
         
         // Build API URL from parameters
-        buildApiUrl(apiParams) {
+    buildApiUrl(apiParams) {
             const params = new URLSearchParams();
             
             Object.entries(apiParams).forEach(([key, value]) => {
+                // Skip internal or complex params
+                if (key.startsWith('__')) return;
                 if (value !== undefined && value !== null && value !== '') {
                     // Additional validation before adding to URL
                     if (typeof value === 'number') {
@@ -1574,6 +1610,9 @@
                             console.log(`⚠️ Skipping invalid numeric parameter ${key}: ${value}`);
                             return;
                         }
+                    } else if (typeof value === 'object') {
+                        // Skip non-primitive values
+                        return;
                     }
                     
                     // Convert value to string and validate
@@ -1587,12 +1626,38 @@
                 }
             });
             
-            // Add multiple TP (Take Profit) parameters for accurate pnlSolTp calculations
-            const tpParams = CONFIG.TP_CONFIGURATIONS
-                .map(tp => `tpSize=${tp.size}&tpGain=${tp.gain}`)
-                .join('&');
-            
-            return `${this.baseUrl}?${params.toString()}&${tpParams}`;
+            // Add multiple TP (Take Profit) parameters using UI/backtester values when available
+            let tpPairs = [];
+            try {
+                // Priority 1: TP pairs explicitly passed via apiParams (__takeProfits is internal only)
+                if (Array.isArray(apiParams.__takeProfits) && apiParams.__takeProfits.length > 0) {
+                    tpPairs = apiParams.__takeProfits
+                        .filter(tp => tp && !isNaN(Number(tp.size)) && !isNaN(Number(tp.gain)))
+                        .map(tp => ({ size: Number(tp.size), gain: Number(tp.gain) }));
+                }
+                // Priority 2: Last UI config cache
+                if ((!tpPairs || tpPairs.length === 0) && typeof window !== 'undefined') {
+                    const uiConfig = window.agLastUIConfig || null;
+                    if (uiConfig && Array.isArray(uiConfig.takeProfits) && uiConfig.takeProfits.length > 0) {
+                        tpPairs = uiConfig.takeProfits
+                        .filter(tp => tp && !isNaN(Number(tp.size)) && !isNaN(Number(tp.gain)))
+                        .map(tp => ({ size: Number(tp.size), gain: Number(tp.gain) }));
+                    }
+                }
+            } catch (e) {
+                // ignore and fallback
+            }
+
+            if (!tpPairs || tpPairs.length === 0) {
+                // Fallback to defaults from CONFIG
+                tpPairs = (CONFIG.TP_CONFIGURATIONS || [])
+                    .filter(tp => tp && !isNaN(Number(tp.size)) && !isNaN(Number(tp.gain)))
+                    .map(tp => ({ size: Number(tp.size), gain: Number(tp.gain) }));
+            }
+
+            const tpParams = tpPairs.map(tp => `tpSize=${tp.size}&tpGain=${tp.gain}`).join('&');
+            const base = `${this.baseUrl}?${params.toString()}`;
+            return tpParams ? `${base}&${tpParams}` : base;
         }
         
         // Fetch results from API
@@ -4922,7 +4987,9 @@
             tokenDetails: {},
             wallets: {},
             risk: {},
-            advanced: {}
+            advanced: {},
+            tpSettings: {},
+            takeProfits: []
         };
 
         // Define the section mapping and parameters for each section
@@ -4992,7 +5059,43 @@
             if (dateRange.toDate) config.dateRange.toDate = dateRange.toDate;
         }
 
-        console.log(`📖 Read ${fieldsRead} fields from UI, ${fieldsWithValues} have values set`);
+        // Read Take Profits (TP) if visible in UI
+        try {
+            // Attempt to read up to 6 TP rows by label convention
+            const tpEntries = [];
+            for (let i = 1; i <= 6; i++) {
+                const gainLabel = `TP ${i} % Gain`;
+                const sellLabel = `TP ${i} % Sell`;
+                const gainVal = getFieldValue(gainLabel);
+                const sellVal = getFieldValue(sellLabel);
+                const gain = gainVal !== undefined && gainVal !== null && gainVal !== '' ? Number(gainVal) : undefined;
+                const size = sellVal !== undefined && sellVal !== null && sellVal !== '' ? Number(sellVal) : undefined;
+                if ((gain !== undefined && !isNaN(gain)) || (size !== undefined && !isNaN(size))) {
+                    tpEntries.push({ index: i, gain, size });
+                }
+            }
+
+            // Normalize to takeProfits array with {gain,size}
+            const takeProfits = tpEntries
+                .filter(e => (e.gain !== undefined && !isNaN(e.gain)) && (e.size !== undefined && !isNaN(e.size)))
+                .map(e => ({ gain: e.gain, size: e.size }));
+
+            // Store raw tpSettings too (keyed by labels) for pin dialog compatibility
+            tpEntries.forEach(e => {
+                if (e.gain !== undefined && !isNaN(e.gain)) config.tpSettings[`TP ${e.index} % Gain`] = e.gain;
+                if (e.size !== undefined && !isNaN(e.size)) config.tpSettings[`TP ${e.index} % Sell`] = e.size;
+            });
+
+            if (takeProfits.length > 0) {
+                config.takeProfits = takeProfits;
+            }
+        } catch (e) {
+            console.warn('TP read failed:', e.message);
+        }
+
+    console.log(`📖 Read ${fieldsRead} fields from UI, ${fieldsWithValues} have values set`);
+    // Cache last UI config for downstream synchronous access (e.g., building API URL)
+    try { window.agLastUIConfig = config; } catch (_) {}
         return config;
     }
     
@@ -5173,7 +5276,7 @@
         let successCount = 0;
         let totalFields = 0;
 
-        try {
+    try {
             // Apply each section of the configuration
             for (const [section, sectionConfig] of Object.entries(config)) {
                 // Only check stop flag if we're in optimization mode (not manual apply)
@@ -5246,6 +5349,48 @@
                     totalFields++;
                     successCount++;
                 }
+            }
+
+            // Apply TP fields if provided in config.tpSettings or config.takeProfits
+            try {
+                const tpSettings = config.tpSettings || {};
+                const takeProfits = Array.isArray(config.takeProfits) ? config.takeProfits : [];
+                // First apply explicit label-based values
+                for (let i = 1; i <= 6; i++) {
+                    const gainKey = `TP ${i} % Gain`;
+                    const sellKey = `TP ${i} % Sell`;
+                    if (gainKey in tpSettings) {
+                        totalFields++;
+                        if (await setFieldValue(gainKey, tpSettings[gainKey])) successCount++;
+                        await sleep(100);
+                    }
+                    if (sellKey in tpSettings) {
+                        totalFields++;
+                        if (await setFieldValue(sellKey, tpSettings[sellKey])) successCount++;
+                        await sleep(100);
+                    }
+                }
+                // Then map sequential takeProfits to the first N TP slots
+                if (takeProfits.length > 0) {
+                    for (let i = 0; i < Math.min(6, takeProfits.length); i++) {
+                        const tp = takeProfits[i];
+                        if (tp) {
+                            const idx = i + 1;
+                            if (tp.gain !== undefined) {
+                                totalFields++;
+                                if (await setFieldValue(`TP ${idx} % Gain`, tp.gain)) successCount++;
+                                await sleep(100);
+                            }
+                            if (tp.size !== undefined) {
+                                totalFields++;
+                                if (await setFieldValue(`TP ${idx} % Sell`, tp.size)) successCount++;
+                                await sleep(100);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to apply TP fields:', e.message);
             }
 
             const successRate = totalFields > 0 ? (successCount / totalFields * 100) : 0;
