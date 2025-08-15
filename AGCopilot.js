@@ -10,7 +10,7 @@
         // Original AGCopilot Optimization Settings (no API needed)
         MAX_RUNTIME_MIN: 30,
         BACKTEST_WAIT: 20000, // Based on rate limit recovery test (20s)
-        MIN_TOKENS: 50,
+        MIN_TOKENS: 10, // Minimum tokens per day (scaled by date range)
         TARGET_PNL: 100.0,
         
         // NEW: Chained runs settings
@@ -671,32 +671,33 @@
     function getScaledTokenThresholds() {
         const scaling = getDateRangeScaling();
         
-        // Base thresholds for 7-day period
+        // Base thresholds - MIN_TOKENS is now per day, others are for 7-day period
         const BASE_THRESHOLDS = {
             LARGE_SAMPLE_THRESHOLD: 1000,    // 143x days
             MEDIUM_SAMPLE_THRESHOLD: 500,    // 71x days  
-            MIN_TOKENS: 75                    // 11x days (from UI default)
+            MIN_TOKENS_PER_DAY: 10           // Minimum tokens per day for statistical reliability
         };
         
         // Apply scaling
         const scaled = {
             LARGE_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.LARGE_SAMPLE_THRESHOLD * scaling.scalingFactor),
             MEDIUM_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.MEDIUM_SAMPLE_THRESHOLD * scaling.scalingFactor),
-            MIN_TOKENS: Math.round(BASE_THRESHOLDS.MIN_TOKENS * scaling.scalingFactor),
+            MIN_TOKENS: Math.round(BASE_THRESHOLDS.MIN_TOKENS_PER_DAY * scaling.days), // Scale by actual days
             scalingInfo: scaling
         };
         
         // Ensure minimum values
         scaled.LARGE_SAMPLE_THRESHOLD = Math.max(100, scaled.LARGE_SAMPLE_THRESHOLD);
         scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(50, scaled.MEDIUM_SAMPLE_THRESHOLD);
-        scaled.MIN_TOKENS = Math.max(10, scaled.MIN_TOKENS);
+        scaled.MIN_TOKENS = Math.max(10, scaled.MIN_TOKENS); // At least 10 tokens total
         
         // Ensure logical order: MIN_TOKENS < MEDIUM < LARGE
         if (scaled.MEDIUM_SAMPLE_THRESHOLD >= scaled.LARGE_SAMPLE_THRESHOLD) {
             scaled.MEDIUM_SAMPLE_THRESHOLD = Math.floor(scaled.LARGE_SAMPLE_THRESHOLD * 0.5);
         }
         if (scaled.MIN_TOKENS >= scaled.MEDIUM_SAMPLE_THRESHOLD) {
-            scaled.MIN_TOKENS = Math.floor(scaled.MEDIUM_SAMPLE_THRESHOLD * 0.15);
+            // Fix: Ensure MEDIUM is reasonable compared to MIN_TOKENS, don't reduce MIN_TOKENS
+            scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(scaled.MIN_TOKENS + 25, scaled.MEDIUM_SAMPLE_THRESHOLD);
         }
         
         return scaled;
@@ -780,11 +781,7 @@
             'Take Profits': Object.keys(validSettings).filter(k => /TP \d+ % (Gain|Sell)/.test(k))
         };
 
-    // Dynamic countdown duration: 30s if many settings, else 10s
-    const totalSettingsCount = Object.keys(validSettings).length;
-    const initialSeconds = totalSettingsCount > 10 ? 30 : 10;
-
-    let dialogHTML = `
+        let dialogHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #f7fafc; display: flex; align-items: center; gap: 8px;">
                     📌 Pin Settings for Optimization
@@ -797,7 +794,7 @@
                     padding: 6px 12px;
                     border-radius: 20px;
                     border: 1px solid rgba(255, 215, 0, 0.3);
-        ">${initialSeconds}s</div>
+                ">10s</div>
             </div>
             
             <div style="
@@ -843,7 +840,6 @@
                 `;
 
                 categoryValidSettings.forEach(setting => {
-                    const isTpSetting = /TP \d+ % (Gain|Sell)/.test(setting);
                     const value = validSettings[setting];
                     const displayValue = typeof value === 'boolean' 
                         ? (value ? 'Yes' : 'No') 
@@ -867,7 +863,7 @@
                                 margin-right: 8px;
                                 transform: scale(0.9);
                                 accent-color: #ffd700;
-                            " ${isTpSetting ? 'checked' : ''}>
+                            ">
                             <div>
                                 <div style="font-weight: 500; color: #f7fafc;">${setting}</div>
                                 <div style="font-size: 10px; color: #a0aec0; margin-top: 2px;">Current: ${displayValue}</div>
@@ -945,7 +941,7 @@
         document.body.appendChild(overlay);
 
         // Countdown timer
-        let remainingSeconds = initialSeconds;
+        let remainingSeconds = 10;
         const countdownElement = dialog.querySelector('#pin-countdown');
         const countdownInterval = setInterval(() => {
             remainingSeconds--;
@@ -958,14 +954,9 @@
                 }
             } else {
                 clearInterval(countdownInterval);
-                // Timeout - proceed with any preselected pins (TPs are auto-selected)
-                const pinnedSettings = getPinnedSettings();
+                // Timeout - proceed with default optimization (no pins)
                 cleanup();
-                if (Object.keys(pinnedSettings).length > 0) {
-                    callback({ pinned: true, settings: pinnedSettings });
-                } else {
-                    callback({ pinned: false, settings: {} });
-                }
+                callback({ pinned: false, settings: {} });
             }
         }, 1000);
 
@@ -5914,8 +5905,8 @@
                                     color: #a0aec0;
                                     display: block;
                                     margin-bottom: 3px;
-                                ">Min Tokens</label>
-                                <input type="number" id="min-tokens" value="75" min="10" max="1000" step="5" style="
+                                ">Min Tokens per Day</label>
+                                <input type="number" id="min-tokens" value="10" min="5" max="1000" step="5" style="
                                     width: 100%;
                                     padding: 5px 6px;
                                     background: #2d3748;
