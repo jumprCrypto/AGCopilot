@@ -268,16 +268,10 @@
             
             tokenData.swaps.forEach(swap => {
                 // Format market cap - use signal MCAP for the row
-                const mcFormatted = swap.signalMcap ? 
-                    (swap.signalMcap >= 1000000 ? `$${(swap.signalMcap / 1000000).toFixed(2)}M` :
-                     swap.signalMcap >= 1000 ? `$${(swap.signalMcap / 1000).toFixed(2)}K` :
-                     `$${swap.signalMcap}`) : '';
+                const mcFormatted = swap.signalMcap ? `$${swap.signalMcap}` : '';
                 
                 // Format liquidity
-                const liquidityFormatted = swap.criteria?.liquidity ? 
-                    (swap.criteria.liquidity >= 1000000 ? `$${(swap.criteria.liquidity / 1000000).toFixed(2)}M` :
-                     swap.criteria.liquidity >= 1000 ? `$${(swap.criteria.liquidity / 1000).toFixed(2)}K` :
-                     `$${swap.criteria.liquidity}`) : '';
+                const liquidityFormatted = swap.criteria?.liquidity ? `$${swap.criteria.liquidity}` : '';
                 
                 // Wallet stats (updated format: F: X KYC: Y Unq: Z)
                 const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.smCount || 0}`;
