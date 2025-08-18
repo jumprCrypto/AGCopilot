@@ -777,11 +777,20 @@
             }
         });
 
-        // Filter out undefined/null values and group by category
+        // Filter out undefined/empty values and group by category
         const validSettings = {};
         Object.entries(flatConfig).forEach(([key, value]) => {
-            if (value !== undefined && value !== null && value !== '' && key !== 'fromDate' && key !== 'toDate') {
-                validSettings[key] = value;
+            const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer');
+            if (value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
+                if (value !== null || isButtonToggle) {
+                    validSettings[key] = value;
+                }
+            }
+        });
+        
+        ['Description', 'Fresh Deployer'].forEach(k => {
+            if (!Object.prototype.hasOwnProperty.call(validSettings, k)) {
+                validSettings[k] = null;
             }
         });
 
@@ -856,9 +865,11 @@
 
                 categoryValidSettings.forEach(setting => {
                     const value = validSettings[setting];
-                    const displayValue = typeof value === 'boolean' 
-                        ? (value ? 'Yes' : 'No') 
-                        : (typeof value === 'number' ? value.toLocaleString() : value);
+                    const displayValue = (value === null)
+                        ? "Don't care"
+                        : (typeof value === 'boolean' 
+                            ? (value ? 'Yes' : "Don't care") 
+                            : (typeof value === 'number' ? value.toLocaleString() : value));
 
                     dialogHTML += `
                         <label style="
@@ -1045,7 +1056,13 @@
             if (typeof sectionData === 'object' && sectionData !== null) {
                 Object.entries(pinnedSettings).forEach(([pinnedKey, pinnedValue]) => {
                     if (sectionData.hasOwnProperty(pinnedKey)) {
-                        sectionData[pinnedKey] = pinnedValue;
+                        if ((pinnedKey === 'Description' || pinnedKey === 'Fresh Deployer')) {
+                            let normalized = null;
+                            if (pinnedValue === true || pinnedValue === 'Yes') normalized = true;
+                            sectionData[pinnedKey] = normalized;
+                        } else {
+                            sectionData[pinnedKey] = pinnedValue;
+                        }
                     }
                 });
             }
@@ -4973,7 +4990,29 @@
 
             let container = label.closest('.form-group') || label.parentElement;
 
-            // Navigate up the DOM tree to find the input container
+            // Dual-state toggles: check first to avoid navigating away from the button
+            if (labelText === 'Description' || labelText === 'Fresh Deployer') {
+                let toggleButton = container.querySelector('button');
+                if (!toggleButton) {
+                    // Climb up cautiously to find the button
+                    let searchContainer = container.parentElement;
+                    let depth = 0;
+                    while (searchContainer && depth < 3) {
+                        toggleButton = searchContainer.querySelector('button');
+                        if (toggleButton && toggleButton.textContent.trim() !== '×') break;
+                        toggleButton = null;
+                        searchContainer = searchContainer.parentElement;
+                        depth++;
+                    }
+                }
+                if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                    const txt = toggleButton.textContent.trim();
+                    return (txt === 'Yes') ? true : null; // Yes or Don't care
+                }
+                return undefined;
+            }
+
+            // Navigate up the DOM tree to find the input container (for non-toggle fields)
             if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
                 container = container.parentElement;
                 if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
@@ -4999,23 +5038,6 @@
                     return undefined;
                 }
                 return value;
-            }
-
-            // Handle toggle buttons
-            const button = container.querySelector('button');
-            if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
-                const currentValue = button.textContent.trim();
-                // Preserve all toggle states including "Don't care"
-                if (currentValue === "Don't care") {
-                    return null; // null represents "Don't care" state
-                }
-                if (currentValue === "Yes") {
-                    return true;
-                }
-                if (currentValue === "No") {
-                    return false;
-                }
-                return currentValue; // Fallback for any other text
             }
 
             return undefined;
@@ -5150,6 +5172,62 @@
     async function setFieldValue(labelText, value, maxRetries = 2) {
         const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
 
+        // Special handling for Holders Growth Filter composite field
+        if (labelText === 'Min Holders Growth %' || labelText === 'Max Holders Growth Since (min)') {
+            try {
+                // Find the "Holders Growth Filter" block which contains two numeric inputs
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
+                if (!hgLabel) {
+                    console.warn('Holders Growth Filter label not found');
+                    return false;
+                }
+
+                // Find a container that holds at least two number inputs
+                let searchContainer = hgLabel.parentElement;
+                let inputs = [];
+                let depth = 0;
+                while (searchContainer && depth < 4) {
+                    inputs = Array.from(searchContainer.querySelectorAll('input[type="number"]'));
+                    if (inputs.length >= 2) break;
+                    searchContainer = searchContainer.parentElement;
+                    depth++;
+                }
+
+                if (!inputs || inputs.length < 2) {
+                    console.warn('Holders Growth inputs not found');
+                    return false;
+                }
+
+                // Index: 0 => Growth %, 1 => Minutes
+                const idx = (labelText === 'Min Holders Growth %') ? 0 : 1;
+                const input = inputs[idx];
+                if (!input) {
+                    console.warn('Target Holders Growth input not found at expected index');
+                    return false;
+                }
+
+                let processedValue = value;
+                if (!shouldClear) {
+                    if (typeof value === 'string' && value.trim() !== '') {
+                        const parsed = parseFloat(value);
+                        if (!isNaN(parsed)) processedValue = parsed;
+                    }
+                }
+
+                input.focus();
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeInputValueSetter.call(input, shouldClear ? '' : processedValue);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.blur();
+                return true;
+            } catch (err) {
+                console.warn('Error setting Holders Growth Filter:', err.message);
+                return false;
+            }
+        }
+
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 // Find the label using the original AGCopilot approach
@@ -5185,20 +5263,19 @@
                     }
                     
                     if (toggleButton && toggleButton.textContent.trim() !== '×') {
-                        const targetValue = value || "Don't care";
-                        const currentValue = toggleButton.textContent.trim();
-                        
-                        if (currentValue !== targetValue) {
+                        // Determine target button text based on dual-state: Yes or Don't care
+                        let targetText;
+                        if (value === true || value === 'Yes') targetText = 'Yes';
+                        else targetText = "Don't care";
+
+                        // Click-cycle up to 4 times to reach desired state
+                        let safety = 0;
+                        while (toggleButton.textContent.trim() !== targetText && safety < 3) {
                             toggleButton.click();
                             await sleep(100);
-
-                            const newValue = toggleButton.textContent.trim();
-                            if (newValue !== targetValue && newValue !== currentValue) {
-                                toggleButton.click();
-                                await sleep(100);
-                            }
+                            safety++;
                         }
-                        return true;
+                        return toggleButton.textContent.trim() === targetText;
                     } else {
                         console.warn(`Toggle button not found for ${labelText}`);
                         return false; // Early return to prevent fallthrough to number input logic
@@ -5338,7 +5415,7 @@
                     // Open the section first
                     if (sectionName) {
                         await openSection(sectionName);
-                        await sleep(300); // Wait for section to fully open
+                        await sleep(300);
                     }
 
                     // Apply each field in the section
