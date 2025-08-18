@@ -24,8 +24,9 @@
         USE_LATIN_HYPERCUBE_SAMPLING: true,
         USE_MULTIPLE_STARTING_POINTS: true,
         
-        // Outlier-resistant scoring system
-        USE_ROBUST_SCORING: true,  // Use outlier-resistant metrics instead of raw TP PnL %
+        // Outlier-resistant scoring system (controlled via scoring mode below)
+        // Scoring mode: 'robust' | 'tp_only' | 'winrate_only'
+        SCORING_MODE: 'robust',
         MIN_WIN_RATE: 50.0,        // Win rate for small samples (<500 tokens)
         MIN_WIN_RATE_MEDIUM_SAMPLE: 40.0, // Win rate for medium samples (500-999 tokens)
         MIN_WIN_RATE_LARGE_SAMPLE: 30.0,  // Win rate for large samples (1000+ tokens)
@@ -98,6 +99,9 @@
         // Wallets
         'Min Holders': { min: 1, max: 5, step: 1, type: 'integer' },
         'Max Holders': { min: 1, max: 50, step: 5, type: 'integer' },
+        // Holder Growth Filter (new)
+        'Holders Growth %': { min: 0, max: 500, step: 10, type: 'integer' },
+        'Holders Growth Minutes': { min: 0, max: 1440, step: 10, type: 'integer' },
         'Min Unique Wallets': { min: 1, max: 3, step: 1, type: 'integer' },
         'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
@@ -139,7 +143,10 @@
             "Max KYC Wallets": undefined,
             "Max Unique Wallets": undefined,
             "Min Holders": undefined,
-            "Max Holders": undefined
+            "Max Holders": undefined,
+            // Holder Growth Filter (optional)
+            "Holders Growth %": undefined,
+            "Holders Growth Minutes": undefined
         },
         risk: {
             "Min Bundled %": undefined,
@@ -612,11 +619,19 @@
         return 4; // Default to Launchpads if no selection
     }
 
+    // Get scoring mode from UI or config
+    function getScoringMode() {
+        const modeSelect = document.getElementById('scoring-mode-select');
+        if (modeSelect && modeSelect.value) {
+            return modeSelect.value; // 'robust' | 'tp_only' | 'winrate_only'
+        }
+        return CONFIG.SCORING_MODE || 'robust';
+    }
+
     // Get date range from UI
     function getDateRange() {
         const fromDateElement = document.getElementById('from-date');
         const toDateElement = document.getElementById('to-date');
-        
         const fromDate = fromDateElement ? fromDateElement.value : null;
         const toDate = toDateElement ? toDateElement.value : null;
         
@@ -774,7 +789,7 @@
         const settingCategories = {
             'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders'],
+            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer'],
             'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %'],
             // Dynamically add TP fields if present
@@ -1442,6 +1457,9 @@
                 // Wallets
                 'Min Holders': 'minHoldersCount',
                 'Max Holders': 'maxHoldersCount',
+                // Holder Growth Filter
+                'Holders Growth %': 'minHoldersDiffPct',
+                'Holders Growth Minutes': 'maxHoldersSinceMinutes',
                 'Min Unique Wallets': 'minUniqueWallets',
                 'Max Unique Wallets': 'maxUniqueWallets',
                 'Min KYC Wallets': 'minKycWallets',
@@ -1567,6 +1585,7 @@
                 ['minBuyRatio', 'maxBuyRatio'],
                 ['minVolMcapPercent', 'maxVolMcapPercent'],
                 ['minDrainedPercent', 'maxDrainedPercent']
+                // Note: Holder growth params have no min/max pairing per API; 0 is minimum and no upper bound specified
             ];
             
             minMaxPairs.forEach(([minKey, maxKey]) => {
@@ -1928,7 +1947,9 @@
     }
     
     async function runParameterImpactDiscovery() {
-        const MIN_TOKENS_REQUIRED = 25;
+        // Scale token requirement by date range
+        const scaledThresholds = getScaledTokenThresholds();
+        const MIN_TOKENS_REQUIRED = scaledThresholds.MIN_TOKENS;
         const MIN_IMPROVEMENT_THRESHOLD = 1;
         
         try {
@@ -1941,7 +1962,30 @@
             // Step 1: Establish baseline with current UI configuration
             console.log('%c📊 Establishing baseline...', 'color: blue; font-weight: bold;');
             const currentConfig = getCurrentConfiguration();
-            const baselineResult = await backtesterAPI.fetchResults(currentConfig);
+            // Reuse global config cache
+            const cache = window.globalConfigCache || (window.globalConfigCache = new ConfigCache(1000));
+
+            // Helper to fetch with cache + min/max validation
+            const fetchWithCacheValidated = async (cfg, label) => {
+                const completeCfg = ensureCompleteConfig(cfg);
+                // Validate min/max pairs via API param mapping
+                const apiParams = backtesterAPI.mapParametersToAPI(completeCfg);
+                const validation = backtesterAPI.validateConfig(apiParams);
+                if (!validation.isValid) {
+                    console.log(`    ⚠️ Skipping invalid config (${label}): ${validation.errors.join(', ')}`);
+                    return { success: false, error: 'invalid_config' };
+                }
+                if (CONFIG.USE_CONFIG_CACHING && cache.has(completeCfg)) {
+                    const cached = cache.get(completeCfg);
+                    console.log(`    💾 Cache hit: ${label}`);
+                    return cached;
+                }
+                const res = await backtesterAPI.fetchResults(completeCfg);
+                if (CONFIG.USE_CONFIG_CACHING) cache.set(completeCfg, res);
+                return res;
+            };
+
+            const baselineResult = await fetchWithCacheValidated(currentConfig, 'Baseline');
             
             if (!baselineResult.success || !baselineResult.metrics) {
                 throw new Error('Failed to establish baseline configuration');
@@ -1951,7 +1995,9 @@
                 throw new Error(`Baseline has insufficient tokens: ${baselineResult.metrics.totalTokens} < ${MIN_TOKENS_REQUIRED}`);
             }
             
-            const baselineScore = baselineResult.metrics.tpPnlPercent;
+            // Use robust scoring for baseline
+            const baseRobust = calculateRobustScore(baselineResult.metrics);
+            const baselineScore = baseRobust && !baseRobust.rejected ? baseRobust.score : baselineResult.metrics.tpPnlPercent;
             const baselineTokens = baselineResult.metrics.totalTokens;
             
             const triggerMode = getTriggerMode();
@@ -1971,6 +2017,9 @@
                 { param: 'Min AG Score', section: 'tokenDetails' },
                 { param: 'Min Buy Ratio %', section: 'risk' },
                 { param: 'Max Bundled %', section: 'risk' },
+                // Holder Growth Filter (new)
+                { param: 'Holders Growth %', section: 'wallets' },
+                { param: 'Holders Growth Minutes', section: 'wallets' },
                 { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
@@ -2009,8 +2058,8 @@
                         // Create test configuration
                         const testConfig = ensureCompleteConfig(currentConfig);
                         testConfig[section][param] = value;
-                        
-                        const result = await backtesterAPI.fetchResults(testConfig);
+                        // Fetch with cache and validation
+                        const result = await fetchWithCacheValidated(testConfig, `${param}=${value}`);
                         
                         if (!result.success || !result.metrics) {
                             failedCount++;
@@ -2022,22 +2071,26 @@
                             console.log(`    ⚠️ ${value}: Insufficient tokens (${result.metrics.totalTokens})`);
                             continue;
                         }
-                        
-                        const improvement = result.metrics.tpPnlPercent - baselineScore;
+                        // Robust scoring for test value
+                        const robust = calculateRobustScore(result.metrics);
+                        if (robust && robust.rejected) {
+                            console.log(`    ❌ ${value}: Rejected by robust scoring (${robust.rejectionReason})`);
+                            continue;
+                        }
+                        const currentScore = robust ? robust.score : result.metrics.tpPnlPercent;
+                        const improvement = currentScore - baselineScore;
                         
                         paramResults.push({
                             value: value,
-                            score: result.metrics.tpPnlPercent,
+                            score: currentScore,
                             improvement: improvement,
                             tokens: result.metrics.totalTokens,
-                            winRate: result.metrics.winRate || 0
+                            winRate: result.metrics.winRate || 0,
+                            rawTpPnl: result.metrics.tpPnlPercent || 0
                         });
                         
-                        if (improvement > MIN_IMPROVEMENT_THRESHOLD) {
-                            console.log(`    ✅ ${value}: ${result.metrics.tpPnlPercent.toFixed(1)}% (+${improvement.toFixed(1)}%) [${result.metrics.totalTokens} tokens]`);
-                        } else {
-                            console.log(`    📊 ${value}: ${result.metrics.tpPnlPercent.toFixed(1)}% (${improvement.toFixed(1)}%) [${result.metrics.totalTokens} tokens]`);
-                        }
+                        const logPrefix = improvement > MIN_IMPROVEMENT_THRESHOLD ? '✅' : '📊';
+                        console.log(`    ${logPrefix} ${value}: score=${currentScore.toFixed(1)} (raw=${(result.metrics.tpPnlPercent||0).toFixed(1)}%, WR=${(result.metrics.winRate||0).toFixed(1)}%) Δ=${improvement.toFixed(1)} [${result.metrics.totalTokens} tokens]`);
                         
                         // Update progress
                         window.optimizationTracker.updateProgress(testCount, failedCount);
@@ -2083,7 +2136,7 @@
             console.log('%c' + '='.repeat(60), 'color: gold;');
             
             sortedResults.forEach((result, index) => {
-                console.log(`%c${(index + 1).toString().padStart(2)}. ${result.parameter} = ${result.bestValue} → +${result.bestImprovement.toFixed(1)}% improvement`, 
+                console.log(`%c${(index + 1).toString().padStart(2)}. ${result.parameter} = ${result.bestValue} → +${result.bestImprovement.toFixed(1)} improvement`, 
                     result.impact > 10 ? 'color: #ff6b6b; font-weight: bold;' : 
                     result.impact > 5 ? 'color: #feca57; font-weight: bold;' : 'color: #48dbfb;');
             });
@@ -2189,25 +2242,11 @@
             return null;
         }
 
-        // If robust scoring is disabled, use raw TP PnL %
-        if (!CONFIG.USE_ROBUST_SCORING) {
-            return {
-                score: metrics.tpPnlPercent,
-                components: {
-                    rawPnL: metrics.tpPnlPercent,
-                    winRate: metrics.winRate || 0,
-                    reliabilityFactor: 1.0,
-                    finalScore: metrics.tpPnlPercent
-                },
-                scoringMethod: 'Raw TP PnL %'
-            };
-        }
+    const mode = getScoringMode();
 
-        // Use raw TP PnL % without capping
-        const rawPnL = metrics.tpPnlPercent;
-        
-        // Win rate component (0-100%)
-        const winRate = metrics.winRate || 0;
+    // Use raw TP PnL % and Win Rate
+    const rawPnL = metrics.tpPnlPercent;
+    const winRate = metrics.winRate || 0;
         
         // Reliability factor based on sample size (more tokens = more reliable)
         // Uses logarithmic scaling: log(tokens)/log(100) capped at 1.0
@@ -2231,8 +2270,8 @@
             sampleTier = 'Small';
         }
         
-        // Reject configurations that don't meet minimum win rate requirements
-        if (winRate < effectiveMinWinRate) {
+        // Reject configurations that don't meet minimum win rate requirements (only for robust mode)
+        if (mode === 'robust' && winRate < effectiveMinWinRate) {
             console.log(`❌ REJECTED: Win rate ${winRate.toFixed(1)}% below ${effectiveMinWinRate}% threshold (${tokensCount} tokens, ${sampleTier} sample)`);
             return {
                 score: -Infinity, // Ensure this config is never selected as best
@@ -2250,18 +2289,27 @@
             };
         }
         
-        // If we get here, win rate meets requirements - no penalty needed
-        const winRatePenalty = 1.0;
-        
-        // Calculate composite score
-        // Formula: (Raw_PnL * RETURN_WEIGHT) + (Win_Rate * CONSISTENCY_WEIGHT) * Reliability_Factor * Win_Rate_Penalty
-        const returnComponent = rawPnL * CONFIG.RETURN_WEIGHT;
-        const consistencyComponent = winRate * CONFIG.CONSISTENCY_WEIGHT;
+        // Apply scoring weights based on mode
+        let returnWeight = CONFIG.RETURN_WEIGHT;
+        let consistencyWeight = CONFIG.CONSISTENCY_WEIGHT;
+        let reliabilityWeight = CONFIG.RELIABILITY_WEIGHT;
+        let scoringMethodDesc = '';
+        if (mode === 'tp_only') {
+            returnWeight = 1.0; consistencyWeight = 0.0; reliabilityWeight = 0.0;
+            scoringMethodDesc = 'TP PnL % Only';
+        } else if (mode === 'winrate_only') {
+            returnWeight = 0.0; consistencyWeight = 1.0; reliabilityWeight = 0.0;
+            scoringMethodDesc = 'Win Rate Only';
+        } else {
+            scoringMethodDesc = `Robust Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min win rate${mode==='robust'?' met':''})`;
+        }
+
+        // Composite score
+        const returnComponent = rawPnL * returnWeight;
+        const consistencyComponent = winRate * consistencyWeight;
         const baseScore = returnComponent + consistencyComponent;
-        
-        // Apply reliability weighting and win rate penalty
-        const reliabilityAdjustedScore = baseScore * (1 - CONFIG.RELIABILITY_WEIGHT) + baseScore * reliabilityFactor * CONFIG.RELIABILITY_WEIGHT;
-        const finalScore = reliabilityAdjustedScore * winRatePenalty;
+        const reliabilityAdjustedScore = baseScore * (1 - reliabilityWeight) + baseScore * reliabilityWeight * reliabilityFactor;
+        const finalScore = reliabilityAdjustedScore;
         
         return {
             score: finalScore,
@@ -2278,7 +2326,7 @@
                 reliabilityAdjustedScore: reliabilityAdjustedScore,
                 finalScore: finalScore
             },
-            scoringMethod: `Robust Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min win rate met)`
+            scoringMethod: scoringMethodDesc
         };
     }
 
@@ -2368,12 +2416,13 @@
             }
             
             // Calculate robust score for logging
-            const robustScoring = calculateRobustScore(metrics);
-            if (robustScoring && CONFIG.USE_ROBUST_SCORING) {
+        const robustScoring = calculateRobustScore(metrics);
+        const mode = getScoringMode();
+    if (robustScoring && mode !== 'tp_only') {
                 if (robustScoring.rejected) {
                     console.log(`❌ ${testName}: REJECTED - ${robustScoring.rejectionReason} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%`);
                 } else {
-                    console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Robust Score: ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+            console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Score(${robustScoring.scoringMethod}): ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
                 }
             } else {
                 console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
@@ -3441,6 +3490,12 @@
             const max = config['Max KYC Wallets'] || '∞';
             lines.push(`KYC Wallets: ${min} - ${max}`);
         }
+        if (config['Holders Growth %'] !== undefined) {
+            lines.push(`Holders Growth %: ${config['Holders Growth %']}%`);
+        }
+        if (config['Holders Growth Minutes'] !== undefined) {
+            lines.push(`Holders Growth Since: ${config['Holders Growth Minutes']} min`);
+        }
         lines.push('');
         
         lines.push('💧 LIQUIDITY CRITERIA:');
@@ -3677,9 +3732,7 @@
                 const result = await this.optimizer.testConfig(neighbor, 'Simulated annealing');
                 
                 if (result.success && result.metrics) {
-                    const neighborScore = CONFIG.USE_ROBUST_SCORING ? 
-                        calculateRobustScore(result.metrics)?.score || result.metrics.tpPnlPercent :
-                        result.metrics.tpPnlPercent;
+                    const neighborScore = calculateRobustScore(result.metrics)?.score ?? result.metrics.tpPnlPercent;
                     
                     const deltaE = neighborScore - currentScore;
                     
@@ -3788,6 +3841,8 @@
                 'Max Drained %': 'risk', 'Max Drained Count': 'risk',
                 'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
                 'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                // Holder Growth Filter
+                'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
                 'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
             };
             return sectionMap[param] || 'basic';
@@ -3806,11 +3861,11 @@
                 let methodDisplay = '';
                 let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
                 
-                // Show robust scoring details if available
-                if (CONFIG.USE_ROBUST_SCORING && tracker.metrics.robustScoring) {
+                // Show scoring details if available
+                if (tracker.metrics.robustScoring) {
                     const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (Robust)`;
-                    methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
+                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
                 }
                 
                 stats.innerHTML = `
@@ -3957,7 +4012,8 @@
                 
                 // Store scoring details in metrics for analysis
                 metrics.robustScoring = robustScoring;
-                metrics.optimizedMetric = CONFIG.USE_ROBUST_SCORING ? 'robustScore' : 'tpPnlPercent';
+                const modeForMetric = getScoringMode();
+                metrics.optimizedMetric = modeForMetric === 'tp_only' ? 'tpPnlPercent' : (modeForMetric === 'winrate_only' ? 'winRate' : 'robustScore');
                 metrics.optimizedValue = currentScore;
                 
                 // PnL optimization mode (default)
@@ -3987,10 +4043,10 @@
                     }, testName);
                     
                     // Enhanced logging with robust scoring details and pinned settings info
-                    if (CONFIG.USE_ROBUST_SCORING && metrics.robustScoring) {
+                    if (getScoringMode() !== 'tp_only' && metrics.robustScoring) {
                         const rs = metrics.robustScoring;
                         console.log(`🎉 New best! ${testName}:`);
-                        console.log(`   📊 Robust Score: ${currentScore.toFixed(1)} (${rs.scoringMethod})`);
+                        console.log(`   📊 Score: ${currentScore.toFixed(1)} (${rs.scoringMethod})`);
                         console.log(`   📈 Raw TP PnL: ${rs.components.rawPnL.toFixed(1)}%`);
                         console.log(`   🎯 Win Rate: ${rs.components.winRate.toFixed(1)}% | Tokens: ${metrics?.totalTokens || 0} | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%`);
                         if (window.pinnedSettings && window.pinnedSettings.enabled) {
@@ -4867,11 +4923,11 @@
                 let methodDisplay = '';
                 let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
                 
-                // Show robust scoring details if available
-                if (CONFIG.USE_ROBUST_SCORING && tracker.metrics.robustScoring) {
+                // Show scoring details if available
+                if (tracker.metrics.robustScoring) {
                     const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (Robust)`;
-                    methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
+                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
                 }
                 
                 stats.innerHTML = `
@@ -4995,7 +5051,7 @@
             },
             wallets: {
                 sectionTitle: 'Wallets',
-                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders']
+                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes']
             },
             risk: {
                 sectionTitle: 'Risk',
@@ -5905,7 +5961,7 @@
                                     color: #a0aec0;
                                     display: block;
                                     margin-bottom: 3px;
-                                ">Min Tokens per Day</label>
+                                ">Min Tokens / Day</label>
                                 <input type="number" id="min-tokens" value="10" min="5" max="1000" step="5" style="
                                     width: 100%;
                                     padding: 5px 6px;
@@ -5983,25 +6039,7 @@
                                 🚀 Optimization Methods
                             </div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px 6px;">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Uses statistical methods to reduce impact of outlier data points">
-                                    <input type="checkbox" id="robust-scoring" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">🛡️ Outlier-Resistant</span>
-                                </label>
+                                
                                 
                                 <label style="
                                     display: flex;
@@ -6102,6 +6140,25 @@
                                     ">
                                     <span style="font-weight: 500;">🔬 Deep Dive</span>
                                 </label>
+                                
+                                <!-- Scoring Mode Selector -->
+                                <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <label style="font-size: 10px; color: #a0aec0; font-weight: 500;">Scoring Mode</label>
+                                    <select id="scoring-mode-select" style="
+                                        width: 100%;
+                                        padding: 4px 6px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 10px;
+                                        outline: none;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                        <option value="robust" selected>Outlier-Resistant (PnL + Win Rate)</option>
+                                        <option value="tp_only">TP PnL % Only</option>
+                                        <option value="winrate_only">Win Rate Only</option>
+                                    </select>
+                                </div>
                             </div>
                             
                             <!-- Low Bundled % Constraint -->
@@ -7199,7 +7256,6 @@
             const minTokens = parseInt(document.getElementById('min-tokens')?.value) || 50;
             const runtimeMin = parseInt(document.getElementById('runtime-min')?.value) || 30;
             const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 1;
-            const robustScoring = document.getElementById('robust-scoring')?.checked || false;
             const simulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
             const multipleStartingPoints = document.getElementById('multiple-starting-points')?.checked || false;
             const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
@@ -7223,7 +7279,7 @@
                 console.log(`   📊 Token thresholds: Large=${scaledThresholds.LARGE_SAMPLE_THRESHOLD}, Medium=${scaledThresholds.MEDIUM_SAMPLE_THRESHOLD}, Min=${scaledThresholds.MIN_TOKENS}`);
                 console.log(`   🎯 Using minimum tokens: ${CONFIG.MIN_TOKENS} (UI: ${minTokens}, Scaled: ${scaledThresholds.MIN_TOKENS})`);
             }
-            CONFIG.USE_ROBUST_SCORING = robustScoring;
+            CONFIG.SCORING_MODE = getScoringMode();
             CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
             CONFIG.USE_MULTIPLE_STARTING_POINTS = multipleStartingPoints;
             CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
@@ -7232,7 +7288,10 @@
             CONFIG.CHAIN_RUN_COUNT = chainRunCount;
             
             const features = [];
-            if (robustScoring) features.push('outlier-resistant scoring');
+            const mode = CONFIG.SCORING_MODE;
+            if (mode === 'robust') features.push('outlier-resistant scoring');
+            if (mode === 'tp_only') features.push('TP PnL scoring');
+            if (mode === 'winrate_only') features.push('Win Rate scoring');
             if (simulatedAnnealing) features.push('simulated annealing');
             if (multipleStartingPoints) features.push('multiple starting points');
             if (latinHypercube) features.push('Latin hypercube sampling');
