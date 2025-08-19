@@ -4980,6 +4980,50 @@
     // Function to read current field value from the UI
     function getFieldValue(labelText) {
         try {
+            if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
+                if (!hgLabel) {
+                    return undefined;
+                }
+                
+                let container = hgLabel.parentElement;
+                let gridContainer = null;
+                let depth = 0;
+                
+                while (container && depth < 4) {
+                    const gridDiv = container.querySelector('.grid.grid-cols-2');
+                    if (gridDiv) {
+                        gridContainer = gridDiv;
+                        break;
+                    }
+                    container = container.parentElement;
+                    depth++;
+                }
+
+                if (!gridContainer) {
+                    return undefined;
+                }
+                
+                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
+                
+                if (!inputs || inputs.length < 2) {
+                    return undefined;
+                }
+                
+                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
+                const input = inputs[idx];
+                if (!input) {
+                    return undefined;
+                }
+
+                const value = input.value.trim();
+                if (value === '' || value === null) {
+                    return undefined;
+                }
+                return parseFloat(value);
+            }
+
             // Find the label using the same approach as setFieldValue
             const labels = Array.from(document.querySelectorAll('.sidebar-label'));
             const label = labels.find(el => el.textContent.trim() === labelText);
@@ -5173,7 +5217,7 @@
         const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
 
         // Special handling for Holders Growth Filter composite field
-        if (labelText === 'Min Holders Growth %' || labelText === 'Max Holders Growth Since (min)') {
+        if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
             try {
                 // Find the "Holders Growth Filter" block which contains two numeric inputs
                 const labels = Array.from(document.querySelectorAll('.sidebar-label'));
@@ -5182,25 +5226,33 @@
                     console.warn('Holders Growth Filter label not found');
                     return false;
                 }
-
-                // Find a container that holds at least two number inputs
-                let searchContainer = hgLabel.parentElement;
-                let inputs = [];
+                let container = hgLabel.parentElement;
+                let gridContainer = null;
                 let depth = 0;
-                while (searchContainer && depth < 4) {
-                    inputs = Array.from(searchContainer.querySelectorAll('input[type="number"]'));
-                    if (inputs.length >= 2) break;
-                    searchContainer = searchContainer.parentElement;
+                
+                while (container && depth < 4) {
+                    const gridDiv = container.querySelector('.grid.grid-cols-2');
+                    if (gridDiv) {
+                        gridContainer = gridDiv;
+                        break;
+                    }
+                    container = container.parentElement;
                     depth++;
                 }
 
-                if (!inputs || inputs.length < 2) {
-                    console.warn('Holders Growth inputs not found');
+                if (!gridContainer) {
+                    console.warn('Holders Growth grid container not found');
                     return false;
                 }
-
-                // Index: 0 => Growth %, 1 => Minutes
-                const idx = (labelText === 'Min Holders Growth %') ? 0 : 1;
+                
+                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
+                
+                if (!inputs || inputs.length < 2) {
+                    console.warn('Holders Growth inputs not found, found:', inputs.length);
+                    return false;
+                }
+                
+                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
                 const input = inputs[idx];
                 if (!input) {
                     console.warn('Target Holders Growth input not found at expected index');
@@ -5213,6 +5265,10 @@
                         const parsed = parseFloat(value);
                         if (!isNaN(parsed)) processedValue = parsed;
                     }
+                    
+                    if (typeof processedValue === 'number' && !isNaN(processedValue)) {
+                        processedValue = Math.round(processedValue);
+                    }
                 }
 
                 input.focus();
@@ -5221,6 +5277,8 @@
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
                 input.blur();
+                
+                console.log(`✅ Set ${labelText} to ${shouldClear ? 'cleared' : processedValue}`);
                 return true;
             } catch (err) {
                 console.warn('Error setting Holders Growth Filter:', err.message);
@@ -7750,6 +7808,8 @@
             ['Max KYC Wallets', config['Max KYC Wallets']],
             ['Min Holders', config['Min Holders']],
             ['Max Holders', config['Max Holders']],
+            ['Holders Growth %', config['Holders Growth %']],
+            ['Holders Growth Minutes', config['Holders Growth Minutes']]
         ]);
         
         // Risk Section Fields (including booleans)
