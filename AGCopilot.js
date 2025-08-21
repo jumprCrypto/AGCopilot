@@ -22,7 +22,6 @@
         USE_GENETIC_ALGORITHM: true,
         USE_SIMULATED_ANNEALING: true,
         USE_LATIN_HYPERCUBE_SAMPLING: true,
-        USE_MULTIPLE_STARTING_POINTS: true,
         
         // Outlier-resistant scoring system (controlled via scoring mode below)
         // Scoring mode: 'robust' | 'tp_only' | 'winrate_only'
@@ -177,32 +176,15 @@
     // ========================================
     // Preset configurations (all original presets restored)
     const PRESETS = {
-        9747: {
-            category: "Custom",
-            description: "Buy Ratio 97%+, Min V2MC 47%",
-            risk: { "Min Buy Ratio %": 97, "Max Buy Ratio %": 100, "Min Vol MCAP %": 47 }
-        },
         oldDeployer: { 
             category: "Custom",
             description: "Old Deployer",
             tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
         },
-        oldishDeployer: { 
-            category: "Custom",
-            description: "Oldish Deployer",
-            tokenDetails: { "Min Deployer Age (min)": 1200, "Min AG Score": "6" },
-            risk: { "Max Bundled %": 5, "Min Buy Ratio %": 20, "Max Vol MCAP %": 40, "Max Drained Count": 6 },
-            advanced: { "Max TTC (sec)": 400 }
-        },
         minWinPred: { 
             category: "Custom",
             description: "Min Win Pred % 28",
             advanced: { "Min Win Pred %": 28 }
-        },
-        bundle1_74: { 
-            category: "Custom",
-            description: "Max Bundled % 1.74",
-            risk: { "Max Bundled %": 1.74 } 
         },
         deployerBalance10: { 
             category: "Custom",
@@ -267,8 +249,8 @@
         agedTokens: {
             priority: 9,
             category: "Param Discovery",
-            description: "Min Token Age (sec) 10005",
-            tokenDetails: { "Min Token Age (sec)": 10005 }
+            description: "Min Token Age (sec) 10000",
+            tokenDetails: { "Min Token Age (sec)": 10000 }
         },
         lowVolMcapCap: {
             priority: 10,
@@ -306,10 +288,6 @@
                 CONFIG.RATE_LIMIT_RECOVERY,
                 CONFIG.RATE_LIMIT_SAFETY_MARGIN
             );
-        }
-        
-        if (window.rateLimiter) {
-            window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY);
         }
         
         console.log(`🔄 Rate limiting switched to ${newMode.toUpperCase()} mode:`);
@@ -531,36 +509,15 @@
         }
     }
 
-    // Legacy APIRateLimiter (now unused - signal analysis uses BurstRateLimiter)
-    class APIRateLimiter {
-        constructor(delay = 500) {
-            this.delay = delay;
-            this.lastRequest = 0;
-        }
-
-        async throttle() {
-            const now = Date.now();
-            const elapsed = now - this.lastRequest;
-            
-            if (elapsed < this.delay) {
-                await sleep(this.delay - elapsed);
-            }
-            
-            this.lastRequest = Date.now();
-        }
-    }
-
     // Create rate limiter instances
     // Note: Signal analysis now uses BurstRateLimiter for consistency and performance
-    window.rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY); // Legacy - kept for backward compatibility
     window.burstRateLimiter = new BurstRateLimiter(
         CONFIG.RATE_LIMIT_THRESHOLD, 
         CONFIG.RATE_LIMIT_RECOVERY, 
         CONFIG.RATE_LIMIT_SAFETY_MARGIN
-    ); // Used by both optimization and signal analysis
+    );
     
     // Create local references for backward compatibility
-    const rateLimiter = window.rateLimiter;
     const burstRateLimiter = window.burstRateLimiter;
 
     // Format functions for signal analysis
@@ -1337,16 +1294,14 @@
     // Global optimization tracker instance
     window.optimizationTracker = new OptimizationTracker();
 
-    // Initialize bestConfigTracker placeholder if it doesn't exist
     if (!window.bestConfigTracker) {
         window.bestConfigTracker = {
             update: function(config, metrics, score, source) {
-                // Placeholder - store values for backward compatibility
                 this.config = config;
                 this.metrics = metrics;
                 this.score = score;
                 this.source = source;
-                this.id = 'placeholder-' + Date.now();
+                this.id = Date.now();
             },
             getConfig: function() { return this.config; },
             getDebugInfo: function() { return { config: this.config, metrics: this.metrics, score: this.score, source: this.source }; }
@@ -1708,24 +1663,10 @@
                 
                 const url = this.buildApiUrl(apiParams);
                 
-                // Debug logging for problematic parameters
-                const problematicParams = [];
-                Object.entries(apiParams).forEach(([key, value]) => {
-                    if (value === null || value === undefined || String(value) === 'NaN' || !isFinite(Number(value))) {
-                        problematicParams.push(`${key}=${value}`);
-                    }
-                });
-                
-                if (problematicParams.length > 0) {
-                    console.warn(`⚠️ Potential problematic parameters detected: ${problematicParams.join(', ')}`);
-                }
-                
                 // Log date range information if present
                 if (apiParams.fromDate || apiParams.toDate) {
                     console.log(`📅 Date range: ${apiParams.fromDate || 'No start'} to ${apiParams.toDate || 'No end'}`);
                 }
-                
-                console.log(`🔗 API URL: ${url.substring(0, 150)}...${url.includes('tpSize') ? ' (with multiple TPs)' : ''}${url.includes('fromDate') || url.includes('toDate') ? ' (with date range)' : ''}`);
                 
                 // Additional validation for AG Score in URL
                 if (url.includes('minAgScore=NaN') || url.includes('minAgScore=undefined')) {
@@ -2289,7 +2230,6 @@
         
         // Reject configurations that don't meet minimum win rate requirements (only for robust mode)
         if (mode === 'robust' && winRate < effectiveMinWinRate) {
-            console.log(`❌ REJECTED: Win rate ${winRate.toFixed(1)}% below ${effectiveMinWinRate}% threshold (${tokensCount} tokens, ${sampleTier} sample)`);
             return {
                 score: -Infinity, // Ensure this config is never selected as best
                 rejected: true,
@@ -2396,7 +2336,6 @@
     // Test configuration via API call (New: Direct API instead of UI scraping)
     async function testConfigurationAPI(config, testName = 'API Test') {
         try {
-            console.log(`🧪 Testing via API: ${testName}`);
             
             // Clean the configuration before testing
             const cleanedConfig = cleanConfiguration(config);
@@ -2439,7 +2378,7 @@
                 if (robustScoring.rejected) {
                     console.log(`❌ ${testName}: REJECTED - ${robustScoring.rejectionReason} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%`);
                 } else {
-            console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Score(${robustScoring.scoringMethod}): ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
+                    console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens | Score(${robustScoring.scoringMethod}): ${robustScoring.score.toFixed(1)} | Raw TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}% | Win Rate: ${metrics.winRate?.toFixed(1)}%`);
                 }
             } else {
                 console.log(`✅ ${testName}: ${metrics?.totalTokens || 0} tokens, TP PnL: ${metrics.tpPnlPercent?.toFixed(1)}%, ATH PnL: ${metrics.athPnlPercent?.toFixed(1)}%, Win Rate: ${metrics.winRate?.toFixed(1)}%`);
@@ -4299,6 +4238,11 @@
                 return [];
             }
 
+            // Special handling for Holders Growth fields - they must be set as a pair
+            if (param === 'Holders Growth %' || param === 'Holders Growth Minutes') {
+                return this.generateHoldersGrowthPairVariations(config, param);
+            }
+
             const currentValue = config[section]?.[param];
             const variations = [];
 
@@ -4347,6 +4291,63 @@
                 return { config: newConfig, name: `${param}: ${val}` };
             }).filter(variation => variation !== null); // Remove invalid variations
         }
+        
+        generateHoldersGrowthCombinations(config) {
+            const currentGrowthPct = config.wallets?.['Holders Growth %'];
+            const currentMinutes = config.wallets?.['Holders Growth Minutes'];
+            
+            let combinations = [];
+            
+            const growthSteps = [0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 90, 100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500];
+            const minuteSteps = [0, 1, 2, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 960, 1440];
+            
+            for (const growth of growthSteps) {
+                for (const minutes of minuteSteps) {
+                    combinations.push({
+                        growthPct: growth,
+                        minutes: minutes,
+                        efficiency: growth / Math.max(minutes, 1)
+                    });
+                }
+            }
+            
+            combinations.sort((a, b) => b.efficiency - a.efficiency);
+            
+            const filteredCombinations = combinations.filter(combo => {
+                if (combo.growthPct === currentGrowthPct && combo.minutes === currentMinutes) {
+                    return false;
+                }
+                
+                if (combo.growthPct === 0 && combo.minutes === 0) {
+                    return false;
+                }
+                    
+                return true;
+            });
+            
+            return filteredCombinations;
+        }
+
+        // Generate paired variations for Holders Growth fields (now uses unified generator)
+        generateHoldersGrowthPairVariations(config, triggerParam) {
+            const combinations = this.generateHoldersGrowthCombinations(config);
+            const variations = [];
+            
+            // Create variations (limit to top 6 for performance in regular optimization)
+            for (const combo of combinations.slice(0, 6)) {
+                const newConfig = deepClone(config);
+                newConfig.wallets["Holders Growth %"] = combo.growthPct;
+                newConfig.wallets["Holders Growth Minutes"] = combo.minutes;
+                
+                variations.push({
+                    config: newConfig,
+                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min (${combo.strategy}, eff: ${combo.efficiency.toFixed(1)})`
+                });
+            }
+            
+            console.log(`🔗 Generated ${variations.length} paired Holders Growth variations from unified generator`);
+            return variations;
+        }
 
         // Main parameter testing phase
         async runParameterPhase() {
@@ -4370,6 +4371,20 @@
                     console.log(`📌 Skipping ${pinnedParams.length} pinned parameters: ${pinnedParams.join(', ')}`);
                     console.log(`🔍 Testing ${parameters.length} unpinned parameters out of ${allParameters.length} total`);
                 }
+            }
+            
+            // 🔗 Handle Holders Growth fields as a pair - only test once, not individually
+            const hasHoldersGrowthPct = parameters.includes('Holders Growth %');
+            const hasHoldersGrowthMin = parameters.includes('Holders Growth Minutes');
+            
+            if (hasHoldersGrowthPct && hasHoldersGrowthMin) {
+                // Remove the Minutes field and keep only the % field to trigger pair testing
+                parameters = parameters.filter(param => param !== 'Holders Growth Minutes');
+                console.log('🔗 Holders Growth fields detected - will test as paired combinations');
+            } else if (hasHoldersGrowthMin && !hasHoldersGrowthPct) {
+                // If only Minutes is unpinned, remove it since it needs both fields
+                parameters = parameters.filter(param => param !== 'Holders Growth Minutes');
+                console.log('⚠️ Holders Growth Minutes cannot be optimized without Holders Growth % - skipping');
             }
             
             if (parameters.length === 0) {
@@ -4454,7 +4469,6 @@
 
                 // Get optimization settings from UI
                 const useSimulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
-                const useMultipleStarts = document.getElementById('multiple-starting-points')?.checked || false;
                 const useLatinHypercube = document.getElementById('latin-hypercube')?.checked || false;
                 const useCorrelatedParams = document.getElementById('correlated-params')?.checked || false;
                 const useDeepDive = document.getElementById('deep-dive')?.checked || false;
@@ -4462,20 +4476,14 @@
 
                 console.log('🚀 Optimization settings:', {
                     useSimulatedAnnealing,
-                    useMultipleStarts,
                     useLatinHypercube,
                     useCorrelatedParams,
                     useDeepDive,
                     targetPnl
                 });
-
-                // 1. Multiple Starting Points (if enabled)
-                if (useMultipleStarts && this.getRemainingTime() > 0.8) {
-                    await this.runMultipleStartingPoints();
-                } else {
-                    // 1. Establish baseline
-                    await this.establishBaseline();
-                }
+                
+                // 1. Establish baseline
+                await this.establishBaseline();
 
                 // 2. Parameter testing phase
                 if (this.getRemainingTime() > 0.6 && !window.STOPPED) {
@@ -4577,41 +4585,6 @@
             }
         }
 
-        async runMultipleStartingPoints() {
-            updateProgress('🚀 Multiple Starting Points', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-
-            // Use all presets as starting points
-            const startingPoints = Object.entries(PRESETS);
-
-            for (const [presetName, startingPoint] of startingPoints) {
-                if (window.STOPPED) break;
-
-                const result = await this.testConfig(startingPoint, `Starting point: ${presetName}`);
-                if (!result.success) continue;
-
-                // Test variations around this starting point (only if we have reasonable time)
-                if (this.getRemainingTime() > 0.01) {
-                    const topParam = this.parameterTests[0]?.param;
-                    if (topParam) {
-                        const variations = this.generateParameterVariations(startingPoint, topParam, this.getSection(topParam));
-                        if (variations) {
-                            for (const variation of variations.slice(0, 2)) {
-                                if (window.STOPPED) break;
-                                await this.testConfig(variation.config, variation.name);
-                            }
-                        }
-                    }
-                }
-
-                // Early termination if target achieved
-                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-                if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-                    return;
-                }
-            }
-        }
-
         async runDeepDive() {
             updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
 
@@ -4644,7 +4617,18 @@
 
         // Enhanced variation generation using Latin Hypercube Sampling
         generateLatinHypercubeVariations(baseConfig, parameters, numSamples = 6) {
-            const samples = this.latinSampler.generateSamples(parameters, numSamples);
+            // Handle Holders Growth fields specially - treat as paired parameter
+            let processedParams = [...parameters];
+            const hasHoldersGrowthPct = parameters.includes('Holders Growth %');
+            const hasHoldersGrowthMin = parameters.includes('Holders Growth Minutes');
+            
+            // If both Holders Growth fields are in the parameter list, treat as one paired parameter
+            if (hasHoldersGrowthPct && hasHoldersGrowthMin) {
+                processedParams = processedParams.filter(p => p !== 'Holders Growth Minutes');
+                console.log('🔗 Latin Hypercube: Treating Holders Growth as paired parameter');
+            }
+            
+            const samples = this.latinSampler.generateSamples(processedParams, numSamples);
             const variations = [];
             
             for (const sample of samples) {
@@ -4654,8 +4638,28 @@
                 for (const [param, value] of Object.entries(sample)) {
                     const section = this.getSection(param);
                     if (config[section]) {
-                        config[section][param] = value;
-                        name += `${param}=${value} `;
+                        // Special handling for Holders Growth %
+                        if (param === 'Holders Growth %') {
+                            config[section][param] = value;
+                            
+                            // Generate a correlated Minutes value based on the Growth %
+                            let minutesValue;
+                            if (value <= 25) {
+                                minutesValue = 5 + Math.floor(Math.random() * 10); // 5-15 minutes
+                            } else if (value <= 75) {
+                                minutesValue = 10 + Math.floor(Math.random() * 20); // 10-30 minutes  
+                            } else if (value <= 150) {
+                                minutesValue = 15 + Math.floor(Math.random() * 45); // 15-60 minutes
+                            } else {
+                                minutesValue = 30 + Math.floor(Math.random() * 210); // 30-240 minutes
+                            }
+                            
+                            config[section]['Holders Growth Minutes'] = minutesValue;
+                            name += `${param}=${value}% (${minutesValue}min) `;
+                        } else {
+                            config[section][param] = value;
+                            name += `${param}=${value} `;
+                        }
                     }
                 }
                 
@@ -4706,6 +4710,18 @@
                 variations.push({ 
                     config, 
                     name: `Wallets: U${range.minUnique}-${range.maxUnique} K${range.minKyc}-${range.maxKyc}` 
+                });
+            }
+            
+            const holdersGrowthCombinations = this.generateHoldersGrowthCombinations(baseConfig);
+            
+            for (const combo of holdersGrowthCombinations.slice(0, 12)) { // Take more for correlated phase
+                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
+                config.wallets["Holders Growth %"] = combo.growthPct;
+                config.wallets["Holders Growth Minutes"] = combo.minutes;
+                variations.push({ 
+                    config, 
+                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min (${combo.strategy})` 
                 });
             }
             
@@ -5494,6 +5510,23 @@
                         await sleep(150);
                     }
                     
+                    if (section === 'wallets') {
+                        const growthPct = sectionConfig['Holders Growth %'];
+                        const growthMin = sectionConfig['Holders Growth Minutes'];                        
+                        
+                        if (growthPct !== undefined && growthMin === undefined) {
+                            totalFields++;
+                            const success = await setFieldValue('Holders Growth %', 'clear');
+                            if (success) successCount++;
+                            await sleep(150);
+                        } else if (growthMin !== undefined && growthPct === undefined) {
+                            totalFields++;
+                            const success = await setFieldValue('Holders Growth Minutes', 'clear');
+                            if (success) successCount++;
+                            await sleep(150);
+                        }
+                    }
+                    
                     // Delay between sections
                     await sleep(200);
                 }
@@ -6173,7 +6206,7 @@
                             ">
                                 🚀 Optimization Methods
                             </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px 6px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px 6px;">
                                 
                                 
                                 <label style="
@@ -6194,26 +6227,6 @@
                                         accent-color: #63b3ed;
                                     ">
                                     <span style="font-weight: 500;">🔥 Simulated Annealing</span>
-                                </label>
-                                
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Tests all available presets as starting points for comprehensive coverage">
-                                    <input type="checkbox" id="multiple-starting-points" style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">🎯 Multiple Starts</span>
                                 </label>
                                 
                                 <label style="
@@ -7392,7 +7405,6 @@
             const runtimeMin = parseInt(document.getElementById('runtime-min')?.value) || 30;
             const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 1;
             const simulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
-            const multipleStartingPoints = document.getElementById('multiple-starting-points')?.checked || false;
             const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
             const correlatedParams = document.getElementById('correlated-params')?.checked || false;
             const deepDive = document.getElementById('deep-dive')?.checked || false;
@@ -7416,7 +7428,6 @@
             }
             CONFIG.SCORING_MODE = getScoringMode();
             CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
-            CONFIG.USE_MULTIPLE_STARTING_POINTS = multipleStartingPoints;
             CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
             CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
             CONFIG.USE_DEEP_DIVE = deepDive;
@@ -7428,7 +7439,6 @@
             if (mode === 'tp_only') features.push('TP PnL scoring');
             if (mode === 'winrate_only') features.push('Win Rate scoring');
             if (simulatedAnnealing) features.push('simulated annealing');
-            if (multipleStartingPoints) features.push('multiple starting points');
             if (latinHypercube) features.push('Latin hypercube sampling');
             if (correlatedParams) features.push('correlated parameters');
             if (deepDive) features.push('deep dive analysis');
