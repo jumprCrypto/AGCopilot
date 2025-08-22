@@ -247,6 +247,7 @@
                 'Vol2MC',
                 'AG Score',
                 'Holders Count',
+                'Top Holder Pct',
                 'Bundle',
                 'Drained%',
                 'Drained Count',
@@ -322,6 +323,7 @@
                     vol2MC,                                                   // Vol2MC
                     swap.criteria?.agScore || '',                             // AG Score
                     swap.criteria.holdersCount,                                            // Holders Count
+                    swap.criteria?.topHoldersPct || '',                       // Top Holder Pct
                     bundlePercent,                                            // Bundle
                     drainedPercent,                                            // Bundle
                     swap.criteria.drainedCount,

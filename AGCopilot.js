@@ -5804,7 +5804,6 @@
         }
         
         isSplitScreenMode = true;
-        console.log('🖥️ Split-screen mode enabled');
     }
     
     function disableSplitScreen() {
@@ -6347,7 +6346,6 @@
 
                 <!-- Signal Analysis Tab -->
                 <div id="signal-tab" class="tab-content">
-                    <div style="padding: 20px;">
                         <!-- Contract Input -->
                         <div style="margin-bottom: 12px;">
                             <label style="
@@ -6626,7 +6624,6 @@
                                 </button>
                             </div>
                         </div>
-                    </div>
                 </div>
 
                 <!-- Permanent Results Section at Bottom -->
@@ -6873,7 +6870,6 @@
         
         // Always use split-screen mode (after a short delay to ensure DOM is ready)
         setTimeout(() => {
-            console.log('🖥️ Enabling split-screen mode (always-on)');
             enableSplitScreen();
         }, 100);
         
