@@ -3815,7 +3815,7 @@
                 
                 let scoreDisplay = tracker.score.toFixed(1);
                 let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
+                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
                 
                 // Show scoring details if available
                 if (tracker.metrics.robustScoring) {
@@ -4954,7 +4954,7 @@
                 
                 let scoreDisplay = tracker.score.toFixed(1);
                 let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${tracker.id.substring(0, 8)} | ${tracker.source})</span>`;
+                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
                 
                 // Show scoring details if available
                 if (tracker.metrics.robustScoring) {
@@ -6824,10 +6824,10 @@
         window.applyBestConfigToUI = async function() {
             const tracker = window.bestConfigTracker;
             if (tracker && tracker.config) {
-                console.log(`⚙️ Applying best configuration (ID: ${tracker.id.substring(0, 8)}) to UI...`);
+                console.log(`⚙️ Applying best configuration (ID: ${String(tracker.id).substring(0, 8)}) to UI...`);
                 const success = await applyConfigToUI(tracker.config, true); // Skip stop check for manual best config application
                 if (success) {
-                    console.log(`✅ Best configuration (ID: ${tracker.id.substring(0, 8)}) applied to UI successfully!`);
+                    console.log(`✅ Best configuration (ID: ${String(tracker.id).substring(0, 8)}) applied to UI successfully!`);
                 } else {
                     console.log('❌ Failed to apply best configuration to UI');
                 }
@@ -6843,12 +6843,12 @@
                 
                 // Add metadata comment at the top
                 const metadataComment = 
-                    `// Best configuration (ID: ${tracker.id.substring(0, 8)})\n` + 
+                    `// Best configuration (ID: ${String(tracker.id).substring(0, 8)})\n` + 
                     `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
-                    `// Generated: ${new Date(tracker.timestamp).toLocaleString()}\n\n`;
+                    `// Generated: ${new Date(tracker.id).toLocaleString()}\n\n`;
                 
                 navigator.clipboard.writeText(metadataComment + configText).then(() => {
-                    console.log(`📋 Best configuration (ID: ${tracker.id.substring(0, 8)}) copied to clipboard!`);
+                    console.log(`📋 Best configuration (ID: ${String(tracker.id).substring(0, 8)}) copied to clipboard!`);
                 }).catch(err => {
                     console.log('❌ Failed to copy configuration to clipboard');
                 });
@@ -7935,7 +7935,7 @@
         window.applyBestConfigToUI = async function() {
             const tracker = window.bestConfigTracker;
             if (tracker && tracker.config) {
-                console.log(`⚙️ Applying best configuration (ID: ${tracker.id.substring(0, 8)}) to UI...`);
+                console.log(`⚙️ Applying best configuration (ID: ${String(tracker.id).substring(0, 8)}) to UI...`);
                 const success = await applyConfigToUI(tracker.config, true);
                 if (success) {
                     console.log('✅ Best configuration applied to backtester UI');
@@ -7954,9 +7954,9 @@
                 
                 // Add metadata comment at the top
                 const metadataComment = 
-                    `// Best configuration (ID: ${tracker.id.substring(0, 8)})\n` + 
+                    `// Best configuration (ID: ${String(tracker.id).substring(0, 8)})\n` + 
                     `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
-                    `// Generated: ${new Date(tracker.timestamp).toLocaleString()}\n\n`;
+                    `// Generated: ${new Date(tracker.id).toLocaleString()}\n\n`;
                 
                 navigator.clipboard.writeText(metadataComment + configText).then(() => {
                     console.log('📋 Best configuration copied to clipboard with metadata');
