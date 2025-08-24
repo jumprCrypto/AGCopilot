@@ -59,6 +59,22 @@
         return `${value.toFixed(2)}%`;
     }
 
+    function formatSource(source) {
+        if (!source) return 'Native';
+        
+        switch (source) {   
+            case 1:
+                return 'Pumpfun';
+            case 2:
+                return 'Launchcoin';
+            case 3:
+                return 'Launchpad';
+            default:
+                return 'Native';
+        }
+    }
+
+
     // ========================================
     // 🌐 API FUNCTIONS
     // ========================================
@@ -154,6 +170,7 @@
             atlMcap: formatMcap(tokenInfo.atlMcap),
             atlMcapRaw: tokenInfo.atlMcap,
             atlTime: formatTimestamp(tokenInfo.atlTime),
+            source: formatSource(tokenInfo.source),
             
             // Performance Metrics
             athMultiplier: tokenInfo.athMcap && tokenInfo.signalMcap ? 
@@ -259,7 +276,8 @@
                 'Funding Address',
                 'Deployer Age',
                 'Token Age',
-                'Description'
+                'Description',
+                'Source'
             ].join('\t'));
         }
         
@@ -335,7 +353,8 @@
                     '',                                                       // Funding Address (not available in current data)
                     deployerAge,                                              // Deployer Age
                     tokenAge,                                                 // Token Age
-                    swap.criteria?.hasDescription ? 'Yes' : 'No'             // Description
+                    swap.criteria?.hasDescription ? 'Yes' : 'No',             // Description
+                    processed.source || ''                                    // Source
                 ];
                 csvLines.push(row.join('\t'));
             });
