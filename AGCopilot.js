@@ -86,13 +86,13 @@
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
         // Basic
-        'Min MCAP (USD)': { min: 0, max: 10000, step: 1000, type: 'integer'},
+        'Min MCAP (USD)': { min: 0, max: 20000, step: 1000, type: 'integer'},
         'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
 
         // Token Details
         'Min Deployer Age (min)': { min: 0, max: 10080, step: 5, type: 'integer' },
-        'Min Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
-        'Max Token Age (sec)': { min: 0, max: 99999, step: 15, type: 'integer' },
+        'Min Token Age (sec)': { min: 0, max: 86400, step: 15, type: 'integer' },
+        'Max Token Age (sec)': { min: 0, max: 259200, step: 15, type: 'integer' },
         'Min AG Score': { min: 0, max: 10, step: 1, type: 'integer' },
 
         // Wallets
@@ -118,8 +118,8 @@
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 604800, step: 5, type: 'integer' },
-        'Max TTC (sec)': { min: 10, max: 604800, step: 10, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 259200, step: 5, type: 'integer' },
+        'Max TTC (sec)': { min: 10, max: 259200, step: 10, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
@@ -4341,7 +4341,7 @@
                 
                 variations.push({
                     config: newConfig,
-                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min (${combo.strategy}, eff: ${combo.efficiency.toFixed(1)})`
+                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min, eff: ${combo.efficiency.toFixed(1)})`
                 });
             }
             
