@@ -26,8 +26,8 @@
         // Outlier-resistant scoring system (controlled via scoring mode below)
         // Scoring mode: 'robust' | 'tp_only' | 'winrate_only'
         SCORING_MODE: 'robust',
-        MIN_WIN_RATE: 50.0,        // Win rate for small samples (<500 tokens)
-        MIN_WIN_RATE_MEDIUM_SAMPLE: 40.0, // Win rate for medium samples (500-999 tokens)
+        MIN_WIN_RATE: 35.0,        // Win rate for small samples (<500 tokens)
+        MIN_WIN_RATE_MEDIUM_SAMPLE: 33.0, // Win rate for medium samples (500-999 tokens)
         MIN_WIN_RATE_LARGE_SAMPLE: 30.0,  // Win rate for large samples (1000+ tokens)
         MEDIUM_SAMPLE_THRESHOLD: 500,     // Token count threshold for medium sample tier
         LARGE_SAMPLE_THRESHOLD: 1000,     // Token count threshold for large sample tier
@@ -739,18 +739,16 @@
         Object.entries(flatConfig).forEach(([key, value]) => {
             const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer');
             if (value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
-                if (value !== null || isButtonToggle) {
+                // For toggle buttons (Description/Fresh Deployer), only include if they're set to "Yes" (true)
+                if (isButtonToggle) {
+                    if (value === true) {
+                        validSettings[key] = value;
+                    }
+                } else if (value !== null) {
                     validSettings[key] = value;
                 }
             }
         });
-        
-        ['Description', 'Fresh Deployer'].forEach(k => {
-            if (!Object.prototype.hasOwnProperty.call(validSettings, k)) {
-                validSettings[k] = null;
-            }
-        });
-
         // Group settings by category for better organization
         const settingCategories = {
             'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
@@ -6001,8 +5999,8 @@
                 <!-- Configuration Tab -->
                 <div id="config-tab" class="tab-content active">
                     
-                        <!-- Presets and Trigger Mode -->
-                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+                        <!-- Presets and Settings Row 1 -->
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px;">
                             <div>
                                 <label style="
                                     font-size: 11px;
@@ -6013,12 +6011,12 @@
                                 ">Quick Presets</label>
                                 <select id="preset-dropdown" style="
                                     width: 100%;
-                                    padding: 6px 10px;
+                                    padding: 5px 8px;
                                     background: #2d3748;
                                     border: 1px solid #4a5568;
                                     border-radius: 4px;
                                     color: #e2e8f0;
-                                    font-size: 11px;
+                                    font-size: 10px;
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
@@ -6035,12 +6033,12 @@
                                 ">Trigger Mode</label>
                                 <select id="trigger-mode-select" style="
                                     width: 100%;
-                                    padding: 6px 10px;
+                                    padding: 5px 8px;
                                     background: #2d3748;
                                     border: 1px solid #4a5568;
                                     border-radius: 4px;
                                     color: #e2e8f0;
-                                    font-size: 11px;
+                                    font-size: 10px;
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
@@ -6054,24 +6052,24 @@
                             </div>
                         </div>
                         
-                        <!-- Date Range Selection -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                        <!-- Date Range and Target Row 2 -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                             <div>
                                 <label style="
-                                    font-size: 11px;
+                                    font-size: 10px;
                                     font-weight: 500;
                                     color: #a0aec0;
                                     display: block;
                                     margin-bottom: 2px;
-                                ">From Date (optional)</label>
+                                ">From Date</label>
                                 <input type="date" id="from-date" style="
                                     width: 100%;
-                                    padding: 4px 8px;
+                                    padding: 3px 4px;
                                     background: #2d3748;
                                     border: 1px solid #4a5568;
                                     border-radius: 4px;
                                     color: #e2e8f0;
-                                    font-size: 10px;
+                                    font-size: 9px;
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
@@ -6083,44 +6081,65 @@
                                     color: #a0aec0;
                                     display: block;
                                     margin-bottom: 2px;
-                                ">To Date (optional)</label>
+                                ">To Date</label>
                                 <input type="date" id="to-date" style="
                                     width: 100%;
-                                    padding: 4px 8px;
+                                    padding: 3px 4px;
                                     background: #2d3748;
                                     border: 1px solid #4a5568;
                                     border-radius: 4px;
                                     color: #e2e8f0;
+                                    font-size: 9px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
                                     font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">Target PnL %</label>
+                                <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
+                                    width: 100%;
+                                    padding: 3px 4px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 9px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">Runtime (min)</label>
+                                <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
+                                    width: 100%;
+                                    padding: 3px 4px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 9px;
+                                    text-align: center;
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
                             </div>
                         </div>
 
-                        <!-- Optimization Settings Grid -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 3px;
-                                ">Target PnL %</label>
-                                <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
-                                    width: 100%;
-                                    padding: 5px 6px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
+                        <!-- Optimization Settings Row 3 -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
                             <div>
                                 <label style="
                                     font-size: 10px;
@@ -6149,8 +6168,8 @@
                                     color: #a0aec0;
                                     display: block;
                                     margin-bottom: 3px;
-                                ">Runtime (min)</label>
-                                <input type="number" id="runtime-min" value="15" min="5" max="120" step="5" style="
+                                ">Chain Runs</label>
+                                <input type="number" id="chain-run-count" value="5" min="1" max="10" step="1" style="
                                     width: 100%;
                                     padding: 5px 6px;
                                     background: #2d3748;
@@ -6163,26 +6182,100 @@
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
                             </div>
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 3px;
-                                ">Chain Runs</label>
-                                <input type="number" id="chain-run-count" value="4" min="1" max="10" step="1" style="
-                                    width: 100%;
-                                    padding: 5px 6px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                        </div>
+
+                        <!-- Win Rate Configuration -->
+                        <div style="
+                            margin-bottom: 10px;
+                            padding: 8px;
+                            background: #2d3748;
+                            border-radius: 6px;
+                            border: 1px solid #4a5568;
+                        ">
+                            <div style="
+                                font-size: 11px;
+                                font-weight: 600;
+                                margin-bottom: 6px;
+                                color: #63b3ed;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🎯 Win Rate Thresholds
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Small Sample (&lt;500)</label>
+                                    <input type="number" id="min-win-rate-small" value="35" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Medium (500-999)</label>
+                                    <input type="number" id="min-win-rate-medium" value="30" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Large (1000+)</label>
+                                    <input type="number" id="min-win-rate-large" value="25" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                            </div>
+                            <div style="
+                                font-size: 8px;
+                                color: #a0aec0;
+                                margin-top: 4px;
+                                line-height: 1.3;
+                                text-align: center;
+                            ">
+                                Minimum win rates required for configurations based on token count
                             </div>
                         </div>
                         
@@ -7394,6 +7487,27 @@
             CONFIG.CHAIN_RUN_COUNT = parseInt(e.target.value) || 3;
         });
 
+        // Win rate configuration handlers
+        safeAddEventListener('min-win-rate-small', 'change', (e) => {
+            CONFIG.MIN_WIN_RATE = parseFloat(e.target.value) || 35;
+            console.log(`🎯 Small sample win rate updated: ${CONFIG.MIN_WIN_RATE}%`);
+        });
+
+        safeAddEventListener('min-win-rate-medium', 'change', (e) => {
+            CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE = parseFloat(e.target.value) || 33;
+            console.log(`🎯 Medium sample win rate updated: ${CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE}%`);
+        });
+
+        safeAddEventListener('min-win-rate-large', 'change', (e) => {
+            CONFIG.MIN_WIN_RATE_LARGE_SAMPLE = parseFloat(e.target.value) || 30;
+            console.log(`🎯 Large sample win rate updated: ${CONFIG.MIN_WIN_RATE_LARGE_SAMPLE}%`);
+        });
+
+        // Toggle rate limiting mode
+        safeAddEventListener('toggle-rate-limit-btn', 'click', () => {
+            toggleRateLimitingMode();
+        });
+
         // Start optimization button
         safeAddEventListener('start-optimization', 'click', async () => {
             const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
@@ -7405,11 +7519,19 @@
             const correlatedParams = document.getElementById('correlated-params')?.checked || false;
             const deepDive = document.getElementById('deep-dive')?.checked || false;
             
+            // Read win rate configuration from UI
+            const minWinRateSmall = parseFloat(document.getElementById('min-win-rate-small')?.value) || 35;
+            const minWinRateMedium = parseFloat(document.getElementById('min-win-rate-medium')?.value) || 33;
+            const minWinRateLarge = parseFloat(document.getElementById('min-win-rate-large')?.value) || 30;
+            
             // Reset UI background to original color when starting
             updateUIBackground(false);
             
-            // Update config
+            // Update config with UI values
             CONFIG.TARGET_PNL = targetPnl;
+            CONFIG.MIN_WIN_RATE = minWinRateSmall;
+            CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE = minWinRateMedium;
+            CONFIG.MIN_WIN_RATE_LARGE_SAMPLE = minWinRateLarge;
             
             // Apply date-range based token threshold scaling
             const scaledThresholds = getScaledTokenThresholds();
