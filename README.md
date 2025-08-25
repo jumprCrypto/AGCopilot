@@ -10,12 +10,12 @@
 
 **Browser Console One-liner:**
 ```javascript
-import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');
 ```
 
 **Load Specific Tools:**
 ```javascript
-const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 
 // Load Enhanced AGCopilot
 await loadAGCopilot('copilot');
@@ -193,7 +193,7 @@ Monitoring:         Real-time API usage tracking
 ### **Bookmarklet Installation**
 1. **Copy the bookmarklet code:**
 ```javascript
-javascript:(async function(){try{console.log('🔄 Loading AGCopilot...');const r=await fetch('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGCopilot.js');if(!r.ok)throw new Error(`HTTP ${r.status}`);eval(await r.text());console.log('✅ AGCopilot loaded!');}catch(e){console.error('❌ Load failed:',e);}})();
+javascript:(async function(){try{console.log('🔄 Loading AGCopilot...');const r=await fetch('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/AGCopilot.js');if(!r.ok)throw new Error(`HTTP ${r.status}`);eval(await r.text());console.log('✅ AGCopilot loaded!');}catch(e){console.error('❌ Load failed:',e);}})();
 ```
 
 2. **Create bookmark:**

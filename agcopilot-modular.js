@@ -8,13 +8,13 @@
  * const script = document.createElement('script');
  * script.type = 'module';
  * script.textContent = `
- *   import { loadAGCopilot } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js';
+ *   import { loadAGCopilot } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js';
  *   window.agcopilot = await loadAGCopilot('copilot');
  * `;
  * document.head.appendChild(script);
  * 
  * // Alternative one-liner for browser console:
- * import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+ * import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');
  * 
  * // For different tools:
  * // loadAGCopilot('copilot')        - Enhanced AGCopilot

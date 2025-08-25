@@ -33,12 +33,12 @@ AGCopilot/
 
 **Auto-load with UI selection:**
 ```javascript
-import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');
 ```
 
 **Direct tool loading:**
 ```javascript
-const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 
 // Enhanced AGCopilot
 const copilot = await loadAGCopilot('copilot');
@@ -51,7 +51,7 @@ const extractor = await loadAGCopilot('signal-extractor');
 
 ```javascript
 // Load individual modules
-const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js');
+const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/utils.js');
 const { sleep, formatMcap, deepClone } = utils;
 
 // Test utility functions
@@ -62,7 +62,7 @@ await sleep(1000); // Wait 1 second
 ### 3. Advanced Loading with Options
 
 ```javascript
-const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 
 // Load with custom configuration
 const copilot = await loadAGCopilot('copilot', {

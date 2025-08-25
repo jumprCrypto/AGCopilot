@@ -16,13 +16,13 @@ The AGCopilot suite has been refactored from monolithic JavaScript files into a 
 
 **One-liner to load Enhanced AGCopilot:**
 ```javascript
-import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');
 ```
 
 **Load specific tools:**
 ```javascript
 // Load the module loader
-const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 
 // Load Enhanced AGCopilot
 const copilot = await loadAGCopilot('copilot');
@@ -38,7 +38,7 @@ const extractor = await loadAGCopilot('signal-extractor');
 
 Create a bookmark with this JavaScript:
 ```javascript
-javascript:(function(){const script=document.createElement('script');script.type='module';script.textContent="import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');";document.head.appendChild(script);})();
+javascript:(function(){const script=document.createElement('script');script.type='module';script.textContent="import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');";document.head.appendChild(script);})();
 ```
 
 ## 📁 Module Structure
@@ -65,7 +65,7 @@ javascript:(function(){const script=document.createElement('script');script.type
 ### Manual Module Loading
 
 ```javascript
-import { ModuleLoader } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js';
+import { ModuleLoader } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js';
 
 const loader = new ModuleLoader();
 
@@ -82,7 +82,7 @@ const { GeneticOptimizer } = optimizationModule;
 ### Version/Branch Selection
 
 ```javascript
-import { ModuleLoader } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js';
+import { ModuleLoader } from 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js';
 
 const loader = new ModuleLoader();
 
@@ -98,7 +98,7 @@ const specificModule = await loader.loadModule('utils');
 ### Custom Configuration
 
 ```javascript
-const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 
 // Load with custom options
 const copilot = await loadAGCopilot('copilot', {
@@ -198,7 +198,7 @@ const loader = new ModuleLoader(options);
 
 // Options
 {
-    baseURL: 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/',
+    baseURL: 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/',
     version: 'main'
 }
 
@@ -268,7 +268,7 @@ const freshModule = await moduleLoader.loadModule('utils');
 **After (modular):**
 ```javascript
 // One-liner in console
-import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');
 ```
 
 ### Benefits of Migration

@@ -9,7 +9,7 @@
  */
 export class ModuleLoader {
     constructor(options = {}) {
-        this.baseURL = options.baseURL || 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/';
+        this.baseURL = options.baseURL || 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/';
         this.cache = new Map();
         this.loadedModules = new Map();
         this.version = options.version || 'main'; // Allow version/branch selection

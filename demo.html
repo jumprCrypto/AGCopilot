@@ -100,14 +100,14 @@
             <p>Copy and paste these commands into your browser console:</p>
             
             <h3>One-liner Auto-load:</h3>
-            <div class="code-block">import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');</div>
+            <div class="code-block">import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js');</div>
             
             <h3>Load Specific Tool:</h3>
-            <div class="code-block">const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+            <div class="code-block">const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
 const tool = await loadAGCopilot('signal-extractor');</div>
             
             <h3>Manual Module Loading:</h3>
-            <div class="code-block">const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js');
+            <div class="code-block">const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/utils.js');
 const { sleep, formatMcap } = utils;
 console.log(formatMcap(1500000));</div>
         </div>
@@ -121,11 +121,11 @@ console.log(formatMcap(1500000));</div>
             <h2>🔗 Direct GitHub Links</h2>
             <p>All modules are loaded directly from GitHub:</p>
             <ul>
-                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js" target="_blank">loader.js</a> - Module loading system</li>
-                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js" target="_blank">utils.js</a> - Utility functions</li>
-                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/signal-extractor.js" target="_blank">signal-extractor.js</a> - Signal extraction tool</li>
-                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/agcopilot.js" target="_blank">agcopilot.js</a> - Enhanced optimization tool</li>
-                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js" target="_blank">agcopilot-modular.js</a> - Bootstrap file</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js" target="_blank">loader.js</a> - Module loading system</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/utils.js" target="_blank">utils.js</a> - Utility functions</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/signal-extractor.js" target="_blank">signal-extractor.js</a> - Signal extraction tool</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/agcopilot.js" target="_blank">agcopilot.js</a> - Enhanced optimization tool</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/agcopilot-modular.js" target="_blank">agcopilot-modular.js</a> - Bootstrap file</li>
             </ul>
         </div>
     </div>
@@ -170,7 +170,7 @@ console.log(formatMcap(1500000));</div>
         window.loadEnhancedCopilot = async function() {
             try {
                 updateStatus('Loading Enhanced AGCopilot...', 'info');
-                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
                 const copilot = await loadAGCopilot('copilot');
                 window.agcopilot = copilot;
                 updateStatus('✅ Enhanced AGCopilot loaded successfully! Check window.agcopilot', 'success');
@@ -183,7 +183,7 @@ console.log(formatMcap(1500000));</div>
         window.loadSignalExtractor = async function() {
             try {
                 updateStatus('Loading Signal Extractor...', 'info');
-                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/loader.js');
                 const extractor = await loadAGCopilot('signal-extractor');
                 window.signalExtractor = extractor;
                 updateStatus('✅ Signal Extractor loaded successfully! UI should be visible.', 'success');
@@ -196,7 +196,7 @@ console.log(formatMcap(1500000));</div>
         window.loadCustomModule = async function() {
             try {
                 updateStatus('Loading individual utility module...', 'info');
-                const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js');
+                const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/copilot/fix-b158a735-8afc-4934-8fab-116fc94aa92a/modules/utils.js');
                 window.utils = utils;
                 
                 // Test some utility functions
