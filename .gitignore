@@ -3,3 +3,35 @@
 ################################################################################
 
 /.vs
+
+# Development artifacts
+node_modules/
+*.log
+.env
+.env.local
+
+# Build artifacts
+dist/
+build/
+*.min.js
+*.map
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Keep modules directory and all JS files for GitHub loading
+!modules/
+!modules/*.js
+!*.js

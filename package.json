@@ -1,0 +1,12 @@
+{
+  "type": "module",
+  "name": "agcopilot-modular",
+  "version": "1.0.0",
+  "description": "Modular AGCopilot implementation for browser console usage",
+  "scripts": {
+    "test": "node test-node.js"
+  },
+  "keywords": ["trading", "optimization", "browser", "modular"],
+  "author": "AGCopilot Contributors",
+  "license": "MIT"
+}

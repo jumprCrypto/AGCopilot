@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AGCopilot Modular System Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+        .demo-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.success { background: rgba(76, 175, 80, 0.3); }
+        .status.error { background: rgba(244, 67, 54, 0.3); }
+        .status.info { background: rgba(33, 150, 243, 0.3); }
+        #console-output {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AGCopilot Modular System Demo</h1>
+        <p>This page demonstrates loading AGCopilot modules directly from GitHub.</p>
+        
+        <div class="demo-section">
+            <h2>📦 Quick Load Examples</h2>
+            <p>Click these buttons to load different tools:</p>
+            
+            <button onclick="loadEnhancedCopilot()">🚀 Load Enhanced AGCopilot</button>
+            <button onclick="loadSignalExtractor()">📊 Load Signal Extractor</button>
+            <button onclick="loadCustomModule()">🔧 Load Custom Module</button>
+            <button onclick="clearConsole()">🗑️ Clear Console</button>
+            
+            <div id="load-status"></div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>💻 Browser Console Examples</h2>
+            <p>Copy and paste these commands into your browser console:</p>
+            
+            <h3>One-liner Auto-load:</h3>
+            <div class="code-block">import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');</div>
+            
+            <h3>Load Specific Tool:</h3>
+            <div class="code-block">const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+const tool = await loadAGCopilot('signal-extractor');</div>
+            
+            <h3>Manual Module Loading:</h3>
+            <div class="code-block">const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js');
+const { sleep, formatMcap } = utils;
+console.log(formatMcap(1500000));</div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>📋 Console Output</h2>
+            <div id="console-output">Console output will appear here...\n</div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>🔗 Direct GitHub Links</h2>
+            <p>All modules are loaded directly from GitHub:</p>
+            <ul>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js" target="_blank">loader.js</a> - Module loading system</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js" target="_blank">utils.js</a> - Utility functions</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/signal-extractor.js" target="_blank">signal-extractor.js</a> - Signal extraction tool</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/agcopilot.js" target="_blank">agcopilot.js</a> - Enhanced optimization tool</li>
+                <li><a href="https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js" target="_blank">agcopilot-modular.js</a> - Bootstrap file</li>
+            </ul>
+        </div>
+    </div>
+
+    <script type="module">
+        // Capture console output
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        const consoleOutput = document.getElementById('console-output');
+        
+        function addToConsole(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'warn' ? '⚠️' : '📝';
+            consoleOutput.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+        
+        console.log = (...args) => {
+            originalLog(...args);
+            addToConsole(args.join(' '), 'log');
+        };
+        
+        console.error = (...args) => {
+            originalError(...args);
+            addToConsole(args.join(' '), 'error');
+        };
+        
+        console.warn = (...args) => {
+            originalWarn(...args);
+            addToConsole(args.join(' '), 'warn');
+        };
+        
+        // Status updates
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('load-status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+        
+        // Load functions
+        window.loadEnhancedCopilot = async function() {
+            try {
+                updateStatus('Loading Enhanced AGCopilot...', 'info');
+                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+                const copilot = await loadAGCopilot('copilot');
+                window.agcopilot = copilot;
+                updateStatus('✅ Enhanced AGCopilot loaded successfully! Check window.agcopilot', 'success');
+            } catch (error) {
+                console.error('Failed to load Enhanced AGCopilot:', error);
+                updateStatus(`❌ Failed to load: ${error.message}`, 'error');
+            }
+        };
+        
+        window.loadSignalExtractor = async function() {
+            try {
+                updateStatus('Loading Signal Extractor...', 'info');
+                const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+                const extractor = await loadAGCopilot('signal-extractor');
+                window.signalExtractor = extractor;
+                updateStatus('✅ Signal Extractor loaded successfully! UI should be visible.', 'success');
+            } catch (error) {
+                console.error('Failed to load Signal Extractor:', error);
+                updateStatus(`❌ Failed to load: ${error.message}`, 'error');
+            }
+        };
+        
+        window.loadCustomModule = async function() {
+            try {
+                updateStatus('Loading individual utility module...', 'info');
+                const utils = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/utils.js');
+                window.utils = utils;
+                
+                // Test some utility functions
+                const mcap = utils.formatMcap(2500000);
+                const clone = utils.deepClone({ test: { nested: 123 } });
+                
+                console.log('Utility functions test:');
+                console.log('formatMcap(2500000):', mcap);
+                console.log('deepClone test:', clone);
+                
+                updateStatus('✅ Utils module loaded! Test results in console.', 'success');
+            } catch (error) {
+                console.error('Failed to load utils module:', error);
+                updateStatus(`❌ Failed to load: ${error.message}`, 'error');
+            }
+        };
+        
+        window.clearConsole = function() {
+            consoleOutput.textContent = 'Console cleared...\n';
+            updateStatus('Console cleared', 'info');
+        };
+        
+        // Initialize
+        console.log('🎉 AGCopilot Modular Demo loaded!');
+        console.log('Click the buttons above to test module loading from GitHub.');
+        console.log('All modules are loaded directly from the public repository.');
+    </script>
+</body>
+</html>
