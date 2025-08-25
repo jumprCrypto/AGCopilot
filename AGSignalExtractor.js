@@ -258,6 +258,7 @@
                 'Liquidity',
                 'Liquidity Percentage',
                 'Platform',
+                'Source',
                 'Wallet Stats',
                 'Recent Swap(s)',
                 'Buy Ratio',
@@ -276,8 +277,7 @@
                 'Funding Address',
                 'Deployer Age',
                 'Token Age',
-                'Description',
-                'Source'
+                'Description'
             ].join('\t'));
         }
         
@@ -334,7 +334,8 @@
                     mcFormatted,                                              // MC
                     liquidityFormatted,                                       // Liquidity
                     swap.criteria?.liquidityPct ? `${swap.criteria.liquidityPct.toFixed(1)}%` : '', // Liquidity Percentage
-                    platform,                                                 // Platform (based on CA ending)
+                    platform,
+                    processed.source || '',                                                 // Platform (based on CA ending)
                     walletStats,                                              // Wallet Stats
                     recentSwap,                                               // Recent Swap
                     buyRatio,                                                 // Buy Ratio
@@ -353,8 +354,7 @@
                     '',                                                       // Funding Address (not available in current data)
                     deployerAge,                                              // Deployer Age
                     tokenAge,                                                 // Token Age
-                    swap.criteria?.hasDescription ? 'Yes' : 'No',             // Description
-                    processed.source || ''                                    // Source
+                    swap.criteria?.hasDescription ? 'Yes' : 'No'             // Source
                 ];
                 csvLines.push(row.join('\t'));
             });
