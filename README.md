@@ -2,6 +2,30 @@
 
 **AG Copilot Enhanced** is a cutting-edge browser-based optimization engine that revolutionizes trading strategy development through direct API integration, advanced machine learning techniques, and sophisticated parameter discovery systems. Built for Alpha Gardeners backtester, it combines multiple optimization algorithms with robust statistical analysis to find high-performing configurations with unprecedented efficiency and reliability.
 
+## 📦 Modular Implementation Available!
+
+**NEW**: AGCopilot is now available as modular JavaScript that loads directly from GitHub! This enables easier maintenance, selective loading, and better code organization.
+
+### 🚀 Quick Start (Modular)
+
+**Browser Console One-liner:**
+```javascript
+import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/agcopilot-modular.js');
+```
+
+**Load Specific Tools:**
+```javascript
+const { loadAGCopilot } = await import('https://raw.githubusercontent.com/jumprCrypto/AGCopilot/main/modules/loader.js');
+
+// Load Enhanced AGCopilot
+await loadAGCopilot('copilot');
+
+// Load Signal Extractor
+await loadAGCopilot('signal-extractor');
+```
+
+**📖 [Complete Modular Usage Guide](MODULAR-USAGE.md)**
+
 ---
 
 ## ✨ What's New in v3.0
