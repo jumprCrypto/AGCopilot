@@ -194,7 +194,7 @@ javascript:(async function(){try{console.log('🔄 Loading AGCopilot...');const 
 
 ### **Getting Started**
 1. **Load the tool** using the bookmarklet on the backtester page
-2. **Configure settings** in the floating/split-screen interface
+2. **Configure settings** in the interface
 3. **Set date range** and basic parameters in the backtester
 4. **Click "Start Optimization"** to begin the process
 
@@ -282,37 +282,6 @@ javascript:(async function(){try{console.log('🔄 Loading AGCopilot...');const 
 
 ---
 
-## 🎯 Optimization Strategies
-
-### **Conservative Strategy** (Recommended for beginners)
-```yaml
-Chained Runs: 3
-Runtime per Run: 30 minutes
-Total Time: 90 minutes
-Features: Parameter Discovery + Robust Scoring
-Rate Limiting: Normal mode
-```
-
-### **Aggressive Strategy** (For experienced users)
-```yaml
-Chained Runs: 10
-Runtime per Run: 15 minutes  
-Total Time: 150 minutes
-Features: All algorithms enabled
-Rate Limiting: Normal mode with monitoring
-```
-
-### **Marathon Strategy** (Maximum optimization depth)
-```yaml
-Chained Runs: 25-50
-Runtime per Run: 10 minutes
-Total Time: 250-500 minutes
-Features: Full algorithm suite + deep dive
-Rate Limiting: Slower mode for stability
-```
-
----
-
 ## 🐛 Troubleshooting
 
 ### **Common Issues**
@@ -323,21 +292,6 @@ Rate Limiting: Slower mode for stability
 | Poor win rates | Enable robust scoring, check parameter discovery results |
 | UI not loading | Refresh page, try bookmarklet again |
 | Optimization stalling | Check console for errors, restart if needed |
-
-### **Console Commands**
-```javascript
-// View current best configuration
-window.bestConfigTracker.getConfig()
-
-// Get optimization statistics
-window.optimizationTracker.getStats()
-
-// Check rate limiting status
-window.rateLimitStats()
-
-// Force stop optimization
-window.STOPPED = true
-```
 
 ---
 
@@ -391,6 +345,3 @@ MIT License - Free to use, modify, and distribute.
 **Special thanks to the Alpha Gardeners community for feedback and testing!**
 
 ---
-
-*AG Copilot Enhanced v3.0 - Turning trading strategy optimization into a science.* 🚀
-

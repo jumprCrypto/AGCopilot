@@ -143,7 +143,6 @@
             "Max Unique Wallets": undefined,
             "Min Holders": undefined,
             "Max Holders": undefined,
-            // Holder Growth Filter (optional)
             "Holders Growth %": undefined,
             "Holders Growth Minutes": undefined
         },
@@ -164,7 +163,8 @@
             "Min TTC (sec)": undefined,
             "Max TTC (sec)": undefined,
             "Max Liquidity %": undefined,
-            "Min Win Pred %": undefined
+            "Min Win Pred %": undefined,
+            "Has Buy Signal": undefined
     },
     // Optional, filled from UI if present
     tpSettings: {},
@@ -181,15 +181,10 @@
             description: "Old Deployer",
             tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
         },
-        minWinPred: { 
+        oldishDeployer: { 
             category: "Custom",
-            description: "Min Win Pred % 28",
-            advanced: { "Min Win Pred %": 28 }
-        },
-        deployerBalance10: { 
-            category: "Custom",
-            description: "Min Deployer Balance 10 SOL",
-            risk: { "Min Deployer Balance (SOL)": 10 } 
+            description: "Old-ish Deployer",
+            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" } 
         },
         agScore7: { 
             category: "Custom",
@@ -198,65 +193,35 @@
         },
         
         // Discovery-based presets (from Parameter Impact Analysis)
-        TTCNineHundred: {
+        MaxLiqThirty: {
             priority: 1,
             category: "Param Discovery",
-            description: "Min TTC 900",
-            advanced: { "Min TTC (sec)": 900 }
+            description: "Max Liq % 30",
+            advanced: { "Max Liquidity %": 30 }
+        },
+         minWinPred: { 
+            priority: 2,
+            category: "Param Discovery",
+            description: "Min Win Pred % 55",
+            advanced: { "Min Win Pred %": 55 }
         },
         UnqWallet3: {
-            priority: 2,
+            priority: 3,
             category: "Param Discovery", 
             description: "3+ Unq",
             wallets: { "Min Unique Wallets": 3 }
         },
+        MinMcap20k: {
+            priority: 4,
+            category: "Param Discovery",
+            description: "Min MCAP 20K", 
+            basic: { "Min MCAP (USD)": 20000 }
+        },
         MinMcap10k: {
-            priority: 3,
+            priority: 5,
             category: "Param Discovery",
             description: "Min MCAP 10K", 
             basic: { "Min MCAP (USD)": 10000 }
-        },
-        highAgScore: {
-            priority: 4,
-            category: "Param Discovery",
-            description: "Min AG Score 8",
-            tokenDetails: { "Min AG Score": "8" }
-        },
-        moderateDrainTolerance: {
-            priority: 5,
-            category: "Param Discovery",
-            description: "Max Drained 50%",
-            risk: { "Max Drained %": 50 }
-        },
-        kycRequired: {
-            priority: 6,
-            category: "Param Discovery",
-            description: "Min KYC Wallets 3",
-            wallets: { "Min KYC Wallets": 3 }
-        },
-        zeroDrainTolerance: {
-            priority: 7,
-            category: "Param Discovery",
-            description: "Max Drained Count 0",
-            risk: { "Max Drained Count": 0 }
-        },
-        mediumVolMcap: {
-            priority: 8,
-            category: "Param Discovery",
-            description: "Min Vol MCAP % 30",
-            risk: { "Min Vol MCAP %": 30 }
-        },
-        agedTokens: {
-            priority: 9,
-            category: "Param Discovery",
-            description: "Min Token Age (sec) 10000",
-            tokenDetails: { "Min Token Age (sec)": 10000 }
-        },
-        lowVolMcapCap: {
-            priority: 10,
-            category: "Param Discovery",
-            description: "Max Vol MCAP % 33",
-            risk: { "Max Vol MCAP %": 33 }
         }
     };
 
@@ -643,11 +608,14 @@
     function getScaledTokenThresholds() {
         const scaling = getDateRangeScaling();
         
+        // Get minimum tokens per day from UI, fallback to CONFIG if not available
+        const minTokensPerDayFromUI = parseInt(document.getElementById('min-tokens')?.value) || CONFIG.MIN_TOKENS || 10;
+        
         // Base thresholds - MIN_TOKENS is now per day, others are for 7-day period
         const BASE_THRESHOLDS = {
             LARGE_SAMPLE_THRESHOLD: 1000,    // 143x days
             MEDIUM_SAMPLE_THRESHOLD: 500,    // 71x days  
-            MIN_TOKENS_PER_DAY: 10           // Minimum tokens per day for statistical reliability
+            MIN_TOKENS_PER_DAY: minTokensPerDayFromUI  // Minimum tokens per day from UI or config
         };
         
         // Apply scaling
@@ -671,6 +639,9 @@
             // Fix: Ensure MEDIUM is reasonable compared to MIN_TOKENS, don't reduce MIN_TOKENS
             scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(scaled.MIN_TOKENS + 25, scaled.MEDIUM_SAMPLE_THRESHOLD);
         }
+        
+        // Debug log to show calculated thresholds
+        console.log(`📊 Token Thresholds - Min Tokens/Day from UI: ${minTokensPerDayFromUI}, Days: ${scaling.days}, Total MIN_TOKENS: ${scaled.MIN_TOKENS}`);
         
         return scaled;
     }
@@ -737,7 +708,7 @@
         // Filter out undefined/empty values and group by category
         const validSettings = {};
         Object.entries(flatConfig).forEach(([key, value]) => {
-            const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer');
+            const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer' || key === 'Has Buy Signal');
             if (value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
                 // For toggle buttons (Description/Fresh Deployer), only include if they're set to "Yes" (true)
                 if (isButtonToggle) {
@@ -755,7 +726,7 @@
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer'],
-            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %'],
+            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             // Dynamically add TP fields if present
             'Take Profits': Object.keys(validSettings).filter(k => /TP \d+ % (Gain|Sell)/.test(k))
         };
@@ -1011,7 +982,7 @@
             if (typeof sectionData === 'object' && sectionData !== null) {
                 Object.entries(pinnedSettings).forEach(([pinnedKey, pinnedValue]) => {
                     if (sectionData.hasOwnProperty(pinnedKey)) {
-                        if ((pinnedKey === 'Description' || pinnedKey === 'Fresh Deployer')) {
+                        if ((pinnedKey === 'Description' || pinnedKey === 'Fresh Deployer' || pinnedKey === 'Has Buy Signal')) {
                             let normalized = null;
                             if (pinnedValue === true || pinnedValue === 'Yes') normalized = true;
                             sectionData[pinnedKey] = normalized;
@@ -1458,7 +1429,8 @@
                 
                 // Boolean fields
                 'Description': 'needsDescription',
-                'Fresh Deployer': 'needsFreshDeployer'
+                'Fresh Deployer': 'needsFreshDeployer',
+                'Has Buy Signal': 'needsSignal'
             };
             
             // Map parameters
@@ -1466,7 +1438,7 @@
                 const value = flatConfig[agCopilotName];
                 if (value !== undefined && value !== null && value !== '') {
                     // Handle boolean conversions
-                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer') {
+                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer' || apiName === 'needsSignal') {
                         if (value === true || value === 'Yes') {
                             apiParams[apiName] = true;
                         } else if (value === false || value === 'No') {
@@ -3196,16 +3168,16 @@
                 preferredValue: null
             },
             
-            hasSocials: {
-                trueCount: signals.filter(s => s.hasSocials === true).length,
-                falseCount: signals.filter(s => s.hasSocials === false).length,
-                nullCount: signals.filter(s => s.hasSocials === null || s.hasSocials === undefined).length,
+            hasSignal: {
+                trueCount: signals.filter(s => s.hasSignal === true).length,
+                falseCount: signals.filter(s => s.hasSignal === false).length,
+                nullCount: signals.filter(s => s.hasSignal === null || s.hasSignal === undefined).length,
                 preferredValue: null
             }
         };
         
         // Determine preferred boolean values based on majority
-        ['freshDeployer', 'hasDescription', 'hasSocials'].forEach(field => {
+        ['freshDeployer', 'hasDescription', 'hasSignal'].forEach(field => {
             const data = analysis[field];
             if (data.trueCount > data.falseCount) {
                 data.preferredValue = true;
@@ -3357,7 +3329,9 @@
         if (analysis.hasDescription && analysis.hasDescription.preferredValue !== undefined) {
             config['Description'] = analysis.hasDescription.preferredValue;
         }
-        
+        if (analysis.hasSignal && analysis.hasSignal.preferredValue !== undefined) {
+            config['Has Buy Signal'] = analysis.hasSignal.preferredValue;
+        }
         // Advanced criteria (check for data availability)
         if (analysis.winPred && analysis.winPred.min !== undefined && analysis.winPred.count > 0) {
             config['Min Win Pred %'] = analysis.winPred.min;
@@ -3505,6 +3479,9 @@
             const min = config['Min TTC (sec)'] || 0;
             const max = config['Max TTC (sec)'] || '∞';
             lines.push(`Time to Complete: ${min} - ${max} seconds`);
+        }
+        if (config['Has Buy Signal'] !== undefined) {
+            lines.push(`Has Buy Signal: ${boolToString(config['Has Buy Signal'])}`);
         }
         lines.push('');
         
@@ -3897,6 +3874,7 @@
                 
                 // Validate metrics using scaled threshold
                 if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < scaledThresholds.MIN_TOKENS) {
+                    console.log(`❌ Config ${testName} rejected: ${metrics.totalTokens || 0} tokens < ${scaledThresholds.MIN_TOKENS} required`);
                     const failResult = { success: false, reason: 'insufficient_tokens' };
                     
                     // Track failed test
@@ -3972,9 +3950,20 @@
                 
                 // PnL optimization mode (default)
                 improvement = currentScore - this.bestScore;
+                
+                // Log successful config validation
+                console.log(`✅ Config ${testName} passed: ${metrics.totalTokens} tokens, score: ${currentScore.toFixed(2)}, improvement: ${improvement > 0 ? '+' : ''}${improvement.toFixed(2)}`);
 
                 // Update best configuration if improved
                 if (improvement > 0) {
+                    // Double-check: Ensure this config still meets current minimum tokens requirement
+                    const currentScaledThresholds = getScaledTokenThresholds();
+                    if (metrics.totalTokens < currentScaledThresholds.MIN_TOKENS) {
+                        console.warn(`⚠️ Config would be best but has insufficient tokens: ${metrics.totalTokens} < ${currentScaledThresholds.MIN_TOKENS} (UI setting changed?)`);
+                        // Don't update best config, but still record as successful test
+                        return { success: true, metrics, config: completeConfig, reason: 'insufficient_tokens_for_best' };
+                    }
+                    
                     this.bestConfig = completeConfig;
                     this.bestScore = currentScore;
                     // Ensure metrics has required properties
@@ -5049,7 +5038,7 @@
             let container = label.closest('.form-group') || label.parentElement;
 
             // Dual-state toggles: check first to avoid navigating away from the button
-            if (labelText === 'Description' || labelText === 'Fresh Deployer') {
+            if (labelText === 'Description' || labelText === 'Fresh Deployer' || labelText === 'Has Buy Signal') {
                 let toggleButton = container.querySelector('button');
                 if (!toggleButton) {
                     // Climb up cautiously to find the button
@@ -5139,7 +5128,7 @@
             },
             advanced: {
                 sectionTitle: 'Advanced',
-                params: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %']
+                params: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
             }
         };
 
@@ -5314,7 +5303,7 @@
                 let container = label.closest('.form-group') || label.parentElement;
 
                 // Handle toggle buttons FIRST (Description and Fresh Deployer) before DOM navigation
-                if (labelText === "Description" || labelText === "Fresh Deployer") {
+                if (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Has Buy Signal") {
                     // Look for toggle button specifically in the label's immediate area
                     let toggleButton = container.querySelector('button');
                     
@@ -7959,16 +7948,21 @@
         if (config['Description'] !== null && config['Description'] !== undefined) {
             riskFields.push(['Description', boolToToggleValue(config['Description'])]);
         }
-        
+       
         await applyFieldsToSection('Risk', riskFields);
-        
-        // Advanced Section Fields
-        await applyFieldsToSection('Advanced', [
+
+        const advancedFields = [
             ['Max Liquidity %', config['Max Liquidity %']],
             ['Min TTC (sec)', config['Min TTC (sec)']],
             ['Max TTC (sec)', config['Max TTC (sec)']],
             ['Min Win Pred %', config['Min Win Pred %']]
-        ]);
+            ];
+
+        if (config['Has Buy Signal'] !== null && config['Has Buy Signal'] !== undefined) {
+            advancedFields.push(['Has Buy Signal', boolToToggleValue(config['Has Buy Signal'])]);
+        }
+        // Advanced Section Fields
+        await applyFieldsToSection('Advanced', advancedFields);
         
         const appliedResults = {
             success: appliedFields > 0,
