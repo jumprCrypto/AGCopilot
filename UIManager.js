@@ -209,22 +209,728 @@
         `;
     };
 
-    // Configuration tab - placeholder for now, would contain exact AGCopilot.js HTML
+    // Configuration tab - complete implementation from AGCopilot.js
     UI.getConfigurationTabHTML = function() {
         return `
-            <div style="text-align: center; padding: 20px; color: #a0aec0;">
-                <div style="font-size: 14px; margin-bottom: 8px;">🚀 Configuration UI</div>
-                <div style="font-size: 11px;">Full AGCopilot.js configuration interface would be implemented here</div>
+            <!-- Presets and Settings Row 1 -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px;">
+                <div>
+                    <label style="
+                        font-size: 11px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 4px;
+                    ">Quick Presets</label>
+                    <select id="preset-dropdown" style="
+                        width: 100%;
+                        padding: 5px 8px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 10px;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                        ${UI.generatePresetOptions()}
+                    </select>
+                </div>
+                <div>
+                    <label style="
+                        font-size: 11px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 4px;
+                    ">Trigger Mode</label>
+                    <select id="trigger-mode-select" style="
+                        width: 100%;
+                        padding: 5px 8px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 10px;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                        <option value="0">Bullish Bonding</option>
+                        <option value="1">God Mode</option>
+                        <option value="2">Moon Finder</option>
+                        <option value="3">Fomo</option>
+                        <option value="4" selected>Launchpads</option>
+                        <option value="5">Smart Tracker</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Date Range and Target Row 2 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 2px;
+                    ">From Date</label>
+                    <input type="date" id="from-date" style="
+                        width: 100%;
+                        padding: 3px 4px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 9px;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 2px;
+                    ">To Date</label>
+                    <input type="date" id="to-date" style="
+                        width: 100%;
+                        padding: 3px 4px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 9px;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 2px;
+                    ">Target PnL %</label>
+                    <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
+                        width: 100%;
+                        padding: 3px 4px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 9px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 2px;
+                    ">Runtime (min)</label>
+                    <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
+                        width: 100%;
+                        padding: 3px 4px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 9px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+            </div>
+
+            <!-- Optimization Settings Row 3 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 3px;
+                    ">Min Tokens / Day</label>
+                    <input type="number" id="min-tokens" value="10" min="5" max="1000" step="5" style="
+                        width: 100%;
+                        padding: 5px 6px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 10px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div>
+                    <label style="
+                        font-size: 10px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 3px;
+                    ">Chain Runs</label>
+                    <input type="number" id="chain-run-count" value="5" min="1" max="10" step="1" style="
+                        width: 100%;
+                        padding: 5px 6px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 10px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+            </div>
+
+            <!-- Win Rate Configuration -->
+            <div style="
+                margin-bottom: 10px;
+                padding: 8px;
+                background: #2d3748;
+                border-radius: 6px;
+                border: 1px solid #4a5568;
+            ">
+                <div style="
+                    font-size: 11px;
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                    color: #63b3ed;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">
+                    🎯 Win Rate Thresholds
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+                    <div>
+                        <label style="
+                            font-size: 9px;
+                            font-weight: 500;
+                            color: #a0aec0;
+                            display: block;
+                            margin-bottom: 2px;
+                        ">Small Sample (&lt;500)</label>
+                        <input type="number" id="min-win-rate-small" value="35" min="0" max="100" step="1" style="
+                            width: 100%;
+                            padding: 4px 5px;
+                            background: #2d3748;
+                            border: 1px solid #4a5568;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                            font-size: 9px;
+                            text-align: center;
+                            outline: none;
+                            transition: border-color 0.2s;
+                        " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                    </div>
+                    <div>
+                        <label style="
+                            font-size: 9px;
+                            font-weight: 500;
+                            color: #a0aec0;
+                            display: block;
+                            margin-bottom: 2px;
+                        ">Medium (500-999)</label>
+                        <input type="number" id="min-win-rate-medium" value="30" min="0" max="100" step="1" style="
+                            width: 100%;
+                            padding: 4px 5px;
+                            background: #2d3748;
+                            border: 1px solid #4a5568;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                            font-size: 9px;
+                            text-align: center;
+                            outline: none;
+                            transition: border-color 0.2s;
+                        " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                    </div>
+                    <div>
+                        <label style="
+                            font-size: 9px;
+                            font-weight: 500;
+                            color: #a0aec0;
+                            display: block;
+                            margin-bottom: 2px;
+                        ">Large (1000+)</label>
+                        <input type="number" id="min-win-rate-large" value="25" min="0" max="100" step="1" style="
+                            width: 100%;
+                            padding: 4px 5px;
+                            background: #2d3748;
+                            border: 1px solid #4a5568;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                            font-size: 9px;
+                            text-align: center;
+                            outline: none;
+                            transition: border-color 0.2s;
+                        " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                    </div>
+                </div>
+                <div style="
+                    font-size: 8px;
+                    color: #a0aec0;
+                    margin-top: 4px;
+                    line-height: 1.3;
+                    text-align: center;
+                ">
+                    Minimum win rates required for configurations based on token count
+                </div>
+            </div>
+            
+            <!-- Advanced Optimization Features -->
+            <div style="
+                margin-bottom: 4px;
+                padding: 4px;
+                background: #2d3748;
+                border-radius: 6px;
+                border: 1px solid #4a5568;
+            ">
+                <div style="
+                    font-size: 10px;
+                    font-weight: 600;
+                    margin-bottom: 4px;
+                    color: #63b3ed;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">
+                    🚀 Optimization Methods
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px 6px;">
+                    
+                    
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 10px;
+                        color: #e2e8f0;
+                        padding: 2px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" 
+                      onmouseout="this.style.background='transparent'"
+                      title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
+                        <input type="checkbox" id="simulated-annealing" checked style="
+                            margin-right: 4px;
+                            transform: scale(0.8);
+                            accent-color: #63b3ed;
+                        ">
+                        <span style="font-weight: 500;">🔥 Simulated Annealing</span>
+                    </label>
+                    
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 10px;
+                        color: #e2e8f0;
+                        padding: 2px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" 
+                      onmouseout="this.style.background='transparent'"
+                      title="Statistical sampling method that ensures even distribution across parameter space">
+                        <input type="checkbox" id="latin-hypercube" checked style="
+                            margin-right: 4px;
+                            transform: scale(0.8);
+                            accent-color: #63b3ed;
+                        ">
+                        <span style="font-weight: 500;">📐 Latin Hypercube</span>
+                    </label>
+                    
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 10px;
+                        color: #e2e8f0;
+                        padding: 2px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" 
+                      onmouseout="this.style.background='transparent'"
+                      title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
+                        <input type="checkbox" id="correlated-params" checked style="
+                            margin-right: 4px;
+                            transform: scale(0.8);
+                            accent-color: #63b3ed;
+                        ">
+                        <span style="font-weight: 500;">🔗 Correlated Params</span>
+                    </label>
+                    
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 10px;
+                        color: #e2e8f0;
+                        padding: 2px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" 
+                      onmouseout="this.style.background='transparent'"
+                      title="Fine-grained testing of the most effective parameters with smaller increments">
+                        <input type="checkbox" id="deep-dive" checked style="
+                            margin-right: 4px;
+                            transform: scale(0.8);
+                            accent-color: #63b3ed;
+                        ">
+                        <span style="font-weight: 500;">🔬 Deep Dive</span>
+                    </label>
+                    
+                    <!-- Scoring Mode Selector -->
+                    <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 8px; margin-top: 4px;">
+                        <label style="font-size: 10px; color: #a0aec0; font-weight: 500;">Scoring Mode</label>
+                        <select id="scoring-mode-select" style="
+                            width: 100%;
+                            padding: 4px 6px;
+                            background: #2d3748;
+                            border: 1px solid #4a5568;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                            font-size: 10px;
+                            outline: none;
+                        " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            <option value="robust" selected>Outlier-Resistant (PnL + Win Rate)</option>
+                            <option value="tp_only">TP PnL % Only</option>
+                            <option value="winrate_only">Win Rate Only</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Low Bundled % Constraint -->
+                <div style="
+                    margin-top: 4px;
+                    padding: 4px;
+                    background: rgba(255, 193, 7, 0.1);
+                    border: 1px solid rgba(255, 193, 7, 0.3);
+                    border-radius: 4px;
+                ">
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 10px;
+                        color: #ffc107;
+                        font-weight: 500;
+                    " title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
+                        <input type="checkbox" id="low-bundled-constraint" checked style="
+                            margin-right: 4px;
+                            transform: scale(0.8);
+                            accent-color: #ffc107;
+                        ">
+                        <span>🛡️ Low Bundled % Constraint</span>
+                    </label>
+                    <div style="
+                        font-size: 8px;
+                        color: #a0aec0;
+                        margin-top: 1px;
+                        margin-left: 16px;
+                        line-height: 1.2;
+                    ">
+                        Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                    </div>
+                </div>
             </div>
         `;
     };
 
-    // Signal analysis tab - placeholder for now, would contain exact AGCopilot.js HTML
+    // Signal analysis tab - complete implementation from AGCopilot.js
     UI.getSignalAnalysisTabHTML = function() {
         return `
-            <div style="text-align: center; padding: 20px; color: #a0aec0;">
-                <div style="font-size: 14px; margin-bottom: 8px;">🔬 Signal Analysis UI</div>
-                <div style="font-size: 11px;">Full AGCopilot.js signal analysis interface would be implemented here</div>
+            <!-- Contract Input -->
+            <div style="margin-bottom: 12px;">
+                <label style="
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: #a0aec0;
+                    display: block;
+                    margin-bottom: 6px;
+                ">Contract Addresses</label>
+                <textarea id="signal-contract-input" placeholder="Contract addresses (one per line)..." style="
+                    width: 100%;
+                    padding: 12px;
+                    background: #2d3748;
+                    border: 1px solid #4a5568;
+                    border-radius: 4px;
+                    color: #e2e8f0;
+                    font-size: 12px;
+                    height: 80px;
+                    resize: vertical;
+                    outline: none;
+                    transition: border-color 0.2s;
+                    font-family: 'Monaco', 'Menlo', monospace;
+                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'"></textarea>
+            </div>
+            
+            <div style="
+                font-size: 11px;
+                color: #718096;
+                text-align: center;
+                margin-bottom: 16px;
+                padding: 8px;
+                background: #2d3748;
+                border-radius: 4px;
+                border: 1px solid #4a5568;
+            ">
+                💡 Analyze successful signals to generate optimal configs
+            </div>
+            
+            <!-- Settings Grid -->
+            <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px;">
+                <div>
+                    <label style="
+                        font-size: 11px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 4px;
+                    ">Signals/Token</label>
+                    <input type="number" id="signals-per-token" value="6" min="1" max="999" style="
+                        width: 60px;
+                        padding: 6px 8px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 11px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div>
+                    <label style="
+                        font-size: 11px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                        display: block;
+                        margin-bottom: 4px;
+                    ">Buffer %</label>
+                    <input type="number" id="config-buffer" value="10" min="0" max="50" style="
+                        width: 55px;
+                        padding: 6px 8px;
+                        background: #2d3748;
+                        border: 1px solid #4a5568;
+                        border-radius: 4px;
+                        color: #e2e8f0;
+                        font-size: 11px;
+                        text-align: center;
+                        outline: none;
+                        transition: border-color 0.2s;
+                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 11px;
+                        color: #e2e8f0;
+                        font-weight: 500;
+                    ">
+                        <input type="checkbox" id="enable-signal-clustering" checked style="
+                            margin-right: 6px;
+                            transform: scale(1.0);
+                            accent-color: #63b3ed;
+                        ">
+                        🎯 Clustering
+                    </label>
+                </div>
+                <button id="analyze-signals-btn" style="
+                    padding: 8px 16px;
+                    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                    border: none;
+                    border-radius: 4px;
+                    color: white;
+                    font-weight: 500;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                    🔍 Analyze
+                </button>
+            </div>
+            
+            <!-- Outlier Filtering -->
+            <div style="margin-bottom: 16px;">
+                <label style="
+                    font-size: 12px;
+                    font-weight: 500;
+                    color: #a0aec0;
+                    display: block;
+                    margin-bottom: 8px;
+                ">Outlier Filter</label>
+                <div style="
+                    background: #2d3748;
+                    border: 1px solid #4a5568;
+                    border-radius: 4px;
+                    padding: 8px;
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 8px;
+                ">
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 11px;
+                        color: #e2e8f0;
+                        padding: 4px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                        <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" style="
+                            margin-right: 4px;
+                            accent-color: #63b3ed;
+                        ">
+                        <span>None</span>
+                    </label>
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 11px;
+                        color: #e2e8f0;
+                        padding: 4px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                        <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" checked style="
+                            margin-right: 4px;
+                            accent-color: #63b3ed;
+                        ">
+                        <span>IQR</span>
+                    </label>
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 11px;
+                        color: #e2e8f0;
+                        padding: 4px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                        <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="
+                            margin-right: 4px;
+                            accent-color: #63b3ed;
+                        ">
+                        <span>Percentile</span>
+                    </label>
+                    <label style="
+                        display: flex;
+                        align-items: center;
+                        cursor: pointer;
+                        font-size: 11px;
+                        color: #e2e8f0;
+                        padding: 4px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
+                        <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="
+                            margin-right: 4px;
+                            accent-color: #63b3ed;
+                        ">
+                        <span>Z-Score</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Analysis Results -->
+            <div id="signal-analysis-results" style="
+                background: #2d3748;
+                border: 1px solid #4a5568;
+                border-radius: 6px;
+                padding: 12px;
+                font-size: 12px;
+                min-height: 60px;
+                max-height: 150px;
+                overflow-y: auto;
+                display: none;
+                scrollbar-width: thin;
+                scrollbar-color: #4a5568 transparent;
+            ">
+                <div style="color: #a0aec0;">Analysis results will appear here...</div>
+            </div>
+            
+            <!-- Cluster Selection Section -->
+            <div id="cluster-selection" style="margin-top: 16px; display: none;">
+                <div style="
+                    font-size: 12px;
+                    font-weight: 600;
+                    margin-bottom: 8px;
+                    color: #63b3ed;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                ">
+                    🎯 Select Config
+                </div>
+                <div id="cluster-buttons" style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
+                    <!-- Cluster buttons will be added dynamically -->
+                </div>
+            </div>
+            
+            <!-- Generated Config Actions -->
+            <div id="generated-config-actions" style="margin-top: 16px; display: none;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                    <button id="apply-generated-config-btn" style="
+                        padding: 10px 8px;
+                        background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+                        border: none;
+                        border-radius: 4px;
+                        color: white;
+                        font-size: 11px;
+                        cursor: pointer;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                        ⚙️ Apply
+                    </button>
+                    <button id="optimize-generated-config-btn" style="
+                        padding: 10px 8px;
+                        background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
+                        border: none;
+                        border-radius: 4px;
+                        color: white;
+                        font-size: 11px;
+                        cursor: pointer;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                        🚀 Optimize
+                    </button>
+                    <button id="copy-config-btn" style="
+                        padding: 10px 8px;
+                        background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
+                        border: none;
+                        border-radius: 4px;
+                        color: white;
+                        font-size: 11px;
+                        cursor: pointer;
+                        font-weight: 500;
+                        transition: all 0.2s;
+                    " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                        📋 Copy
+                    </button>
+                </div>
             </div>
         `;
     };
@@ -684,7 +1390,70 @@
     };
 
     // ========================================
-    // 🌐 GLOBAL EXPORTS
+    // � PRESET GENERATION FUNCTIONS
+    // ========================================
+
+    // Generate preset dropdown options (requires PRESETS object from main script)
+    UI.generatePresetOptions = function() {
+        // Check if PRESETS is available globally from AGCopilot.js
+        if (typeof window.PRESETS !== 'undefined') {
+            let options = '<option value="">-- Select a Preset --</option>';
+            
+            // Convert PRESETS object to array with keys and sort by priority
+            const sortedPresets = Object.entries(window.PRESETS).sort(([keyA, configA], [keyB, configB]) => {
+                const priorityA = configA.priority || 999; // Default high priority if not set
+                const priorityB = configB.priority || 999;
+                return priorityA - priorityB;
+            });
+            
+            let currentCategory = null;
+            
+            // Add sorted presets with category headers
+            sortedPresets.forEach(([presetKey, presetConfig]) => {
+                // Add category separator if category changed
+                if (presetConfig.category && presetConfig.category !== currentCategory) {
+                    currentCategory = presetConfig.category;
+                    options += `<optgroup label="── ${currentCategory} ──">`;
+                }
+                
+                const displayName = UI.getPresetDisplayName(presetKey, presetConfig);
+                options += `<option value="${presetKey}">${displayName}</option>`;
+            });
+            
+            return options;
+        } else {
+            // Fallback if PRESETS not available
+            return `
+                <option value="">-- Select a Preset --</option>
+                <option value="default">🔥 High Performance Config</option>
+                <option value="conservative">📊 Conservative Config</option>
+                <option value="aggressive">🚀 Aggressive Config</option>
+            `;
+        }
+    };
+
+    UI.getPresetDisplayName = function(presetKey, presetConfig) {        
+        // Use description if available, otherwise generate from key
+        if (presetConfig && presetConfig.description) {
+            // Add priority indicator for high priority items
+            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
+                                 (presetConfig.priority <= 5) ? '🔥 ' : 
+                                (presetConfig.priority <= 10) ? '⭐ ' : '';
+            return `${priorityIcon}${presetConfig.description}`;
+        }
+        
+        // Fallback to original naming logic
+        let displayName = presetKey
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
+            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+            .trim();
+            
+        return displayName;
+    };
+
+    // ========================================
+    // �🌐 GLOBAL EXPORTS
     // ========================================
 
     if (typeof window !== 'undefined') {
