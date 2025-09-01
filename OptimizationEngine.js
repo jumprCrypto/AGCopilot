@@ -1,0 +1,498 @@
+// OptimizationEngine.js
+// Advanced optimization algorithms extracted from AGCopilot.js
+// Handles Genetic Algorithm, Simulated Annealing, Latin Hypercube Sampling
+
+(function(AGUtils) {
+    'use strict';
+
+    const OE = {};
+    const AG = AGUtils || (window && window.AGUtils) || {};
+
+    // Lightweight helpers using AGUtils or globals
+    const sleep = AG.sleep || (window.sleep) || (ms => new Promise(res => setTimeout(res, ms)));
+    const deepClone = AG.deepClone || (window.deepClone) || (o => JSON.parse(JSON.stringify(o)));
+    const ensureCompleteConfig = AG.ensureCompleteConfig || (window.ensureCompleteConfig) || (c => c);
+    const calculateRobustScore = AG.calculateRobustScore || (window.calculateRobustScore) || (m => ({ score: m.tpPnlPercent || 0, rejected: false }));
+    const getScaledTokenThresholds = AG.getScaledTokenThresholds || (window.getScaledTokenThresholds) || (() => ({ MIN_TOKENS: 10 }));
+
+    // ========================================
+    // 🧬 LATIN HYPERCUBE SAMPLER
+    // ========================================
+    OE.LatinHypercubeSampler = class {
+        constructor(paramRules = null) {
+            this.samples = new Map();
+            this.PARAM_RULES = paramRules || (window.PARAM_RULES) || {};
+        }
+        
+        generateSamples(parameters, numSamples) {
+            const samples = [];
+            
+            for (let i = 0; i < numSamples; i++) {
+                const sample = {};
+                
+                for (const param of parameters) {
+                    const originalRules = this.PARAM_RULES[param];
+                    if (originalRules) {
+                        let rules = originalRules;
+                        
+                        // Apply bundled constraints if enabled
+                        const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+                        if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+                            if (param === 'Min Bundled %') {
+                                rules = { ...originalRules, min: 0, max: Math.min(5, originalRules.max) };
+                            } else if (param === 'Max Bundled %') {
+                                rules = { ...originalRules, min: originalRules.min, max: Math.min(35, originalRules.max) };
+                            }
+                        }
+                        
+                        if (rules.type === 'string') {
+                            sample[param] = Math.floor(Math.random() * 10 + 1).toString();
+                        } else {
+                            // Latin hypercube sampling
+                            const segment = (rules.max - rules.min) / numSamples;
+                            const segmentStart = rules.min + i * segment;
+                            const randomInSegment = Math.random() * segment;
+                            const value = segmentStart + randomInSegment;
+                            sample[param] = Math.round(value / rules.step) * rules.step;
+                        }
+                    }
+                }
+                
+                samples.push(sample);
+            }
+            
+            // Shuffle samples to remove correlation
+            for (let i = samples.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [samples[i], samples[j]] = [samples[j], samples[i]];
+            }
+            
+            return samples;
+        }
+    };
+
+    // ========================================
+    // 🌡️ SIMULATED ANNEALING
+    // ========================================
+    OE.SimulatedAnnealing = class {
+        constructor(optimizer, options = {}) {
+            this.optimizer = optimizer;
+            this.initialTemperature = options.initialTemperature || 100;
+            this.finalTemperature = options.finalTemperature || 0.1;
+            this.coolingRate = options.coolingRate || 0.95;
+            this.PARAM_RULES = options.paramRules || (window.PARAM_RULES) || {};
+        }
+        
+        async runSimulatedAnnealing() {
+            if (typeof this.optimizer.updateProgress === 'function') {
+                this.optimizer.updateProgress('🔥 Simulated Annealing Phase', 80, 
+                    this.optimizer.getCurrentBestScore().toFixed(1), 
+                    this.optimizer.testCount, 
+                    this.optimizer.bestMetrics?.totalTokens || '--', 
+                    this.optimizer.startTime);
+            }
+            
+            let currentConfig = deepClone(this.optimizer.bestConfig || this.optimizer.initialConfig);
+            let currentScore = this.optimizer.getCurrentBestScore();
+            let temperature = this.initialTemperature;
+            
+            while (temperature > this.finalTemperature && 
+                   this.optimizer.getRemainingTime() > 0.05 && 
+                   !window.STOPPED) {
+                
+                // Generate neighbor configuration
+                const neighbor = this.generateNeighbor(currentConfig);
+                const result = await this.optimizer.testConfig(neighbor, 'Simulated annealing');
+                
+                if (result.success && result.metrics) {
+                    const robustScore = calculateRobustScore(result.metrics);
+                    const neighborScore = robustScore?.score ?? result.metrics.tpPnlPercent;
+                    
+                    const deltaE = neighborScore - currentScore;
+                    
+                    // Accept if better, or with probability if worse
+                    if (deltaE > 0 || Math.random() < Math.exp(deltaE / temperature)) {
+                        currentConfig = neighbor;
+                        currentScore = neighborScore;
+                        
+                        if (typeof this.optimizer.updateProgress === 'function') {
+                            this.optimizer.updateProgress(`🔥 Annealing T=${temperature.toFixed(1)}`, 
+                                80 + (1 - temperature / this.initialTemperature) * 15, 
+                                this.optimizer.getCurrentBestScore().toFixed(1), 
+                                this.optimizer.testCount, 
+                                this.optimizer.bestMetrics?.totalTokens || '--', 
+                                this.optimizer.startTime);
+                        }
+                    }
+                }
+                
+                temperature *= this.coolingRate;
+                
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.optimizer.getCurrentBestScore() >= targetPnl) {
+                    break;
+                }
+            }
+        }
+        
+        generateNeighbor(config) {
+            const neighbor = deepClone(config);
+            
+            // Randomly modify 1-2 parameters
+            const paramList = Object.keys(this.PARAM_RULES);
+            const numModifications = Math.floor(Math.random() * 2) + 1;
+            
+            for (let i = 0; i < numModifications; i++) {
+                const param = paramList[Math.floor(Math.random() * paramList.length)];
+                const section = this.getSection(param);
+                const originalRules = this.PARAM_RULES[param];
+                
+                // Apply bundled constraints if enabled
+                const rules = this.applyBundledConstraints(param, originalRules);
+                
+                if (rules && neighbor[section]) {
+                    if (rules.type === 'string') {
+                        neighbor[section][param] = Math.floor(Math.random() * 10 + 1).toString();
+                    } else {
+                        const currentValue = neighbor[section][param] || (rules.min + rules.max) / 2;
+                        const maxChange = (rules.max - rules.min) * 0.1;
+                        const change = (Math.random() - 0.5) * maxChange;
+                        const newValue = Math.max(rules.min, Math.min(rules.max, currentValue + change));
+                        neighbor[section][param] = Math.round(newValue / rules.step) * rules.step;
+                    }
+                }
+            }
+            
+            return neighbor;
+        }
+
+        getSection(param) {
+            const sectionMap = {
+                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+                'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+                'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
+                'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
+                'Max Drained %': 'risk', 'Max Drained Count': 'risk',
+                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
+                'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
+            };
+            return sectionMap[param] || 'basic';
+        }
+
+        applyBundledConstraints(param, originalRules) {
+            if (!originalRules) return originalRules;
+            
+            const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+            if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+                if (param === 'Min Bundled %') {
+                    return { ...originalRules, min: 0, max: Math.min(5, originalRules.max) };
+                } else if (param === 'Max Bundled %') {
+                    return { ...originalRules, min: originalRules.min, max: Math.min(35, originalRules.max) };
+                }
+            }
+            return originalRules;
+        }
+    };
+
+    // ========================================
+    // 🧬 GENETIC ALGORITHM
+    // ========================================
+    OE.GeneticAlgorithm = class {
+        constructor(optimizer, options = {}) {
+            this.optimizer = optimizer;
+            this.populationSize = options.populationSize || 20;
+            this.mutationRate = options.mutationRate || 0.1;
+            this.crossoverRate = options.crossoverRate || 0.8;
+            this.elitismRate = options.elitismRate || 0.2;
+            this.maxGenerations = options.maxGenerations || 10;
+            this.PARAM_RULES = options.paramRules || (window.PARAM_RULES) || {};
+        }
+
+        async runGeneticAlgorithm() {
+            console.log(`🧬 Starting Genetic Algorithm: ${this.populationSize} population, ${this.maxGenerations} generations`);
+            
+            // Initialize population
+            let population = await this.initializePopulation();
+            
+            for (let generation = 0; generation < this.maxGenerations && 
+                 this.optimizer.getRemainingTime() > 0.1 && !window.STOPPED; generation++) {
+                
+                console.log(`🧬 Generation ${generation + 1}/${this.maxGenerations}`);
+                
+                if (typeof this.optimizer.updateProgress === 'function') {
+                    this.optimizer.updateProgress(`🧬 Generation ${generation + 1}/${this.maxGenerations}`, 
+                        60 + (generation / this.maxGenerations) * 20,
+                        this.optimizer.getCurrentBestScore().toFixed(1), 
+                        this.optimizer.testCount, 
+                        this.optimizer.bestMetrics?.totalTokens || '--', 
+                        this.optimizer.startTime);
+                }
+                
+                // Evaluate population
+                const evaluatedPopulation = await this.evaluatePopulation(population);
+                
+                // Selection and reproduction
+                population = await this.reproduce(evaluatedPopulation);
+                
+                // Early termination if target achieved
+                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
+                if (this.optimizer.getCurrentBestScore() >= targetPnl) {
+                    console.log(`🎯 Target PnL ${targetPnl}% achieved, stopping genetic algorithm`);
+                    break;
+                }
+            }
+        }
+
+        async initializePopulation() {
+            const population = [];
+            const paramList = Object.keys(this.PARAM_RULES);
+            
+            // Add current best config if available
+            if (this.optimizer.bestConfig) {
+                population.push(deepClone(this.optimizer.bestConfig));
+            }
+            
+            // Add initial config if available and different from best
+            if (this.optimizer.initialConfig && 
+                JSON.stringify(this.optimizer.initialConfig) !== JSON.stringify(this.optimizer.bestConfig)) {
+                population.push(deepClone(this.optimizer.initialConfig));
+            }
+            
+            // Fill remainder with random configs
+            while (population.length < this.populationSize) {
+                const randomConfig = this.generateRandomConfig(paramList);
+                population.push(randomConfig);
+            }
+            
+            return population;
+        }
+
+        generateRandomConfig(paramList) {
+            const config = ensureCompleteConfig({});
+            
+            // Randomly set 30-60% of parameters
+            const numParams = Math.floor(paramList.length * (0.3 + Math.random() * 0.3));
+            const selectedParams = this.shuffleArray([...paramList]).slice(0, numParams);
+            
+            for (const param of selectedParams) {
+                const section = this.getSection(param);
+                const rules = this.applyBundledConstraints(param, this.PARAM_RULES[param]);
+                
+                if (rules && config[section]) {
+                    if (rules.type === 'string') {
+                        config[section][param] = Math.floor(Math.random() * 10 + 1).toString();
+                    } else {
+                        const value = rules.min + Math.random() * (rules.max - rules.min);
+                        config[section][param] = Math.round(value / rules.step) * rules.step;
+                    }
+                }
+            }
+            
+            return config;
+        }
+
+        async evaluatePopulation(population) {
+            const evaluated = [];
+            
+            for (const individual of population) {
+                if (window.STOPPED) break;
+                
+                const result = await this.optimizer.testConfig(individual, 'Genetic individual');
+                
+                let fitness = 0;
+                if (result.success && result.metrics) {
+                    const robustScore = calculateRobustScore(result.metrics);
+                    fitness = robustScore?.score ?? result.metrics.tpPnlPercent;
+                }
+                
+                evaluated.push({ config: individual, fitness, result });
+            }
+            
+            // Sort by fitness (descending)
+            evaluated.sort((a, b) => b.fitness - a.fitness);
+            return evaluated;
+        }
+
+        async reproduce(evaluatedPopulation) {
+            const newPopulation = [];
+            const eliteCount = Math.floor(this.populationSize * this.elitismRate);
+            
+            // Keep elite individuals
+            for (let i = 0; i < eliteCount && i < evaluatedPopulation.length; i++) {
+                newPopulation.push(deepClone(evaluatedPopulation[i].config));
+            }
+            
+            // Generate offspring
+            while (newPopulation.length < this.populationSize && !window.STOPPED) {
+                const parent1 = this.tournamentSelection(evaluatedPopulation);
+                const parent2 = this.tournamentSelection(evaluatedPopulation);
+                
+                let offspring1, offspring2;
+                if (Math.random() < this.crossoverRate) {
+                    [offspring1, offspring2] = this.crossover(parent1.config, parent2.config);
+                } else {
+                    offspring1 = deepClone(parent1.config);
+                    offspring2 = deepClone(parent2.config);
+                }
+                
+                // Mutate offspring
+                if (Math.random() < this.mutationRate) {
+                    offspring1 = this.mutate(offspring1);
+                }
+                if (Math.random() < this.mutationRate) {
+                    offspring2 = this.mutate(offspring2);
+                }
+                
+                newPopulation.push(offspring1);
+                if (newPopulation.length < this.populationSize) {
+                    newPopulation.push(offspring2);
+                }
+            }
+            
+            return newPopulation.slice(0, this.populationSize);
+        }
+
+        tournamentSelection(population, tournamentSize = 3) {
+            const tournament = [];
+            for (let i = 0; i < tournamentSize; i++) {
+                const randomIndex = Math.floor(Math.random() * population.length);
+                tournament.push(population[randomIndex]);
+            }
+            tournament.sort((a, b) => b.fitness - a.fitness);
+            return tournament[0];
+        }
+
+        crossover(parent1, parent2) {
+            const offspring1 = deepClone(parent1);
+            const offspring2 = deepClone(parent2);
+            
+            // Parameter-level crossover
+            const paramList = Object.keys(this.PARAM_RULES);
+            for (const param of paramList) {
+                if (Math.random() < 0.5) {
+                    const section = this.getSection(param);
+                    if (parent1[section] && parent2[section]) {
+                        const temp = offspring1[section][param];
+                        offspring1[section][param] = offspring2[section][param];
+                        offspring2[section][param] = temp;
+                    }
+                }
+            }
+            
+            return [offspring1, offspring2];
+        }
+
+        mutate(config) {
+            const mutated = deepClone(config);
+            const paramList = Object.keys(this.PARAM_RULES);
+            const param = paramList[Math.floor(Math.random() * paramList.length)];
+            const section = this.getSection(param);
+            const rules = this.applyBundledConstraints(param, this.PARAM_RULES[param]);
+            
+            if (rules && mutated[section]) {
+                if (rules.type === 'string') {
+                    mutated[section][param] = Math.floor(Math.random() * 10 + 1).toString();
+                } else {
+                    const value = rules.min + Math.random() * (rules.max - rules.min);
+                    mutated[section][param] = Math.round(value / rules.step) * rules.step;
+                }
+            }
+            
+            return mutated;
+        }
+
+        shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        getSection(param) {
+            const sectionMap = {
+                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+                'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+                'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
+                'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
+                'Max Drained %': 'risk', 'Max Drained Count': 'risk',
+                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
+                'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
+            };
+            return sectionMap[param] || 'basic';
+        }
+
+        applyBundledConstraints(param, originalRules) {
+            if (!originalRules) return originalRules;
+            
+            const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+            if (lowBundledCheckbox && lowBundledCheckbox.checked) {
+                if (param === 'Min Bundled %') {
+                    return { ...originalRules, min: 0, max: Math.min(5, originalRules.max) };
+                } else if (param === 'Max Bundled %') {
+                    return { ...originalRules, min: originalRules.min, max: Math.min(35, originalRules.max) };
+                }
+            }
+            return originalRules;
+        }
+    };
+
+    // ========================================
+    // 🏭 OPTIMIZATION ENGINE FACTORY
+    // ========================================
+    OE.createOptimizationEngine = function(optimizer, options = {}) {
+        return {
+            latinSampler: new OE.LatinHypercubeSampler(options.paramRules),
+            simulatedAnnealing: new OE.SimulatedAnnealing(optimizer, options),
+            geneticAlgorithm: new OE.GeneticAlgorithm(optimizer, options)
+        };
+    };
+
+    // ========================================
+    // 🔧 UTILITY FUNCTIONS
+    // ========================================
+    OE.generateRandomParameterSet = function(paramRules, bundledConstraints = false) {
+        const config = {};
+        const paramList = Object.keys(paramRules);
+        
+        // Select 30-70% of parameters randomly
+        const numParams = Math.floor(paramList.length * (0.3 + Math.random() * 0.4));
+        const selectedParams = paramList.sort(() => 0.5 - Math.random()).slice(0, numParams);
+        
+        for (const param of selectedParams) {
+            let rules = paramRules[param];
+            
+            // Apply bundled constraints if enabled
+            if (bundledConstraints) {
+                if (param === 'Min Bundled %') {
+                    rules = { ...rules, min: 0, max: Math.min(5, rules.max) };
+                } else if (param === 'Max Bundled %') {
+                    rules = { ...rules, min: rules.min, max: Math.min(35, rules.max) };
+                }
+            }
+            
+            if (rules.type === 'string') {
+                config[param] = Math.floor(Math.random() * 10 + 1).toString();
+            } else {
+                const value = rules.min + Math.random() * (rules.max - rules.min);
+                config[param] = Math.round(value / rules.step) * rules.step;
+            }
+        }
+        
+        return config;
+    };
+
+    // Expose module
+    if (typeof window !== 'undefined') {
+        window.OptimizationEngine = OE;
+    }
+
+    console.log('OptimizationEngine module loaded');
+
+})(window && window.AGUtils);

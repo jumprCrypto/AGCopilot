@@ -15,8 +15,13 @@
 
     // ========================================
     // 🛠️ UTILITIES
+    // Prefer helpers from window.AGUtils when available to support modular contexts
     // ========================================
+    const AG = (window && window.AGUtils) || {};
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const formatTimestamp = (ts) => (AG.formatTimestamp ? AG.formatTimestamp(ts) : (ts ? new Date(ts * 1000).toISOString().replace('T', ' ').split('.')[0] : 'N/A'));
+    const formatMcap = (m) => (AG.formatMcap ? AG.formatMcap(m) : (m === null || m === undefined ? 'N/A' : (m >= 1000000 ? `$${(m / 1000000).toFixed(2)}M` : m >= 1000 ? `$${(m / 1000).toFixed(2)}K` : `$${m}`)));
+    const formatPercent = (v) => (AG.formatPercent ? AG.formatPercent(v) : (v === null || v === undefined ? 'N/A' : `${v.toFixed(2)}%`));
 
     // Rate limiter for API requests
     class APIRateLimiter {
