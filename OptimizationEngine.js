@@ -768,6 +768,7 @@
             return {
                 bestConfig: this.globalBestConfig,
                 bestScore: this.globalBestScore,
+                bestMetrics: this.chainResults.length > 0 ? this.chainResults[this.chainResults.length - 1].bestMetrics : { totalTokens: 0, tpPnlPercent: this.globalBestScore },
                 testCount: this.totalTestCount,
                 chainResults: this.chainResults
             };
@@ -793,37 +794,44 @@
 
         try {
             // Get current configuration as starting point
-            const currentConfig = await (window.ConfigManager?.getCurrentConfigFromUI?.() || window.AGUtils?.getCurrentConfiguration?.() || (() => ({})))();
+            let currentConfig = {};
+            try {
+                if (window.ConfigManager && typeof window.ConfigManager.getCurrentConfigFromUI === 'function') {
+                    currentConfig = await window.ConfigManager.getCurrentConfigFromUI();
+                } else if (window.AGUtils && typeof window.AGUtils.getCurrentConfiguration === 'function') {
+                    currentConfig = await window.AGUtils.getCurrentConfiguration();
+                } else {
+                    console.log('📋 Using default empty configuration as starting point');
+                    currentConfig = {};
+                }
+            } catch (configError) {
+                console.warn('⚠️ Failed to get current configuration, using empty config:', configError);
+                currentConfig = {};
+            }
             
             if (chainRunCount > 1) {
                 // Use chained optimizer for multiple runs
                 const chainedOptimizer = new OE.ChainedOptimizer();
-                const result = await chainedOptimizer.runChainedOptimization(
-                    currentConfig,
-                    chainRunCount,
-                    runtimeMin,
-                    targetPnl
-                );
+                const result = await chainedOptimizer.runChainedOptimization(chainRunCount, runtimeMin);
                 
                 console.log(`✅ Chained optimization completed: Best score ${result.bestScore?.toFixed(2)}%`);
-                return result;
+                return {
+                    bestConfig: result.bestConfig,
+                    bestScore: result.bestScore,
+                    bestMetrics: result.bestMetrics || { totalTokens: 0, tpPnlPercent: result.bestScore },
+                    testCount: result.testCount,
+                    totalTestCount: result.testCount
+                };
             } else {
                 // Use enhanced optimizer for single run
                 const enhancedOptimizer = new OE.EnhancedOptimizer(currentConfig);
                 
-                // Configure features
-                enhancedOptimizer.CONFIG = {
-                    ...enhancedOptimizer.CONFIG,
-                    USE_SIMULATED_ANNEALING: simulatedAnnealing,
-                    USE_LATIN_HYPERCUBE_SAMPLING: latinHypercube,
-                    USE_CORRELATED_PARAMS: correlatedParams,
-                    USE_DEEP_DIVE: deepDive,
-                    TARGET_PNL: targetPnl,
-                    MIN_TOKENS: minTokens,
-                    MAX_RUNTIME_MIN: runtimeMin
-                };
+                // Set runtime configuration
+                window.CONFIG.MAX_RUNTIME_MIN = runtimeMin;
+                window.CONFIG.TARGET_PNL = targetPnl;
+                window.CONFIG.MIN_TOKENS = minTokens;
                 
-                const result = await enhancedOptimizer.runEnhancedOptimization();
+                const result = await enhancedOptimizer.runOptimization();
                 
                 console.log(`✅ Optimization completed: Best score ${result.bestScore?.toFixed(2)}%`);
                 return result;
