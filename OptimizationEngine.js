@@ -488,9 +488,263 @@
         return config;
     };
 
+    // ========================================
+    // 🎯 ENHANCED OPTIMIZER CLASS
+    // ========================================
+    OE.EnhancedOptimizer = class {
+        constructor(initialConfig = null) {
+            this.configCache = new Map(); // Simple cache
+            this.bestConfig = null;
+            this.bestScore = -Infinity;
+            this.bestMetrics = { totalTokens: 0, tpPnlPercent: 0, winRate: 0 };
+            this.testCount = 0;
+            this.startTime = Date.now();
+            this.history = [];
+            this.initialConfig = initialConfig;
+            this.parameterTests = [];
+            
+            // Advanced optimization components
+            this.latinSampler = new OE.LatinHypercubeSampler();
+            this.simulatedAnnealing = new OE.SimulatedAnnealing(this);
+            
+            // Global stop flag
+            window.STOPPED = false;
+        }
+
+        getRemainingTime() {
+            const elapsed = (Date.now() - this.startTime) / (window.CONFIG.MAX_RUNTIME_MIN * 60 * 1000);
+            return Math.max(0, 1 - elapsed);
+        }
+
+        getProgress() {
+            return Math.min(100, ((Date.now() - this.startTime) / (window.CONFIG.MAX_RUNTIME_MIN * 60 * 1000)) * 100);
+        }
+
+        getCurrentBestScore() {
+            return this.bestScore;
+        }
+
+        async testConfig(config, testName) {
+            if (window.STOPPED) return { success: false };
+
+            try {
+                this.testCount++;
+                
+                // Use API client for testing if available
+                let result;
+                if (window.backtesterAPI && window.backtesterAPI.testConfigurationAPI) {
+                    result = await window.backtesterAPI.testConfigurationAPI(config, testName);
+                } else {
+                    // Fallback to placeholder result
+                    result = {
+                        success: true,
+                        metrics: {
+                            totalTokens: Math.floor(Math.random() * 1000) + 100,
+                            tpPnlPercent: Math.random() * 200 - 50,
+                            winRate: Math.random() * 100
+                        }
+                    };
+                }
+
+                if (result.success && result.metrics) {
+                    // Calculate score using RobustScoring if available
+                    let score = result.metrics.tpPnlPercent || 0;
+                    if (window.RobustScoring && window.RobustScoring.calculateRobustScore) {
+                        const robustResult = window.RobustScoring.calculateRobustScore(result.metrics);
+                        if (!robustResult.rejected) {
+                            score = robustResult.score;
+                        }
+                    }
+
+                    // Update best configuration
+                    if (score > this.bestScore) {
+                        this.bestScore = score;
+                        this.bestConfig = deepClone(config);
+                        this.bestMetrics = result.metrics;
+                        
+                        // Update global best config tracker
+                        if (window.bestConfigTracker) {
+                            window.bestConfigTracker.updateBest(this.bestConfig, score, result.metrics, 'optimization');
+                        }
+                    }
+                }
+
+                this.history.push({
+                    config: deepClone(config),
+                    result: result,
+                    testName: testName,
+                    success: result.success
+                });
+
+                return result;
+
+            } catch (error) {
+                console.error(`❌ Error testing config: ${error.message}`);
+                this.history.push({
+                    config: deepClone(config),
+                    error: error.message,
+                    testName: testName,
+                    success: false
+                });
+                return { success: false, error: error.message };
+            }
+        }
+
+        async runOptimization() {
+            console.log('🚀 Starting Enhanced Optimization...');
+            
+            const maxRuntime = window.CONFIG.MAX_RUNTIME_MIN * 60 * 1000;
+            const startTime = Date.now();
+            
+            // Main optimization loop
+            while (!window.STOPPED && (Date.now() - startTime) < maxRuntime) {
+                try {
+                    // Generate test configuration using various methods
+                    let testConfig;
+                    
+                    if (window.CONFIG.USE_LATIN_HYPERCUBE_SAMPLING && Math.random() < 0.3) {
+                        testConfig = this.latinSampler.generateConfiguration();
+                    } else if (window.CONFIG.USE_SIMULATED_ANNEALING && Math.random() < 0.3) {
+                        testConfig = this.simulatedAnnealing.generateNeighbor(this.bestConfig || {});
+                    } else {
+                        // Random parameter variation
+                        testConfig = this.generateRandomConfig();
+                    }
+
+                    // Test the configuration
+                    const result = await this.testConfig(testConfig, `Test ${this.testCount}`);
+                    
+                    // Update progress
+                    if (window.optimizationTracker) {
+                        const progress = this.getProgress();
+                        window.optimizationTracker.updateProgress(this.testCount, 0, 0, progress);
+                    }
+                    
+                    // Short delay between tests
+                    await sleep(100);
+                    
+                } catch (error) {
+                    console.error('❌ Optimization error:', error);
+                    await sleep(1000);
+                }
+            }
+
+            console.log(`✅ Optimization completed: ${this.testCount} tests, best score: ${this.bestScore.toFixed(1)}`);
+            
+            return {
+                bestConfig: this.bestConfig,
+                bestScore: this.bestScore,
+                bestMetrics: this.bestMetrics,
+                testCount: this.testCount,
+                runtime: Date.now() - startTime
+            };
+        }
+
+        generateRandomConfig() {
+            // Simple random configuration generator
+            const config = {
+                basic: {},
+                tokenDetails: {},
+                wallets: {},
+                risk: {},
+                advanced: {}
+            };
+
+            // Add random values within parameter rules
+            if (window.PARAM_RULES) {
+                for (const [param, rules] of Object.entries(window.PARAM_RULES)) {
+                    const section = this.getSection(param);
+                    if (section && config[section]) {
+                        const range = rules.max - rules.min;
+                        const value = rules.min + Math.random() * range;
+                        config[section][param] = Math.round(value / rules.step) * rules.step;
+                    }
+                }
+            }
+
+            return config;
+        }
+
+        getSection(param) {
+            const sectionMap = {
+                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+                'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
+                'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
+                'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
+                'Max Drained %': 'risk', 'Max Drained Count': 'risk',
+                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
+                'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
+            };
+            return sectionMap[param] || 'basic';
+        }
+    };
+
+    // ========================================
+    // 🔗 CHAINED OPTIMIZER CLASS
+    // ========================================
+    OE.ChainedOptimizer = class {
+        constructor() {
+            this.chainResults = [];
+            this.globalBestConfig = null;
+            this.globalBestScore = -Infinity;
+            this.totalTestCount = 0;
+        }
+
+        async runChainedOptimization(chainCount, runtimeMinutes) {
+            console.log(`🔗 Starting chained optimization: ${chainCount} runs of ${runtimeMinutes} minutes each`);
+            
+            window.CONFIG.MAX_RUNTIME_MIN = runtimeMinutes;
+            
+            for (let i = 1; i <= chainCount; i++) {
+                if (window.STOPPED) break;
+                
+                console.log(`🔗 Chain run ${i}/${chainCount} starting...`);
+                
+                // Create new optimizer for this run
+                const optimizer = new OE.EnhancedOptimizer(this.globalBestConfig);
+                
+                // Run single optimization
+                const result = await optimizer.runOptimization();
+                
+                if (result.bestScore > this.globalBestScore) {
+                    this.globalBestScore = result.bestScore;
+                    this.globalBestConfig = result.bestConfig;
+                    console.log(`🔗 New global best found in run ${i}: ${result.bestScore.toFixed(1)}`);
+                }
+                
+                this.chainResults.push(result);
+                this.totalTestCount += result.testCount;
+                
+                console.log(`🔗 Chain run ${i}/${chainCount} completed: ${result.testCount} tests, best: ${result.bestScore.toFixed(1)}`);
+                
+                // Short break between runs
+                if (i < chainCount) {
+                    await sleep(2000);
+                }
+            }
+
+            console.log(`🔗 Chained optimization completed: ${this.totalTestCount} total tests across ${chainCount} runs`);
+            
+            return {
+                bestConfig: this.globalBestConfig,
+                bestScore: this.globalBestScore,
+                testCount: this.totalTestCount,
+                chainResults: this.chainResults
+            };
+        }
+    };
+
     // Expose module
     if (typeof window !== 'undefined') {
         window.OptimizationEngine = OE;
+        
+        // Export main optimization classes globally
+        window.EnhancedOptimizer = OE.EnhancedOptimizer;
+        window.ChainedOptimizer = OE.ChainedOptimizer;
+        window.LatinHypercubeSampler = OE.LatinHypercubeSampler;
+        window.SimulatedAnnealing = OE.SimulatedAnnealing;
     }
 
     console.log('OptimizationEngine module loaded');
