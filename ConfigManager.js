@@ -141,69 +141,52 @@
     // ========================================
 
     CM.PRESETS = {
-        'balanced-performance': {
-            name: 'Balanced Performance',
-            description: 'Good balance of performance and conservative approach',
-            aggressiveness: 'medium',
-            config: {
-                takeProfits: [25, 50, 100],
-                stopLoss: 5,
-                dynamicSL: true,
-                minTokens: 100,
-                maxRuntimeMin: 30,
-                targetPnlPercent: 100,
-                maxConcurrentRequests: 3,
-                enableCaching: true
-            }
+        oldDeployer: { 
+            category: "Custom",
+            description: "Old Deployer",
+            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
         },
-        'conservative-safe': {
-            name: 'Conservative Safe',
-            description: 'Lower risk approach with higher confidence thresholds',
-            aggressiveness: 'low',
-            config: {
-                takeProfits: [50, 100],
-                stopLoss: 3,
-                dynamicSL: false,
-                minTokens: 200,
-                maxRuntimeMin: 20,
-                targetPnlPercent: 75,
-                maxConcurrentRequests: 2,
-                enableCaching: true
-            }
+        oldishDeployer: { 
+            category: "Custom",
+            description: "Old-ish Deployer",
+            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" } 
         },
-        'aggressive-performance': {
-            name: 'Aggressive Performance',
-            description: 'Higher risk for potentially better returns',
-            aggressiveness: 'high',
-            config: {
-                takeProfits: [25, 50, 75, 100, 150],
-                stopLoss: 7,
-                dynamicSL: true,
-                minTokens: 50,
-                maxRuntimeMin: 45,
-                targetPnlPercent: 150,
-                maxConcurrentRequests: 5,
-                enableCaching: true
-            }
+        agScore7: { 
+            category: "Custom",
+            description: "Min AG Score 7",
+            tokenDetails: { "Min AG Score": "7" } 
         },
-        'experimental-ai': {
-            name: 'Experimental AI',
-            description: 'Latest AI features with enhanced signal detection',
-            aggressiveness: 'high',
-            config: {
-                takeProfits: [25, 50, 100, 200],
-                stopLoss: 6,
-                dynamicSL: true,
-                minTokens: 75,
-                maxRuntimeMin: 60,
-                targetPnlPercent: 125,
-                maxConcurrentRequests: 4,
-                enableCaching: true,
-                enableAIEnhancements: true,
-                minSignalConfidence: 0.7,
-                adaptiveThresholdLearning: true,
-                anomalyDetection: true
-            }
+        
+        // Discovery-based presets (from Parameter Impact Analysis)
+        MaxLiqThirty: {
+            priority: 1,
+            category: "Param Discovery",
+            description: "Max Liq % 30",
+            advanced: { "Max Liquidity %": 30 }
+        },
+         minWinPred: { 
+            priority: 2,
+            category: "Param Discovery",
+            description: "Min Win Pred % 55",
+            advanced: { "Min Win Pred %": 55 }
+        },
+        UnqWallet3: {
+            priority: 3,
+            category: "Param Discovery", 
+            description: "3+ Unq",
+            wallets: { "Min Unique Wallets": 3 }
+        },
+        MinMcap20k: {
+            priority: 4,
+            category: "Param Discovery",
+            description: "Min MCAP 20K", 
+            basic: { "Min MCAP (USD)": 20000 }
+        },
+        MinMcap10k: {
+            priority: 5,
+            category: "Param Discovery",
+            description: "Min MCAP 10K", 
+            basic: { "Min MCAP (USD)": 10000 }
         }
     };
 
@@ -434,6 +417,54 @@
             scalingFactor: scalingFactor,
             isDateFiltered: true
         };
+    };
+
+    // Format configuration for display/copying
+    CM.formatConfigForDisplay = function(config) {
+        const lines = [];
+        
+        // Check if this is a cluster config
+        const isClusterConfig = config.metadata && config.metadata.clusterInfo;
+        
+        if (isClusterConfig) {
+            lines.push(`🎯 CLUSTER ${config.metadata.clusterInfo.clusterId} CONFIG`);
+            lines.push('═'.repeat(50));
+            lines.push(`🔗 ${config.metadata.clusterInfo.clusterName}: ${config.metadata.clusterInfo.description}`);
+            lines.push(`🎯 Tightness Score: ${config.metadata.clusterInfo.tightness.toFixed(3)} (lower = tighter)`);
+            lines.push(`📏 Distance Threshold: ${config.metadata.clusterInfo.threshold}`);
+        } else {
+            lines.push('🎯 GENERATED CONFIG');
+            lines.push('═'.repeat(50));
+        }
+        
+        if (config.metadata) {
+            const tokenText = config.metadata.basedOnTokens !== undefined ? `${config.metadata.basedOnTokens} tokens` : 'undefined tokens';
+            lines.push(`📊 Based on: ${config.metadata.basedOnSignals} signals from ${tokenText}`);
+            lines.push(`🛡️ Buffer: ${config.metadata.bufferPercent}%`);
+            lines.push(`🎯 Outlier Filter: ${config.metadata.outlierMethod || 'none'}`);
+            lines.push(`⏰ Generated: ${new Date(config.metadata.generatedAt).toLocaleString()}`);
+        }
+        lines.push('');
+        
+        lines.push('📈 BASIC CRITERIA:');
+        if (config['Min MCAP (USD)'] !== undefined || config['Max MCAP (USD)'] !== undefined) {
+            const min = config['Min MCAP (USD)'] || 0;
+            const max = config['Max MCAP (USD)'] || 'N/A';
+            lines.push(`MCAP: $${min} - $${max}`);
+        }
+        if (config['Min AG Score'] !== undefined) {
+            lines.push(`AG Score: ${config['Min AG Score']} - ${config['Max AG Score'] || 10}`);
+        }
+        if (config['Min Token Age (sec)'] !== undefined || config['Max Token Age (sec)'] !== undefined) {
+            const min = config['Min Token Age (sec)'] || 0;
+            const max = config['Max Token Age (sec)'] || '∞';
+            lines.push(`Token Age: ${min} - ${max} seconds`);
+        }
+        if (config['Min Deployer Age (min)'] !== undefined) {
+            lines.push(`Deployer Age: ${config['Min Deployer Age (min)']} minutes+`);
+        }
+        
+        return lines.join('\n');
     };
 
     // ========================================
