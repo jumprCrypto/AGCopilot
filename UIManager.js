@@ -79,6 +79,22 @@
                         </h3>
                     </div>
                     <div style="display: flex; gap: 8px;">
+                        <button id="toggle-split-screen-btn" style="
+                            background: #38b2ac;
+                            border: 1px solid #319795;
+                            border-radius: 4px;
+                            color: white;
+                            cursor: pointer;
+                            padding: 6px 10px;
+                            font-size: 11px;
+                            font-weight: 500;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='#319795'" 
+                           onmouseout="this.style.background='#38b2ac'"
+                           title="Toggle split-screen mode"
+                           onclick="window.UIManager?.toggleSplitScreen && window.UIManager.toggleSplitScreen()">
+                            ⟷ Split
+                        </button>
                         <button id="collapse-ui-btn" style="
                             background: #4a5568;
                             border: 1px solid #718096;
@@ -1465,7 +1481,102 @@
         window.updateBestConfigHeader = UI.updateBestConfigHeader;
         window.collapseUI = UI.collapseUI;
         window.expandUI = UI.expandUI;
+        
+        // Split-screen functions
+        window.toggleSplitScreen = UI.toggleSplitScreen;
+        window.enableSplitScreen = UI.enableSplitScreen;
+        window.disableSplitScreen = UI.disableSplitScreen;
     }
+
+    // ========================================
+    // 🖥️ SPLIT-SCREEN LAYOUT FUNCTIONS
+    // ========================================
+    
+    // Track split-screen state
+    let isSplitScreenMode = false;
+    const COPILOT_WIDTH = 420; // Width of the AG Copilot panel
+    
+    UI.toggleSplitScreen = function() {
+        if (isSplitScreenMode) {
+            UI.disableSplitScreen();
+        } else {
+            UI.enableSplitScreen();
+        }
+    };
+    
+    UI.enableSplitScreen = function() {
+        const mainUI = document.getElementById('ag-copilot-enhanced-ui');
+        if (!mainUI) return;
+        
+        // Find the main content area of the backtester
+        const mainContent = document.querySelector('#__next') || document.querySelector('main') || document.body;
+        
+        if (mainContent) {
+            // Adjust main content to make room for AG Copilot
+            mainContent.style.marginRight = `${COPILOT_WIDTH + 40}px`;
+            mainContent.style.transition = 'margin-right 0.3s ease';
+            
+            // Position AG Copilot in the newly created space
+            mainUI.style.position = 'fixed';
+            mainUI.style.top = '20px';
+            mainUI.style.right = '20px';
+            mainUI.style.width = `${COPILOT_WIDTH}px`;
+            mainUI.style.height = 'calc(100vh - 40px)';
+            mainUI.style.zIndex = '10000';
+            
+            isSplitScreenMode = true;
+            console.log('✅ Split-screen mode enabled');
+            
+            // Update toggle button if it exists
+            const toggleBtn = document.getElementById('toggle-split-screen-btn');
+            if (toggleBtn) {
+                toggleBtn.textContent = '📱 Float';
+                toggleBtn.title = 'Switch to floating mode';
+            }
+        }
+    };
+    
+    UI.disableSplitScreen = function() {
+        const mainUI = document.getElementById('ag-copilot-enhanced-ui');
+        if (!mainUI) return;
+        
+        // Find the main content area of the backtester
+        const mainContent = document.querySelector('#__next') || document.querySelector('main') || document.body;
+        
+        if (mainContent) {
+            // Remove margin from main content
+            mainContent.style.marginRight = '0';
+            
+            // Reset AG Copilot positioning to floating
+            mainUI.style.position = 'fixed';
+            mainUI.style.top = '20px';
+            mainUI.style.right = '20px';
+            mainUI.style.width = `${COPILOT_WIDTH}px`;
+            mainUI.style.height = 'auto';
+            mainUI.style.maxHeight = '90vh';
+            
+            isSplitScreenMode = false;
+            console.log('✅ Split-screen mode disabled');
+            
+            // Update toggle button if it exists
+            const toggleBtn = document.getElementById('toggle-split-screen-btn');
+            if (toggleBtn) {
+                toggleBtn.textContent = '⟷ Split';
+                toggleBtn.title = 'Switch to split-screen mode';
+            }
+        }
+    };
+    
+    // Clean up split-screen when UI is removed
+    UI.cleanupSplitScreen = function() {
+        if (isSplitScreenMode) {
+            const mainContent = document.querySelector('#__next') || document.querySelector('main') || document.body;
+            if (mainContent) {
+                mainContent.style.marginRight = '0';
+            }
+            isSplitScreenMode = false;
+        }
+    };
 
     console.log('✅ UIManager module loaded with AGCopilot parity');
 

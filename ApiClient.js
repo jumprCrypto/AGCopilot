@@ -336,6 +336,42 @@
                 return { success: false, error: error.message, source: 'API' };
             }
         }
+
+        // Main method that OptimizationEngine calls
+        async testConfigurationAPI(config, testName = 'Optimization Test') {
+            console.log(`🧪 Testing configuration via API: ${testName}`);
+            
+            try {
+                // Use fetchResults method to test the configuration
+                const result = await this.fetchResults(config);
+                
+                if (result.success) {
+                    console.log(`✅ ${testName} successful:`, result.metrics);
+                    return {
+                        success: true,
+                        metrics: result.metrics,
+                        score: result.metrics.tpPnlPercent || 0,
+                        source: 'API'
+                    };
+                } else {
+                    console.warn(`❌ ${testName} failed:`, result.error);
+                    return {
+                        success: false,
+                        error: result.error,
+                        score: 0,
+                        source: 'API'
+                    };
+                }
+            } catch (error) {
+                console.error(`💥 ${testName} error:`, error);
+                return {
+                    success: false,
+                    error: error.message,
+                    score: 0,
+                    source: 'API'
+                };
+            }
+        }
     }
 
     // Expose globally for AG Copilot to instantiate
