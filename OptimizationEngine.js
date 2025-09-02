@@ -774,6 +774,66 @@
         }
     };
 
+    // ========================================
+    // 🚀 MAIN OPTIMIZATION ENTRY POINT
+    // ========================================
+    OE.startOptimization = async function(options = {}) {
+        const {
+            targetPnl = 100,
+            minTokens = 50,
+            runtimeMin = 30,
+            chainRunCount = 1,
+            simulatedAnnealing = true,
+            latinHypercube = true,
+            correlatedParams = true,
+            deepDive = true
+        } = options;
+
+        console.log(`🚀 Starting optimization with ${chainRunCount} chain runs, ${runtimeMin} min each`);
+
+        try {
+            // Get current configuration as starting point
+            const currentConfig = await (window.ConfigManager?.getCurrentConfigFromUI?.() || window.AGUtils?.getCurrentConfiguration?.() || (() => ({})))();
+            
+            if (chainRunCount > 1) {
+                // Use chained optimizer for multiple runs
+                const chainedOptimizer = new OE.ChainedOptimizer();
+                const result = await chainedOptimizer.runChainedOptimization(
+                    currentConfig,
+                    chainRunCount,
+                    runtimeMin,
+                    targetPnl
+                );
+                
+                console.log(`✅ Chained optimization completed: Best score ${result.bestScore?.toFixed(2)}%`);
+                return result;
+            } else {
+                // Use enhanced optimizer for single run
+                const enhancedOptimizer = new OE.EnhancedOptimizer(currentConfig);
+                
+                // Configure features
+                enhancedOptimizer.CONFIG = {
+                    ...enhancedOptimizer.CONFIG,
+                    USE_SIMULATED_ANNEALING: simulatedAnnealing,
+                    USE_LATIN_HYPERCUBE_SAMPLING: latinHypercube,
+                    USE_CORRELATED_PARAMS: correlatedParams,
+                    USE_DEEP_DIVE: deepDive,
+                    TARGET_PNL: targetPnl,
+                    MIN_TOKENS: minTokens,
+                    MAX_RUNTIME_MIN: runtimeMin
+                };
+                
+                const result = await enhancedOptimizer.runEnhancedOptimization();
+                
+                console.log(`✅ Optimization completed: Best score ${result.bestScore?.toFixed(2)}%`);
+                return result;
+            }
+        } catch (error) {
+            console.error('❌ Optimization failed:', error);
+            throw error;
+        }
+    };
+
     // Expose module
     if (typeof window !== 'undefined') {
         window.OptimizationEngine = OE;
