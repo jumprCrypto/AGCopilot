@@ -585,6 +585,108 @@
         return summary;
     };
 
+    // Extract runners data for anti-gigamooner optimization
+    SA.extractRunnersData = async function() {
+        try {
+            console.log('🔍 Extracting runners data...');
+            let totalRunnersCount = 0;
+            let totalTokensMatched = 0;
+            let pagesWithSignals = 0;
+            
+            // First check the current page
+            const initialPageData = await this.extractRunnersFromCurrentPage();
+            totalRunnersCount += initialPageData.runnersCount;
+            totalTokensMatched += initialPageData.tokensOnThisPage;
+            
+            if (initialPageData.runnersCount > 0 || initialPageData.tokensOnThisPage > 0) {
+                pagesWithSignals++;
+            }
+            
+            // Calculate runners percentage based on total tokens matched, not just pages analyzed
+            const runnersPercentage = totalTokensMatched > 0 ? (totalRunnersCount / totalTokensMatched) * 100 : 0;
+            return {
+                runnersCount: totalRunnersCount,
+                totalValidTokens: totalTokensMatched,
+                runnersPercentage
+            };
+        } catch (error) {
+            console.warn('⚠️ Failed to extract runners data:', error);
+            return null;
+        }
+    };
+
+    // Helper function to extract runners from current page
+    SA.extractRunnersFromCurrentPage = async function() {
+        try {
+            // Find the TP Gain column index by looking at table headers
+            const headers = Array.from(document.querySelectorAll('thead th'));
+            let tpGainColumnIndex = -1;
+            
+            for (let i = 0; i < headers.length; i++) {
+                const headerText = (headers[i].textContent || '').trim().toLowerCase();
+                if (headerText.includes('tp gain') || headerText.includes('tp') && headerText.includes('gain')) {
+                    tpGainColumnIndex = i;
+                    break;
+                }
+            }
+            
+            if (tpGainColumnIndex === -1) {
+                console.warn('⚠️ Could not find TP Gain column header. Go to the Signals page');
+                return { runnersCount: 0, tokensOnThisPage: 0 };
+            }
+            
+            // Get all table rows and extract the TP Gain column cells
+            const tableRows = Array.from(document.querySelectorAll('tbody tr'));
+            let runnersCount = 0;
+            let tokensOnThisPage = 0;
+            
+            for (const row of tableRows) {
+                const cells = row.querySelectorAll('td');
+                if (cells.length > tpGainColumnIndex) {
+                    tokensOnThisPage++; // Count valid tokens
+                    
+                    const tpGainCell = cells[tpGainColumnIndex];
+                    const tpGainText = tpGainCell.textContent.trim();
+                    
+                    // Check if this is a runner (TP gain >= 1000%)
+                    let isRunner = false;
+                    
+                    // Extract TP Gain value - looking for patterns like "1000%" or "10x"
+                    if (tpGainText) {
+                        // Check for percentage format
+                        const percentMatch = tpGainText.match(/([0-9,.]+)%/);
+                        if (percentMatch && parseFloat(percentMatch[1].replace(',', '')) >= 1000) {
+                            isRunner = true;
+                        } else {
+                            // Check for multiplier format
+                            const multiplierMatch = tpGainText.match(/([0-9,.]+)x/);
+                            if (multiplierMatch) {
+                                const multiplier = parseFloat(multiplierMatch[1].replace(',', ''));
+                                if (multiplier >= 10) {
+                                    isRunner = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (isRunner) {
+                        runnersCount++;
+                    }
+                }
+            }
+
+            console.log(`📊 Page analysis complete: ${runnersCount}/${tokensOnThisPage} runners found`);
+
+            return {
+                runnersCount,
+                tokensOnThisPage
+            };
+        } catch (error) {
+            console.warn('⚠️ Failed to extract runners from current page:', error);
+            return { runnersCount: 0, tokensOnThisPage: 0 };
+        }
+    };
+
     // Expose module
     window.SignalAnalysis = {
         processTokenData: SA.processTokenData,
@@ -605,7 +707,9 @@
         updateSignalStatus: SA.updateSignalStatus,
         createClusterSelectionUI: SA.createClusterSelectionUI,
         selectClusterConfig: SA.selectClusterConfig,
-        handleSignalAnalysis: SA.handleSignalAnalysis
+        handleSignalAnalysis: SA.handleSignalAnalysis,
+        extractRunnersData: SA.extractRunnersData,
+        extractRunnersFromCurrentPage: SA.extractRunnersFromCurrentPage
     };
 
     console.log('SignalAnalysis module loaded and window.SignalAnalysis registered');

@@ -467,6 +467,299 @@
         return lines.join('\n');
     };
 
+    // Function to read current field value from the UI
+    CM.getFieldValue = function(labelText) {
+        try {
+            if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
+                if (!hgLabel) {
+                    return undefined;
+                }
+                
+                let container = hgLabel.parentElement;
+                let gridContainer = null;
+                let depth = 0;
+                
+                while (container && depth < 4) {
+                    const gridDiv = container.querySelector('.grid.grid-cols-2');
+                    if (gridDiv) {
+                        gridContainer = gridDiv;
+                        break;
+                    }
+                    container = container.parentElement;
+                    depth++;
+                }
+
+                if (!gridContainer) {
+                    return undefined;
+                }
+                
+                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
+                
+                if (!inputs || inputs.length < 2) {
+                    return undefined;
+                }
+                
+                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
+                const input = inputs[idx];
+                if (!input) {
+                    return undefined;
+                }
+
+                const value = input.value.trim();
+                if (value === '' || value === null) {
+                    return undefined;
+                }
+                return parseFloat(value);
+            }
+
+            // Find the label using the same approach as setFieldValue
+            const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+            const label = labels.find(el => el.textContent.trim() === labelText);
+
+            if (!label) {
+                return undefined;
+            }
+
+            let container = label.closest('.form-group') || label.parentElement;
+
+            // Dual-state toggles: check first to avoid navigating away from the button
+            if (labelText === 'Description' || labelText === 'Fresh Deployer' || labelText === 'Has Buy Signal') {
+                let toggleButton = container.querySelector('button');
+                if (!toggleButton) {
+                    // Climb up cautiously to find the button
+                    let searchContainer = container.parentElement;
+                    let depth = 0;
+                    while (searchContainer && depth < 3) {
+                        toggleButton = searchContainer.querySelector('button');
+                        if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                            break;
+                        }
+                        toggleButton = null;
+                        searchContainer = searchContainer.parentElement;
+                        depth++;
+                    }
+                }
+                if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                    const txt = toggleButton.textContent.trim();
+                    return (txt === 'Yes') ? true : null; // Yes or Don't care
+                }
+                return undefined;
+            }
+
+            // Navigate up the DOM tree to find the input container (for non-toggle fields)
+            if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                container = container.parentElement;
+                if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                    container = container.parentElement;
+                }
+            }
+
+            // Handle number inputs
+            const input = container.querySelector('input[type="number"]');
+            if (input) {
+                const value = input.value.trim();
+                if (value === '' || value === null) {
+                    return undefined;
+                }
+                return parseFloat(value);
+            }
+
+            // Handle select dropdowns
+            const select = container.querySelector('select');
+            if (select) {
+                const value = select.value;
+                if (value === '' || select.selectedIndex === 0) {
+                    return undefined;
+                }
+                return value;
+            }
+
+            return undefined;
+        } catch (error) {
+            console.warn(`Error reading field ${labelText}:`, error.message);
+            return undefined;
+        }
+    };
+
+    // Function to set a field value in the UI
+    CM.setFieldValue = async function(labelText, value, maxRetries = 2) {
+        const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
+
+        // Special handling for Holders Growth Filter composite field
+        if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
+            try {
+                // Find the "Holders Growth Filter" block which contains two numeric inputs
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
+                if (!hgLabel) {
+                    console.warn('Holders Growth Filter label not found');
+                    return false;
+                }
+                let container = hgLabel.parentElement;
+                let gridContainer = null;
+                let depth = 0;
+                
+                while (container && depth < 4) {
+                    const gridDiv = container.querySelector('.grid.grid-cols-2');
+                    if (gridDiv) {
+                        gridContainer = gridDiv;
+                        break;
+                    }
+                    container = container.parentElement;
+                    depth++;
+                }
+
+                if (!gridContainer) {
+                    console.warn('Holders Growth grid container not found');
+                    return false;
+                }
+                
+                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
+                
+                if (!inputs || inputs.length < 2) {
+                    console.warn('Holders Growth inputs not found, found:', inputs.length);
+                    return false;
+                }
+                
+                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
+                const input = inputs[idx];
+                if (!input) {
+                    console.warn('Target Holders Growth input not found at expected index');
+                    return false;
+                }
+
+                let processedValue = value;
+                if (!shouldClear) {
+                    if (typeof value === 'string' && value.trim() !== '') {
+                        processedValue = parseFloat(value);
+                    }
+                    
+                    if (typeof processedValue === 'number' && !isNaN(processedValue)) {
+                        // Already good
+                    }
+                }
+
+                input.focus();
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeInputValueSetter.call(input, shouldClear ? '' : processedValue);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.blur();
+                
+                console.log(`✅ Set ${labelText} to ${shouldClear ? 'cleared' : processedValue}`);
+                return true;
+            } catch (err) {
+                console.warn('Error setting Holders Growth Filter:', err.message);
+                return false;
+            }
+        }
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Find the label using the original AGCopilot approach
+                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+                const label = labels.find(el => el.textContent.trim() === labelText);
+
+                if (!label) {
+                    console.warn(`Label not found: ${labelText}`);
+                    return false;
+                }
+
+                let container = label.closest('.form-group') || label.parentElement;
+
+                // Handle toggle buttons FIRST (Description and Fresh Deployer) before DOM navigation
+                if (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Has Buy Signal") {
+                    // Look for toggle button specifically in the label's immediate area
+                    let toggleButton = container.querySelector('button');
+                    
+                    // If not found, try searching in parent containers but only for toggle buttons
+                    if (!toggleButton) {
+                        let searchContainer = container.parentElement;
+                        let searchDepth = 0;
+                        while (searchContainer && searchDepth < 3) {
+                            toggleButton = searchContainer.querySelector('button');
+                            if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                                break;
+                            }
+                            toggleButton = null;
+                            searchContainer = searchContainer.parentElement;
+                            searchDepth++;
+                        }
+                    }
+                    
+                    if (toggleButton && toggleButton.textContent.trim() !== '×') {
+                        // Set a toggle button to "Yes" or "Don't care" based on the value
+                        // true => "Yes", anything else => "Don't care"
+                        const targetText = (value === true) ? "Yes" : "Don't care";
+                        let safety = 0;
+                        
+                        while (toggleButton.textContent.trim() !== targetText && safety < 3) {
+                            toggleButton.click();
+                            await window.AGUtils.sleep(50);
+                            safety++;
+                        }
+                        
+                        console.log(`✅ Set ${labelText} to ${targetText}`);
+                        return true;
+                    } else {
+                        console.warn(`Toggle button not found for ${labelText}`);
+                        return false;
+                    }
+                }
+
+                // Navigate up the DOM tree to find the input container (only for non-toggle fields)
+                if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                    container = container.parentElement;
+                    if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
+                        container = container.parentElement;
+                    }
+                }
+
+                // Handle number inputs
+                const input = container.querySelector('input[type="number"]');
+                if (input) {
+                    if (shouldClear) {
+                        input.value = '';
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        console.log(`✅ Cleared ${labelText}`);
+                    } else {
+                        input.value = value;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        console.log(`✅ Set ${labelText} to ${value}`);
+                    }
+                    return true;
+                }
+
+                // Handle select dropdowns
+                const select = container.querySelector('select');
+                if (select) {
+                    if (shouldClear) {
+                        select.selectedIndex = 0;
+                        console.log(`✅ Cleared ${labelText}`);
+                    } else {
+                        select.value = value;
+                        console.log(`✅ Set ${labelText} to ${value}`);
+                    }
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+
+                await window.AGUtils.sleep(200); // Wait before retry
+                
+            } catch (error) {
+                console.warn(`Attempt ${attempt} failed for ${labelText}:`, error.message);
+                if (attempt < maxRetries) {
+                    await window.AGUtils.sleep(200);
+                }
+            }
+        }
+        return false;
+    };
+
     // ========================================
     // 🌐 EXPORTS
     // ========================================
@@ -478,6 +771,26 @@
         // Also export individual components for convenience
         window.CONFIG = CM.CONFIG;
         window.PRESETS = CM.PRESETS;
+        
+        // Export all functions
+        window.ConfigManager = {
+            CONFIG: CM.CONFIG,
+            PRESETS: CM.PRESETS,
+            COMPLETE_CONFIG_TEMPLATE: CM.COMPLETE_CONFIG_TEMPLATE,
+            deepClone: CM.deepClone,
+            ensureCompleteConfig: CM.ensureCompleteConfig,
+            getCurrentConfigFromUI: CM.getCurrentConfigFromUI,
+            applyConfigToUI: CM.applyConfigToUI,
+            cleanConfiguration: CM.cleanConfiguration,
+            getDateRange: CM.getDateRange,
+            getScoringMode: CM.getScoringMode,
+            getTriggerMode: CM.getTriggerMode,
+            getScaledTokenThresholds: CM.getScaledTokenThresholds,
+            getDateRangeScaling: CM.getDateRangeScaling,
+            formatConfigForDisplay: CM.formatConfigForDisplay,
+            getFieldValue: CM.getFieldValue,
+            setFieldValue: CM.setFieldValue
+        };
     }
 
     // Return the module
