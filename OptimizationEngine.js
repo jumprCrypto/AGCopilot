@@ -69,6 +69,44 @@
             
             return samples;
         }
+        
+        // Generate a single configuration using Latin Hypercube sampling principles
+        generateConfiguration() {
+            // Get random parameters to vary (3-5 parameters)
+            const allParams = Object.keys(this.PARAM_RULES);
+            const numParams = Math.floor(Math.random() * 3) + 3; // 3-5 parameters
+            const selectedParams = [];
+            
+            // Randomly select parameters
+            for (let i = 0; i < numParams && selectedParams.length < allParams.length; i++) {
+                const randomParam = allParams[Math.floor(Math.random() * allParams.length)];
+                if (!selectedParams.includes(randomParam)) {
+                    selectedParams.push(randomParam);
+                }
+            }
+            
+            // Generate configuration for selected parameters
+            const config = {};
+            for (const param of selectedParams) {
+                const rules = this.PARAM_RULES[param];
+                if (rules) {
+                    if (rules.type === 'string') {
+                        config[param] = Math.floor(Math.random() * 10 + 1).toString();
+                    } else {
+                        // Use Latin Hypercube principle: divide range into segments
+                        const segments = 10; // Number of segments for LHS
+                        const segmentIndex = Math.floor(Math.random() * segments);
+                        const segmentSize = (rules.max - rules.min) / segments;
+                        const segmentStart = rules.min + segmentIndex * segmentSize;
+                        const randomInSegment = Math.random() * segmentSize;
+                        const value = segmentStart + randomInSegment;
+                        config[param] = Math.round(value / (rules.step || 1)) * (rules.step || 1);
+                    }
+                }
+            }
+            
+            return config;
+        }
     };
 
     // ========================================
@@ -564,7 +602,7 @@
                         
                         // Update global best config tracker
                         if (window.bestConfigTracker) {
-                            window.bestConfigTracker.updateBest(this.bestConfig, score, result.metrics, 'optimization');
+                            window.bestConfigTracker.updateBest(this.bestConfig, this.bestMetrics, score, 'optimization');
                         }
                     }
                 }
