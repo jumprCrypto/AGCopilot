@@ -1294,6 +1294,12 @@
                         burstRateLimiter.adaptToBurstLimit();
                         console.log(`⏳ Rate limited (429), burst rate limiter adapted for next requests...`);
                         throw new Error(`Rate limited (HTTP 429). Burst rate limiter handling recovery.`);
+                    } else if (response.status === 404) {
+                        // Not found - this is likely a legitimate "token not found" case
+                        throw new Error(`Token not found in database (HTTP 404) - may be too new, unlisted, or incorrect address`);
+                    } else if (response.status === 500) {
+                        // Server error - might be temporary
+                        throw new Error(`Server error (HTTP 500) - API may be experiencing issues`);
                     } else {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
@@ -1325,28 +1331,72 @@
         }
     }
 
-    // Get token info by search (contract address)
+    // Get token info by search (contract address) - Enhanced with better error handling
     async function getTokenInfo(contractAddress) {
-        const url = `${CONFIG.API_BASE_URL}/swaps?fromDate=2000-01-01&toDate=9999-12-31&search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=1`;
-        const data = await fetchWithRetry(url);
+        // Try multiple search approaches for better token discovery
+        const searchUrls = [
+            // Primary search - recent data with broader limit
+            `${CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=5`,
+            // Fallback search - all time with broader date range  
+            `${CONFIG.API_BASE_URL}/swaps?fromDate=2000-01-01&toDate=9999-12-31&search=${contractAddress}&sort=timestamp&direction=desc&page=1&limit=5`,
+            // Alternative search without date filters
+            `${CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&limit=5`
+        ];
         
-        if (!data.swaps || data.swaps.length === 0) {
-            throw new Error('Token not found or no swap data available');
+        console.log(`🔍 Searching for token: ${contractAddress.substring(0, 8)}...${contractAddress.substring(-4)}`);
+        
+        for (let i = 0; i < searchUrls.length; i++) {
+            try {
+                const url = searchUrls[i];
+                console.log(`  📡 Attempt ${i + 1}: ${url.split('?')[1] || 'no params'}`);
+                
+                const data = await fetchWithRetry(url);
+                
+                if (data.swaps && data.swaps.length > 0) {
+                    console.log(`  ✅ Found ${data.swaps.length} results with search approach ${i + 1}`);
+                    return data.swaps[0]; // Return the most recent swap
+                } else {
+                    console.log(`  ⚠️ No results with search approach ${i + 1}`);
+                }
+            } catch (error) {
+                console.log(`  ❌ Search approach ${i + 1} failed: ${error.message}`);
+            }
         }
         
-        return data.swaps[0];
+        throw new Error(`Token not found in any search approach. Token may be too new, unlisted, or CA incorrect.`);
     }
 
-    // Get all swaps for a specific token
+    // Get all swaps for a specific token - Enhanced with better error handling and debugging
     async function getAllTokenSwaps(contractAddress) {
-        const url = `${CONFIG.API_BASE_URL}/swaps/by-token/${contractAddress}`;
-        const data = await fetchWithRetry(url);
+        console.log(`🔄 Fetching swap history for: ${contractAddress.substring(0, 8)}...${contractAddress.substring(-4)}`);
         
-        if (!data.swaps || data.swaps.length === 0) {
-            throw new Error('No swap history found for this token');
+        try {
+            const url = `${CONFIG.API_BASE_URL}/swaps/by-token/${contractAddress}`;
+            console.log(`  📡 API call: ${url}`);
+            
+            const data = await fetchWithRetry(url);
+            
+            if (!data.swaps || data.swaps.length === 0) {
+                console.log(`  ⚠️ No swap history found - token might have no signals or be very new`);
+                throw new Error('No swap history found - token may have no signals or be very recent');
+            }
+            
+            console.log(`  ✅ Found ${data.swaps.length} signals for token`);
+            
+            // Log signal overview for debugging
+            if (data.swaps.length > 0) {
+                const firstSignal = data.swaps[data.swaps.length - 1]; // Oldest
+                const lastSignal = data.swaps[0]; // Most recent
+                console.log(`  📊 Signal range: ${new Date(firstSignal.timestamp * 1000).toLocaleDateString()} to ${new Date(lastSignal.timestamp * 1000).toLocaleDateString()}`);
+                console.log(`  🎯 Trigger modes: ${[...new Set(data.swaps.map(s => s.triggerMode || 'Unknown'))].join(', ')}`);
+            }
+            
+            return data.swaps;
+            
+        } catch (error) {
+            console.log(`  ❌ Failed to fetch swap history: ${error.message}`);
+            throw error;
         }
-        
-        return data.swaps;
     }
 
     // ========================================
@@ -2691,89 +2741,123 @@
 
     // Analyze all signals to find optimal parameter bounds
     function analyzeSignalCriteria(allTokenData, bufferPercent = 10, outlierMethod = 'none', useClustering = true) {
+        console.log(`\n🔬 === STARTING SIGNAL CRITERIA ANALYSIS ===`);
+        console.log(`Input: ${allTokenData.length} tokens, Buffer: ${bufferPercent}%, Outlier method: ${outlierMethod}, Clustering: ${useClustering}`);
+        
         const allSignals = [];
         
-        // Collect all signals from all tokens
-        allTokenData.forEach(tokenData => {
-            tokenData.swaps.forEach(swap => {
+        // Collect all signals from all tokens with detailed logging
+        allTokenData.forEach((tokenData, tokenIndex) => {
+            console.log(`📊 Token ${tokenIndex + 1}: ${tokenData.address.substring(0, 8)}...${tokenData.address.substring(-4)} - ${tokenData.swaps.length} swaps`);
+            
+            tokenData.swaps.forEach((swap, swapIndex) => {
                 if (swap.criteria) {
-                    allSignals.push({
+                    const signal = {
                         ...swap.criteria,
                         signalMcap: swap.signalMcap,
-                        athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
-                    });
+                        athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0,
+                        _tokenIndex: tokenIndex,
+                        _swapIndex: swapIndex,
+                        _tokenAddress: tokenData.address
+                    };
+                    allSignals.push(signal);
+                    console.log(`  Signal ${swapIndex + 1}: MCAP $${swap.signalMcap || 'N/A'}, AG Score: ${swap.criteria.agScore || 'N/A'}`);
+                } else {
+                    console.log(`  ⚠️ Swap ${swapIndex + 1}: Missing criteria data`);
                 }
             });
         });
         
+        console.log(`🔢 Total signals collected: ${allSignals.length}`);
+        
         if (allSignals.length === 0) {
+            console.error('❌ No signal criteria found to analyze');
             throw new Error('No signal criteria found to analyze');
         }
         
-        // 🎯 CLUSTERING LOGIC
+        // Log signal overview
+        console.log(`📈 Signal overview:`);
+        console.log(`  • Signals per token: ${(allSignals.length / allTokenData.length).toFixed(1)} avg`);
+        console.log(`  • Unique tokens: ${new Set(allSignals.map(s => s._tokenAddress)).size}`);
+        console.log(`  • AG Scores range: ${Math.min(...allSignals.map(s => s.agScore || 0))} - ${Math.max(...allSignals.map(s => s.agScore || 0))}`);
+        console.log(`  • MCAP range: $${Math.min(...allSignals.map(s => s.signalMcap || 0))} - $${Math.max(...allSignals.map(s => s.signalMcap || 0))}`);
+        
+        
+        // 🎯 CLUSTERING LOGIC - Enhanced for better token retention
         if (useClustering && allSignals.length >= 4) {
-            // Calculate minimum cluster size based on number of unique tokens (CAs)
+            // Calculate minimum cluster size - more conservative approach
             const uniqueTokens = new Set(allTokenData.map(t => t.address)).size;
-            const minClusterSize = Math.max(2, Math.min(6, Math.ceil(uniqueTokens * 0.3)));
+            console.log(`🔍 Clustering ${allSignals.length} signals from ${uniqueTokens} unique tokens`);
+            
+            // More lenient minimum cluster size calculation
+            const minClusterSize = Math.max(2, Math.min(4, Math.ceil(uniqueTokens * 0.5))); // Increased from 0.3 to 0.5
+            console.log(`📊 Using minimum cluster size: ${minClusterSize} (${Math.round((minClusterSize/uniqueTokens)*100)}% of tokens)`);
             
             const clusters = findSignalClusters(allSignals, allTokenData, minClusterSize);
             console.log(`🔍 Found ${clusters.length} clusters:`, clusters.map(c => `${c.size} signals from ${c.uniqueTokens} tokens (threshold: ${c.threshold})`));
             
+            // More lenient clustering - accept clusters even if they don't cover all tokens
             if (clusters.length > 0) {
-                // Generate multiple configurations from clusters
-                const clusteredAnalyses = [];
+                // Count total signals in clusters vs total signals
+                const clusteredSignals = clusters.reduce((sum, cluster) => sum + cluster.size, 0);
+                const clusterCoverage = (clusteredSignals / allSignals.length) * 100;
                 
-                clusters.forEach((cluster, index) => {
-                    try {
-                        const clusterAnalysis = generateClusterAnalysis(cluster.signals, bufferPercent, outlierMethod);
-                        
-                        // Add cluster-specific metadata
-                        clusterAnalysis.tokenCount = allTokenData.length; // Total tokens analyzed
-                        clusterAnalysis.clusterInfo = {
-                            clusterId: index + 1,
-                            clusterName: `Cluster ${index + 1}`,
-                            signalCount: cluster.size,
-                            tokenCount: cluster.tokenCount,
-                            tightness: cluster.avgDistance,
-                            threshold: cluster.threshold,
-                            description: `${cluster.size} signals from ${cluster.tokenCount} tokens (avg distance: ${cluster.avgDistance.toFixed(3)})`
-                        };
-                        
-                        clusteredAnalyses.push({
-                            id: `cluster_${index + 1}`,
-                            name: `Cluster ${index + 1}`,
-                            description: `${cluster.size} signals from ${cluster.tokenCount} tokens (avg distance: ${cluster.avgDistance.toFixed(3)})`,
-                            signalCount: cluster.size,
-                            tokenCount: cluster.tokenCount,
-                            tightness: cluster.avgDistance,
-                            threshold: cluster.threshold,
-                            analysis: clusterAnalysis,
-                            signals: cluster.signals,
-                            tokens: cluster.tokens // Add the contract addresses to the cluster data
-                        });
-                    } catch (error) {
-                        console.warn(`Failed to analyze cluster ${index + 1}:`, error);
-                    }
-                });
+                console.log(`📈 Clustering coverage: ${clusteredSignals}/${allSignals.length} signals (${clusterCoverage.toFixed(1)}%)`);
                 
-                if (clusteredAnalyses.length > 0) {
-                    // Also generate the full analysis as fallback
-                    const fullAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod);
-                    fullAnalysis.tokenCount = allTokenData.length;
+                // Accept clustering if it covers at least 40% of signals (reduced from implicit higher threshold)
+                if (clusterCoverage >= 40) {
+                    // Generate multiple configurations from clusters
+                    const clusteredAnalyses = [];
                     
-                    return {
-                        type: 'clustered',
-                        clusters: clusteredAnalyses,
-                        fallback: fullAnalysis,
-                        totalSignals: allSignals.length,
-                        clusteredSignals: clusteredAnalyses.reduce((sum, c) => sum + c.signalCount, 0),
-                        usedClustering: true
-                    };
+                    clusters.forEach((cluster, index) => {
+                        try {
+                            const clusterAnalysis = generateClusterAnalysis(cluster.signals, bufferPercent, outlierMethod);
+                            
+                            // Add cluster-specific metadata
+                            clusterAnalysis.tokenCount = allTokenData.length; // Total tokens analyzed
+                            clusterAnalysis.clusterInfo = {
+                                clusterId: index + 1,
+                                clusterName: `Cluster ${index + 1}`,
+                                signalCount: cluster.size,
+                                tokenCount: cluster.tokenCount,
+                                uniqueTokens: cluster.uniqueTokens,
+                                tightness: cluster.avgDistance,
+                                threshold: cluster.threshold,
+                                coverage: ((cluster.size / allSignals.length) * 100).toFixed(1),
+                                description: `${cluster.size} signals from ${cluster.uniqueTokens} tokens (${((cluster.size / allSignals.length) * 100).toFixed(1)}% coverage, avg distance: ${cluster.avgDistance.toFixed(3)})`
+                            };
+                            
+                            clusteredAnalyses.push({
+                                id: `cluster_${index + 1}`,
+                                name: `Cluster ${index + 1}`,
+                                analysis: clusterAnalysis
+                            });
+                        } catch (error) {
+                            console.warn(`⚠️ Failed to analyze cluster ${index + 1}:`, error.message);
+                        }
+                    });
+                    
+                    if (clusteredAnalyses.length > 0) {
+                        console.log(`✅ Successfully generated ${clusteredAnalyses.length} cluster analyses`);
+                        return {
+                            type: 'clustered',
+                            clusters: clusteredAnalyses,
+                            totalSignals: allSignals.length,
+                            clusteredSignals: clusteredSignals,
+                            coverage: clusterCoverage,
+                            fallbackAnalysis: generateFullAnalysis(allSignals, bufferPercent, outlierMethod)
+                        };
+                    }
+                } else {
+                    console.log(`⚠️ Clustering coverage too low (${clusterCoverage.toFixed(1)}% < 40%), falling back to standard analysis`);
                 }
+            } else {
+                console.log(`⚠️ No valid clusters found with minimum size ${minClusterSize}, falling back to standard analysis`);
             }
         }
         
         // Fallback to standard analysis (or if clustering disabled/failed)
+        console.log(`📊 Using standard analysis for all ${allSignals.length} signals from ${allTokenData.length} tokens`);
         const standardAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod);
         standardAnalysis.tokenCount = allTokenData.length; // Add token count
         return {
@@ -7246,7 +7330,33 @@
             
             // Clear previous results
             document.getElementById('signal-analysis-results').innerHTML = '';
-            updateSignalStatus(`Starting analysis of ${contractAddresses.length} tokens...`);
+            updateSignalStatus(`Starting analysis of ${contractAddresses.length} contract addresses...`);
+            
+            // Validate contract addresses
+            const validAddresses = [];
+            const invalidAddresses = [];
+            
+            contractAddresses.forEach((addr, index) => {
+                if (addr.length >= 32 && /^[A-Za-z0-9]+$/.test(addr)) {
+                    validAddresses.push(addr);
+                } else {
+                    invalidAddresses.push({addr, reason: addr.length < 32 ? 'too short' : 'invalid characters'});
+                }
+            });
+            
+            if (invalidAddresses.length > 0) {
+                updateSignalStatus(`⚠️ Skipping ${invalidAddresses.length} invalid addresses:`, true);
+                invalidAddresses.forEach(({addr, reason}) => {
+                    updateSignalStatus(`  • ${addr.substring(0, 12)}... (${reason})`, true);
+                });
+            }
+            
+            if (validAddresses.length === 0) {
+                updateSignalStatus('No valid contract addresses found. Please check format.', true);
+                return;
+            }
+            
+            updateSignalStatus(`📝 Processing ${validAddresses.length} valid addresses (${signalsPerToken} signals each)...`);
             
             // Show rate limiter info
             const burstStats = burstRateLimiter.getStats();
@@ -7256,20 +7366,35 @@
             const errors = [];
             
             // Process each token
-            for (let i = 0; i < contractAddresses.length; i++) {
-                const address = contractAddresses[i];
-                updateSignalStatus(`Processing token ${i + 1}/${contractAddresses.length}: ${address.substring(0, 8)}...`);
+            for (let i = 0; i < validAddresses.length; i++) {
+                const address = validAddresses[i];
+                const shortAddr = `${address.substring(0, 6)}...${address.substring(-4)}`;
+                updateSignalStatus(`[${i + 1}/${validAddresses.length}] Processing ${shortAddr}...`);
                 
                 try {
-                    // Get token info and swaps
+                    // Get token info and swaps with detailed logging
+                    console.log(`\n🔍 === Processing Token ${i + 1}/${validAddresses.length}: ${shortAddr} ===`);
+                    
                     const tokenInfo = await getTokenInfo(address);
+                    console.log(`✅ Token info found: ${tokenInfo.token} (${tokenInfo.symbol})`);
+                    
                     const allSwaps = await getAllTokenSwaps(address);
+                    console.log(`✅ Found ${allSwaps.length} total swaps`);
                     
                     // Limit swaps per token
                     const limitedSwaps = allSwaps.slice(0, signalsPerToken);
+                    console.log(`📊 Using ${limitedSwaps.length} signals (limited from ${allSwaps.length})`);
                     
                     // Process token data
                     const processed = processTokenData(tokenInfo, limitedSwaps);
+                    
+                    // Validate processed data
+                    if (!processed.tokenName || !processed.symbol) {
+                        console.warn(`⚠️ Incomplete token data for ${shortAddr}:`, {
+                            tokenName: processed.tokenName,
+                            symbol: processed.symbol
+                        });
+                    }
                     
                     allTokenData.push({
                         address: address, 
@@ -7277,18 +7402,43 @@
                         swaps: limitedSwaps
                     });
                     
-                    updateSignalStatus(`✅ ${processed.tokenName} (${processed.symbol}): ${limitedSwaps.length} signals`);
+                    updateSignalStatus(`✅ [${i + 1}/${validAddresses.length}] ${processed.tokenName} (${processed.symbol}): ${limitedSwaps.length} signals`);
+                    console.log(`✅ Successfully processed ${shortAddr}\n`);
                     
                 } catch (error) {
+                    console.error(`❌ Failed to process ${shortAddr}:`, error);
                     errors.push({ address, error: error.message });
-                    updateSignalStatus(`❌ Failed to process ${address.substring(0, 8)}: ${error.message}`, true);
+                    updateSignalStatus(`❌ [${i + 1}/${validAddresses.length}] Failed ${shortAddr}: ${error.message}`, true);
                 }
             }
             
+            // Summary of results
+            updateSignalStatus(`📊 Processing complete: ${allTokenData.length}/${validAddresses.length} tokens successful, ${errors.length} failed`);
+            
             if (allTokenData.length === 0) {
-                updateSignalStatus('No valid token data found. Please check contract addresses.', true);
+                updateSignalStatus('❌ No valid token data found. All lookups failed.', true);
+                updateSignalStatus('💡 Try checking if the contract addresses are correct and the tokens have signals.', true);
                 return;
             }
+            
+            // Log detailed summary
+            console.log(`\n📈 === SIGNAL ANALYSIS SUMMARY ===`);
+            console.log(`Total CAs provided: ${contractAddresses.length}`);
+            console.log(`Valid CAs: ${validAddresses.length}`);
+            console.log(`Successfully processed: ${allTokenData.length}`);
+            console.log(`Failed: ${errors.length}`);
+            
+            if (errors.length > 0) {
+                console.log(`❌ Failed tokens:`);
+                errors.forEach(({address, error}) => {
+                    console.log(`  • ${address.substring(0, 8)}...${address.substring(-4)}: ${error}`);
+                });
+            }
+            
+            const totalSignals = allTokenData.reduce((sum, token) => sum + token.swaps.length, 0);
+            console.log(`Total signals collected: ${totalSignals}`);
+            console.log(`Average signals per token: ${(totalSignals / allTokenData.length).toFixed(1)}`);
+            console.log(`=== END SUMMARY ===\n`);
             
             // Analyze signals and generate config
             updateSignalStatus(`Analyzing ${allTokenData.length} tokens with ${outlierMethod} outlier filtering...`);
