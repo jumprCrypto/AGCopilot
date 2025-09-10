@@ -541,6 +541,26 @@
         return 4; // Default to Launchpads if no selection
     }
 
+    // Get selected sources from UI checkboxes
+    function getSelectedSources() {
+        const sources = [];
+        const sourceCheckboxes = [
+            { id: 'source-pumpfun', value: '1' },
+            { id: 'source-launchcoin', value: '2' },
+            { id: 'source-launchpad', value: '3' },
+            { id: 'source-native', value: '4' }
+        ];
+        
+        sourceCheckboxes.forEach(({ id, value }) => {
+            const checkbox = document.getElementById(id);
+            if (checkbox && checkbox.checked) {
+                sources.push(value);
+            }
+        });
+        
+        return sources;
+    }
+
     // Get scoring mode from UI or config
     function getScoringMode() {
         const modeSelect = document.getElementById('scoring-mode-select');
@@ -1527,6 +1547,14 @@
             if (triggerMode !== null) {
                 apiParams.triggerMode = triggerMode; // Use selected trigger mode (skip if null for Bullish Bonding)
             }
+            
+            // Add selected sources from UI checkboxes
+            const selectedSources = getSelectedSources();
+            if (selectedSources.length > 0) {
+                // API expects multiple sources parameters like: sources=1&sources=2&sources=3
+                apiParams.sources = selectedSources;
+            }
+            
             apiParams.excludeSpoofedTokens = true;            
             apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
             
@@ -1604,6 +1632,17 @@
             Object.entries(apiParams).forEach(([key, value]) => {
                 // Skip internal or complex params
                 if (key.startsWith('__')) return;
+                
+                // Handle sources array specially - API expects multiple sources parameters
+                if (key === 'sources' && Array.isArray(value)) {
+                    value.forEach(source => {
+                        if (source !== undefined && source !== null && source !== '') {
+                            params.append('sources', source);
+                        }
+                    });
+                    return;
+                }
+                
                 if (value !== undefined && value !== null && value !== '') {
                     // Additional validation before adding to URL
                     if (typeof value === 'number') {
@@ -1613,7 +1652,7 @@
                             return;
                         }
                     } else if (typeof value === 'object') {
-                        // Skip non-primitive values
+                        // Skip non-primitive values (except sources array handled above)
                         return;
                     }
                     
@@ -1982,7 +2021,12 @@
             const triggerModeNames = ['Bullish Bonding', 'God Mode', 'Moon Finder', 'Fomo', 'Launchpads', 'Smart Tracker'];
             const triggerModeName = triggerModeNames[triggerMode] || `Mode ${triggerMode}`;
             
+            const selectedSources = getSelectedSources();
+            const sourceNames = { '1': 'Pumpfun', '2': 'Launchcoin', '3': 'Launchpad', '4': 'Native' };
+            const sourceLabels = selectedSources.map(s => sourceNames[s] || `Source ${s}`).join(', ');
+            
             console.log(`🎯 Trigger Mode: ${triggerModeName} (${triggerMode})`);
+            console.log(`📡 Sources Filter: ${sourceLabels.length > 0 ? sourceLabels : 'All sources'} (${selectedSources.join(', ')})`);
             console.log(`✅ Baseline: ${baselineScore.toFixed(1)}% PnL, ${baselineTokens} tokens`);
             
             // Step 2: Test parameters systematically  
@@ -6122,6 +6166,79 @@
                                     <option value="4" selected>Launchpads</option>
                                     <option value="5">Smart Tracker</option>
                                 </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Sources Filter Row -->
+                        <div style="margin-bottom: 8px;">
+                            <label style="
+                                font-size: 11px;
+                                font-weight: 500;
+                                color: #a0aec0;
+                                display: block;
+                                margin-bottom: 4px;
+                            ">Sources Filter</label>
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="source-pumpfun" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Pumpfun
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="source-launchcoin" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Launchcoin
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="source-launchpad" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Launchpad
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="source-native" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Native
+                                </label>
                             </div>
                         </div>
                         
