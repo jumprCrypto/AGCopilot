@@ -120,8 +120,8 @@
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 259200, step: 5, type: 'integer' },
-        'Max TTC (sec)': { min: 10, max: 259200, step: 10, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 86400, step: 5, type: 'integer' },
+        'Max TTC (sec)': { min: 10, max: 86400, step: 10, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
@@ -3295,7 +3295,7 @@
             // TTC (Time to Complete) Analysis
             ttc: (() => {
                 const ttcs = getValidValues('ttc');
-                if (ttcs.length === 0) return { min: 0, max: 3600, avg: 0, count: 0 };
+                if (ttcs.length === 0) return { min: 0, max: 86400, avg: 0, count: 0 };
                 
                 const rawMin = Math.min(...ttcs);
                 const rawMax = Math.max(...ttcs);
