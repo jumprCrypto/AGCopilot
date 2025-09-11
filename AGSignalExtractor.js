@@ -39,26 +39,6 @@
 
     const rateLimiter = new APIRateLimiter(CONFIG.REQUEST_DELAY);
 
-    // Format timestamp to readable date
-    function formatTimestamp(timestamp) {
-        if (!timestamp) return 'N/A';
-        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
-    }
-
-    // Format market cap values
-    function formatMcap(mcap) {
-        if (!mcap) return 'N/A';
-        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
-        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
-        return `$${mcap}`;
-    }
-
-    // Format percentage values
-    function formatPercent(value) {
-        if (value === null || value === undefined) return 'N/A';
-        return `${value.toFixed(2)}%`;
-    }
-
     function formatSource(source) {
         if (!source) return 'Native';
         
@@ -203,47 +183,6 @@
         };
         
         return result;
-    }
-
-    function generateBatchSummary(allTokenData) {
-        const summary = {
-            totalTokens: allTokenData.length,
-            totalSignals: allTokenData.reduce((sum, token) => sum + token.processed.totalSignals, 0),
-            avgSignalsPerToken: 0,
-            topPerformers: [],
-            avgWinPred: 0,
-            athMultipliers: []
-        };
-        
-        if (allTokenData.length > 0) {
-            summary.avgSignalsPerToken = (summary.totalSignals / allTokenData.length).toFixed(1);
-            
-            // Calculate average win prediction across all tokens
-            const allWinPreds = allTokenData.map(token => {
-                const avgWinPred = token.swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / token.swaps.length;
-                return avgWinPred;
-            });
-            summary.avgWinPred = (allWinPreds.reduce((sum, pred) => sum + pred, 0) / allWinPreds.length).toFixed(2);
-            
-            // Get top performers by ATH multiplier
-            summary.topPerformers = allTokenData
-                .map(token => ({
-                    name: token.processed.tokenName,
-                    symbol: token.processed.symbol,
-                    athMultiplier: token.processed.athMultiplierRaw || 0,
-                    athMultiplierText: token.processed.athMultiplier,
-                    signals: token.processed.totalSignals
-                }))
-                .sort((a, b) => b.athMultiplier - a.athMultiplier)
-                .slice(0, 5);
-            
-            // Extract ATH multipliers for statistics
-            summary.athMultipliers = allTokenData
-                .map(token => token.processed.athMultiplierRaw || 0)
-                .filter(mult => mult > 0);
-        }
-        
-        return summary;
     }
 
     function generateCSVOutput(allTokenData, removeHeaders = true) {
@@ -557,185 +496,7 @@
             statusArea.scrollTop = statusArea.scrollHeight;
         }
     }
-      
     
-    // ========================================
-    // 🎯 BACKTESTER UI INTERACTION FUNCTIONS
-    // ========================================
-    
-    // Helper function to safely set field value using AGCopilot Enhanced approach
-    async function setFieldValue(labelText, value, maxRetries = 2) {
-        const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                // Find the label using the AGCopilot Enhanced approach
-                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
-                const label = labels.find(el => el.textContent.trim() === labelText);
-
-                if (!label) {
-                    console.warn(`Label not found: ${labelText}`);
-                    return false;
-                }
-
-                let container = label.closest('.form-group') || label.parentElement;
-
-                // Navigate up the DOM tree to find the input container
-                if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
-                    container = container.parentElement;
-                    if (!container.querySelector('input[type="number"]') && !container.querySelector('select')) {
-                        container = container.parentElement;
-                    }
-                }
-
-                const button = container.querySelector('button');
-                if (button && (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Skip If No KYC/CEX Funding")) {
-                    const targetValue = value || "Don't care";
-                    const currentValue = button.textContent.trim();
-                    
-                    if (currentValue !== targetValue) {
-                        button.click();
-                        await sleep(100);
-
-                        const newValue = button.textContent.trim();
-                        if (newValue !== targetValue && newValue !== currentValue) {
-                            button.click();
-                            await sleep(100);
-                        }
-                    }
-                    return true;
-                }
-                
-                
-                // Handle toggle buttons FIRST (Description and Fresh Deployer) to avoid number input conflicts
-                const buttons = container.querySelectorAll('button');
-                let toggleButton = null;
-                
-                // Find the actual toggle button (not clear buttons marked with ×)
-                for (const btn of buttons) {
-                    const btnText = btn.textContent.trim();
-                     // Skip clear buttons (×) and find actual toggle buttons
-                    if (btnText !== '×' && (btnText === "Don't care" || btnText === "Yes" || btnText.length === 0)) {
-                        toggleButton = btn;
-                        break;
-                    }
-                }
-                
-                if (toggleButton && (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Skip If No KYC/CEX Funding")) {
-                    const targetValue = value || "Don't care";
-                    let currentValue = toggleButton.textContent.trim();
-                    
-                    // Handle different value formats - convert to button text states
-                    let normalizedTarget = targetValue;
-                    if (targetValue === "Required" || targetValue === "Yes" || targetValue === true) {
-                        normalizedTarget = "Yes";  // Buttons show "Yes" not "Required"
-                    } else {
-                        normalizedTarget = "Don't care";
-                    }
-                    
-                    // Keep clicking until we get to the target state (buttons cycle: Don't care -> Yes -> No)
-                    let attempts = 0;
-                    while (currentValue !== normalizedTarget && attempts < 4) {                        
-                        toggleButton.click();
-                        await sleep(300); // Longer wait for UI to update
-                        currentValue = toggleButton.textContent.trim();
-                        attempts++;
-                    }
-                    
-                    return true;
-                }
-
-                // Handle number inputs (only for non-boolean fields)
-                const input = container.querySelector('input[type="number"]');
-                if (input) {
-                     if (shouldClear) {
-                        // Look for clear button (×)
-                        const relativeContainer = input.closest('.relative');
-                        const clearButton = relativeContainer?.querySelector('button');
-                        if (clearButton && clearButton.textContent.trim() === '×') {
-                            clearButton.click();
-                            await sleep(100);
-                        } else {
-                            // Manual clear
-                            input.focus();
-                            input.value = '';
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                            input.blur();
-                        }
-                    } else {
-                        let processedValue = value;
-
-                        // Type conversion
-                        if (typeof value === 'string' && value.trim() !== '') {
-                            const parsed = parseFloat(value);
-                            if (!isNaN(parsed)) {
-                                processedValue = parsed;
-                            }
-                        }
-
-                        // Force integer rounding for specific parameters
-                        if (labelText.includes('Wallets') || labelText.includes('Count') || labelText.includes('Age') || labelText.includes('Score')) {
-                            processedValue = Math.round(processedValue);
-                        }
-                        
-                        if ((typeof processedValue === 'number' && !isNaN(processedValue)) ||
-                            (typeof processedValue === 'string' && processedValue.trim() !== '')) {
-                            
-                            input.focus();
-                            
-                            // Use React-compatible value setting
-                            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                            nativeInputValueSetter.call(input, processedValue);
-
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                            input.blur();
-                        }
-                    }
-                    return true;
-                }
-
-                // Handle select dropdowns
-                const select = container.querySelector('select');
-                if (select) {
-                    if (shouldClear) {
-                        select.selectedIndex = 0;
-                    } else {
-                        select.value = value;
-                    }
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
-                }
-
-                await sleep(200); // Wait before retry
-                
-            } catch (error) {
-                console.warn(`Attempt ${attempt} failed for ${labelText}:`, error.message);
-                if (attempt < maxRetries) {
-                    await sleep(200);
-                }
-            }
-        }
-        return false;
-    }
-    
-    // Open section helper
-    async function openSection(sectionTitle) {
-        const allHeaders = Array.from(document.querySelectorAll('button[type="button"]'));
-        const sectionHeader = allHeaders.find(header =>
-            header.textContent.includes(sectionTitle)
-        );
-
-        if (sectionHeader) {
-            sectionHeader.click();
-            await sleep(200); // Wait for section to open
-            return true;
-        }
-        return false;
-    }
-    
-        
     // ========================================
     // 🚀 MAIN EXTRACTION FUNCTION
     // ========================================
@@ -914,8 +675,7 @@
             // Store data globally for copy functions
             window.extractedData = {
                 tokens: allTokenData,
-                errors: errors,
-                summary: generateBatchSummary(allTokenData)
+                errors: errors
             };
             
             // Show action buttons
