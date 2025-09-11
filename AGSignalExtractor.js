@@ -142,14 +142,14 @@
             tokenAddress: tokenInfo.tokenAddress,
             tokenName: tokenInfo.token,
             symbol: tokenInfo.symbol,
-            currentMcap: formatMcap(tokenInfo.currentMcap),
+            //currentMcap: formatMcap(tokenInfo.currentMcap),
             currentMcapRaw: tokenInfo.currentMcap,
-            athMcap: formatMcap(tokenInfo.athMcap),
+            //athMcap: formatMcap(tokenInfo.athMcap),
             athMcapRaw: tokenInfo.athMcap,
-            athTime: formatTimestamp(tokenInfo.athTime),
-            atlMcap: formatMcap(tokenInfo.atlMcap),
+            //athTime: formatTimestamp(tokenInfo.athTime),
+            //atlMcap: formatMcap(tokenInfo.atlMcap),
             atlMcapRaw: tokenInfo.atlMcap,
-            atlTime: formatTimestamp(tokenInfo.atlTime),
+            //atlTime: formatTimestamp(tokenInfo.atlTime),
             source: formatSource(tokenInfo.source),
             
             // Performance Metrics
@@ -157,23 +157,23 @@
                 (tokenInfo.athMcap / tokenInfo.signalMcap).toFixed(2) + 'x' : 'N/A',
             athMultiplierRaw: tokenInfo.athMcap && tokenInfo.signalMcap ? 
                 (tokenInfo.athMcap / tokenInfo.signalMcap) : 0,
-            currentFromAth: tokenInfo.athMcap && tokenInfo.currentMcap ? 
-                formatPercent(((tokenInfo.currentMcap - tokenInfo.athMcap) / tokenInfo.athMcap) * 100) : 'N/A',
+            // currentFromAth: tokenInfo.athMcap && tokenInfo.currentMcap ? 
+            //     formatPercent(((tokenInfo.currentMcap - tokenInfo.athMcap) / tokenInfo.athMcap) * 100) : 'N/A',
             
             // Signal Analysis
             totalSignals: swaps.length,
-            firstSignalTime: formatTimestamp(swaps[swaps.length - 1]?.timestamp),
-            lastSignalTime: formatTimestamp(swaps[0]?.timestamp),
-            firstSignalMcap: formatMcap(swaps[swaps.length - 1]?.signalMcap),
-            lastSignalMcap: formatMcap(swaps[0]?.signalMcap),
+            // firstSignalTime: formatTimestamp(swaps[swaps.length - 1]?.timestamp),
+            // lastSignalTime: formatTimestamp(swaps[0]?.timestamp),
+            //firstSignalMcap: formatMcap(swaps[swaps.length - 1]?.signalMcap),
+            //lastSignalMcap: formatMcap(swaps[0]?.signalMcap),
             
             // Win Prediction Analysis
-            avgWinPred: swaps.length > 0 ? 
-                formatPercent(swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / swaps.length) : 'N/A',
-            maxWinPred: swaps.length > 0 ? 
-                formatPercent(Math.max(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
-            minWinPred: swaps.length > 0 ? 
-                formatPercent(Math.min(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
+            // avgWinPred: swaps.length > 0 ? 
+            //     formatPercent(swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / swaps.length) : 'N/A',
+            // maxWinPred: swaps.length > 0 ? 
+            //     formatPercent(Math.max(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
+            // minWinPred: swaps.length > 0 ? 
+            //     formatPercent(Math.min(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
             
             // Trigger Mode Analysis
             triggerModes: [...new Set(swaps.map(swap => swap.triggerMode))].join(', '),
@@ -332,148 +332,161 @@
             existingUI.remove();
         }
 
+        // Add body margin to make space for splitscreen panel
+        document.body.style.marginRight = '400px';
+        document.body.style.transition = 'margin-right 0.3s ease';
+
         const ui = document.createElement('div');
         ui.id = 'signal-extractor-ui';
         ui.style.cssText = `
             position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 450px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: 2px solid #fff;
-            border-radius: 15px;
-            padding: 20px;
+            top: 0;
+            right: 0;
+            width: 400px;
+            height: 100vh;
+            background: #1a2332;
+            border-left: 1px solid #2d3748;
+            padding: 16px;
             z-index: 10000;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: white;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            color: #e2e8f0;
+            box-shadow: -10px 0 30px -10px rgba(0, 0, 0, 0.25);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         `;
 
         ui.innerHTML = `
-            <div style="text-align: center; margin-bottom: 15px;">
-                <h3 style="margin: 0; font-size: 18px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">
+            <div style="text-align: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #2d3748;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #f7fafc; display: flex; align-items: center; justify-content: center; gap: 8px;">
                     🔍 Signal Extractor
                 </h3>
+                <div style="font-size: 10px; color: #a0aec0; margin-top: 2px;">Google Sheets Export Tool</div>
             </div>
             
-            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Contract Addresses:</label>
-                    <textarea id="contract-input" placeholder="Enter contract addresses (one per line)..." 
-                           style="width: 100%; padding: 6px; border: none; border-radius: 5px; font-size: 12px; height: 70px; resize: vertical;">
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                    <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 11px; color: #63b3ed;">Contract Addresses:</label>
+                    <textarea id="contract-input"
+                           style="width: 100%; padding: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; color: #e2e8f0; font-size: 11px; height: 80px; resize: vertical; font-family: inherit; box-sizing: border-box;">
                     </textarea>
-                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
+                    <div style="font-size: 9px; color: #a0aec0; margin-top: 2px;">
                         💡 One per line for batch processing
                     </div>
                 </div>
                 
-                <div style="flex: 1;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold; font-size: 12px;">Trigger Modes:</label>
-                    <div style="background: rgba(0,0,0,0.2); border-radius: 5px; padding: 6px; height: 70px; overflow-y: auto;">
-                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
-                            <input type="checkbox" id="trigger-empty" value="" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Bullish Bonding</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
-                            <input type="checkbox" id="trigger-1" value="1" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">God Mode</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 0; cursor: pointer;">
-                            <input type="checkbox" id="trigger-6" value="2" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Moon Finder</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
-                            <input type="checkbox" id="trigger-3" value="3" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Fomo</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
-                            <input type="checkbox" id="trigger-4" value="4" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Launchpads</span>
-                        </label>
-                        <label style="display: flex; align-items: center; margin-bottom: 2px; cursor: pointer;">
-                            <input type="checkbox" id="trigger-5" value="5" checked style="margin-right: 4px;">
-                            <span style="font-size: 10px;">Smart Tracker</span>
-                        </label>
+                <div>
+                    <label style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 11px; color: #63b3ed;">Trigger Modes:</label>
+                    <div style="background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; padding: 8px; max-height: 120px; overflow-y: auto;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-empty" value="" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">Bullish Bonding</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-1" value="1" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">God Mode</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-6" value="2" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">Moon Finder</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-3" value="3" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">Fomo</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-4" value="4" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">Launchpads</span>
+                            </label>
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="trigger-5" value="5" checked style="margin-right: 4px; accent-color: #63b3ed; transform: scale(0.8);">
+                                <span style="font-size: 9px; color: #e2e8f0;">Smart Tracker</span>
+                            </label>
+                        </div>
                     </div>
-                    <div style="font-size: 10px; opacity: 0.7; margin-top: 2px;">
+                    <div style="font-size: 9px; color: #a0aec0; margin-top: 2px;">
                         📊 Select modes to extract
                     </div>
                 </div>
-            </div>
-            
-            <div style="display: flex; gap: 15px; margin-bottom: 10px; align-items: center;">
-                <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="checkbox" id="remove-headers" checked style="margin-right: 6px;">
-                    <span style="font-size: 11px; font-weight: bold;">Remove Headers</span>
-                </label>
-                <div style="flex: 1; display: flex; gap: 8px;">
+                
+                <div style="display: flex; gap: 12px; align-items: end;">
                     <div style="flex: 1;">
-                        <label style="display: block; margin-bottom: 2px; font-size: 10px; font-weight: bold;">Signals/Token:</label>
+                        <label style="display: block; margin-bottom: 3px; font-size: 10px; font-weight: 500; color: #a0aec0;">Signals/Token:</label>
                         <input type="number" id="signals-per-token" value="3" min="1" max="999" 
-                               style="width: 100%; padding: 4px; border: 1px solid white; border-radius: 3px; font-size: 11px; text-align: center;">
+                               style="width: 100%; padding: 6px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; font-size: 10px; text-align: center; font-family: inherit; box-sizing: border-box;">
                     </div>
-
+                    <label style="display: flex; align-items: center; cursor: pointer; white-space: nowrap;">
+                        <input type="checkbox" id="remove-headers" checked style="margin-right: 6px; accent-color: #63b3ed; transform: scale(0.8);">
+                        <span style="font-size: 10px; font-weight: 500; color: #e2e8f0;">No Headers</span>
+                    </label>
+                </div>
+                
+                <button id="extract-btn" style="
+                    padding: 10px; 
+                    background: linear-gradient(45deg, #63b3ed, #4299e1); 
+                    border: none; 
+                    border-radius: 6px; 
+                    color: #1a202c; 
+                    font-weight: 600; 
+                    cursor: pointer;
+                    font-size: 12px;
+                    font-family: inherit;
+                    transition: all 0.2s ease;
+                    box-shadow: 0 2px 4px rgba(99, 179, 237, 0.2);
+                " onmouseover="this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 8px rgba(99, 179, 237, 0.3)'" 
+                   onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(99, 179, 237, 0.2)'">
+                    🚀 Extract Data
+                </button>
+                
+                <div id="status-area" style="
+                    background: #2d3748; 
+                    border: 1px solid #4a5568;
+                    border-radius: 6px; 
+                    padding: 8px; 
+                    font-size: 10px; 
+                    height: 350px;
+                    overflow-y: auto;
+                    color: #e2e8f0;
+                    font-family: inherit;
+                ">
+                    <div style="color: #a0aec0;">Ready to extract token data...</div>
+                </div>
+                
+                <div id="action-buttons" style="display: none;">
+                    <button id="copy-detailed-csv-btn" style="
+                        width: 100%; 
+                        padding: 8px; 
+                        background: rgba(72, 187, 120, 0.2); 
+                        border: 1px solid rgba(72, 187, 120, 0.4);
+                        border-radius: 6px; 
+                        color: #48bb78; 
+                        font-size: 10px; 
+                        cursor: pointer;
+                        font-weight: 500;
+                        font-family: inherit;
+                        transition: all 0.2s ease;
+                    " onmouseover="this.style.background='rgba(72, 187, 120, 0.3)'" 
+                       onmouseout="this.style.background='rgba(72, 187, 120, 0.2)'">
+                        📊 Copy TSV to Clipboard
+                    </button>
                 </div>
             </div>
             
-            <div style="margin-bottom: 10px;">
-            
-            <div style="margin-bottom: 10px;">
-                <button id="extract-btn" style="
-                    width: 100%; 
-                    padding: 10px; 
-                    background: linear-gradient(45deg, #FF6B6B, #4ECDC4); 
-                    border: none; 
-                    border-radius: 8px; 
-                    color: white; 
-                    font-weight: bold; 
-                    cursor: pointer;
-                    font-size: 13px;
-                    transition: transform 0.2s;
-                " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                    🚀 Extract Data
-                </button>
-            </div>
-            
-            <div id="status-area" style="
-                background: rgba(0,0,0,0.2); 
-                border-radius: 5px; 
-                padding: 8px; 
-                font-size: 11px; 
-                min-height: 35px;
-                max-height: 80px;
-                overflow-y: auto;
-            ">
-                <div style="opacity: 0.8;">Ready to extract token data...</div>
-            </div>
-            
-            <div id="action-buttons" style="margin-top: 10px; display: none;">
-                <button id="copy-detailed-csv-btn" style="
-                    width: 97%; 
-                    padding: 8px; 
-                    background: #28a745; 
-                    border: none; 
-                    border-radius: 4px; 
-                    color: white; 
-                    font-size: 10px; 
-                    cursor: pointer;
-                    margin-right: 2%;
-                    font-weight: bold;
-                ">
-                    📊 Copy
-                </button>
-            </div>
-            
-            <div style="margin-top: 10px; text-align: center;">
+            <div style="margin-top: 12px; padding-top: 8px; border-top: 1px solid #2d3748; text-align: center;">
                 <button id="close-btn" style="
-                    padding: 4px 12px; 
-                    background: rgba(255,255,255,0.2); 
-                    border: 1px solid rgba(255,255,255,0.3); 
+                    padding: 6px 12px; 
+                    background: rgba(237, 100, 166, 0.2); 
+                    border: 1px solid rgba(237, 100, 166, 0.4);
                     border-radius: 12px; 
-                    color: white; 
-                    font-size: 10px; 
+                    color: #ed64a6; 
+                    font-size: 9px; 
                     cursor: pointer;
-                ">
+                    font-family: inherit;
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                " onmouseover="this.style.background='rgba(237, 100, 166, 0.3)'" 
+                   onmouseout="this.style.background='rgba(237, 100, 166, 0.2)'">
                     ✕ Close
                 </button>
             </div>
@@ -488,10 +501,10 @@
         if (statusArea) {
             const timestamp = new Date().toLocaleTimeString();
             const icon = isError ? '❌' : '📝';
-            const color = isError ? '#ff6b6b' : '#ffffff';
+            const color = isError ? '#ff6b6b' : '#e2e8f0';
             
-            statusArea.innerHTML += `<div style="color: ${color}; margin: 2px 0;">
-                <span style="opacity: 0.7;">${timestamp}</span> ${icon} ${message}
+            statusArea.innerHTML += `<div style="color: ${color}; margin: 2px 0; font-size: 11px;">
+                <span style="color: #a0aec0;">${timestamp}</span> ${icon} ${message}
             </div>`;
             statusArea.scrollTop = statusArea.scrollHeight;
         }
@@ -716,6 +729,8 @@
                 
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('signal-extractor-ui').remove();
+            // Reset body margin when closing
+            document.body.style.marginRight = '0';
         });
         
         // Allow Ctrl+Enter to trigger extraction (since Enter is used for new lines)
