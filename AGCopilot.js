@@ -157,7 +157,8 @@
             "Max Drained %": undefined,
             "Max Drained Count": undefined,
             "Description": undefined,
-            "Fresh Deployer": undefined
+            "Fresh Deployer": undefined,
+            "Skip If No KYC/CEX Funding": undefined
         },
         advanced: {
             "Min TTC (sec)": undefined,
@@ -728,9 +729,9 @@
         // Filter out undefined/empty values and group by category
         const validSettings = {};
         Object.entries(flatConfig).forEach(([key, value]) => {
-            const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer' || key === 'Has Buy Signal');
+            const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer' || key === 'Skip If No KYC/CEX Funding' || key === 'Has Buy Signal');
             if (value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
-                // For toggle buttons (Description/Fresh Deployer), only include if they're set to "Yes" (true)
+                // For toggle buttons (Description/Fresh Deployer/Skip If No KYC/CEX Funding), only include if they're set to "Yes" (true)
                 if (isButtonToggle) {
                     if (value === true) {
                         validSettings[key] = value;
@@ -745,7 +746,7 @@
             'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
-            'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer'],
+            'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
             'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             // Dynamically add TP fields if present
             'Take Profits': Object.keys(validSettings).filter(k => /TP \d+ % (Gain|Sell)/.test(k))
@@ -1002,7 +1003,7 @@
             if (typeof sectionData === 'object' && sectionData !== null) {
                 Object.entries(pinnedSettings).forEach(([pinnedKey, pinnedValue]) => {
                     if (sectionData.hasOwnProperty(pinnedKey)) {
-                        if ((pinnedKey === 'Description' || pinnedKey === 'Fresh Deployer' || pinnedKey === 'Has Buy Signal')) {
+                        if ((pinnedKey === 'Description' || pinnedKey === 'Fresh Deployer' || pinnedKey === 'Skip If No KYC/CEX Funding' || pinnedKey === 'Has Buy Signal')) {
                             let normalized = null;
                             if (pinnedValue === true || pinnedValue === 'Yes') normalized = true;
                             sectionData[pinnedKey] = normalized;
@@ -1500,6 +1501,7 @@
                 // Boolean fields
                 'Description': 'needsDescription',
                 'Fresh Deployer': 'needsFreshDeployer',
+                'Skip If No KYC/CEX Funding': 'skipIfNoKycCexFunding',
                 'Has Buy Signal': 'needsSignal'
             };
             
@@ -1508,7 +1510,7 @@
                 const value = flatConfig[agCopilotName];
                 if (value !== undefined && value !== null && value !== '') {
                     // Handle boolean conversions
-                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer' || apiName === 'needsSignal') {
+                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer' || apiName === 'skipIfNoKycCexFunding' || apiName === 'needsSignal') {
                         if (value === true || value === 'Yes') {
                             apiParams[apiName] = true;
                         } else if (value === false || value === 'No') {
@@ -3301,11 +3303,18 @@
                 falseCount: signals.filter(s => s.hasSignal === false).length,
                 nullCount: signals.filter(s => s.hasSignal === null || s.hasSignal === undefined).length,
                 preferredValue: null
+            },
+            
+            skipIfNoKycCexFunding: {
+                trueCount: signals.filter(s => s.skipIfNoKycCexFunding === true).length,
+                falseCount: signals.filter(s => s.skipIfNoKycCexFunding === false).length,
+                nullCount: signals.filter(s => s.skipIfNoKycCexFunding === null || s.skipIfNoKycCexFunding === undefined).length,
+                preferredValue: null
             }
         };
         
         // Determine preferred boolean values based on majority
-        ['freshDeployer', 'hasDescription', 'hasSignal'].forEach(field => {
+        ['freshDeployer', 'hasDescription', 'hasSignal', 'skipIfNoKycCexFunding'].forEach(field => {
             const data = analysis[field];
             if (data.trueCount > data.falseCount) {
                 data.preferredValue = true;
@@ -3460,6 +3469,9 @@
         if (analysis.hasSignal && analysis.hasSignal.preferredValue !== undefined) {
             config['Has Buy Signal'] = analysis.hasSignal.preferredValue;
         }
+        if (analysis.skipIfNoKycCexFunding && analysis.skipIfNoKycCexFunding.preferredValue !== undefined) {
+            config['Skip If No KYC/CEX Funding'] = analysis.skipIfNoKycCexFunding.preferredValue;
+        }
         // Advanced criteria (check for data availability)
         if (analysis.winPred && analysis.winPred.min !== undefined && analysis.winPred.count > 0) {
             config['Min Win Pred %'] = analysis.winPred.min;
@@ -3596,6 +3608,9 @@
         }
         if (config['Description'] !== undefined) {
             lines.push(`Has Description: ${boolToString(config['Description'])}`);
+        }
+        if (config['Skip If No KYC/CEX Funding'] !== undefined) {
+            lines.push(`Skip If No KYC/CEX Funding: ${boolToString(config['Skip If No KYC/CEX Funding'])}`);
         }
         lines.push('');
         
@@ -5166,7 +5181,7 @@
             let container = label.closest('.form-group') || label.parentElement;
 
             // Dual-state toggles: check first to avoid navigating away from the button
-            if (labelText === 'Description' || labelText === 'Fresh Deployer' || labelText === 'Has Buy Signal') {
+            if (labelText === 'Description' || labelText === 'Fresh Deployer' || labelText === 'Skip If No KYC/CEX Funding' || labelText === 'Has Buy Signal') {
                 let toggleButton = container.querySelector('button');
                 if (!toggleButton) {
                     // Climb up cautiously to find the button
@@ -5252,7 +5267,7 @@
             },
             risk: {
                 sectionTitle: 'Risk',
-                params: ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer']
+                params: ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding']
             },
             advanced: {
                 sectionTitle: 'Advanced',
@@ -5430,8 +5445,8 @@
 
                 let container = label.closest('.form-group') || label.parentElement;
 
-                // Handle toggle buttons FIRST (Description and Fresh Deployer) before DOM navigation
-                if (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Has Buy Signal") {
+                // Handle toggle buttons FIRST (Description, Fresh Deployer, and Skip If No KYC/CEX Funding) before DOM navigation
+                if (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Skip If No KYC/CEX Funding" || labelText === "Has Buy Signal") {
                     // Look for toggle button specifically in the label's immediate area
                     let toggleButton = container.querySelector('button');
                     
@@ -8214,6 +8229,9 @@
         }
         if (config['Description'] !== null && config['Description'] !== undefined) {
             riskFields.push(['Description', boolToToggleValue(config['Description'])]);
+        }
+        if (config['Skip If No KYC/CEX Funding'] !== null && config['Skip If No KYC/CEX Funding'] !== undefined) {
+            riskFields.push(['Skip If No KYC/CEX Funding', boolToToggleValue(config['Skip If No KYC/CEX Funding'])]);
         }
        
         await applyFieldsToSection('Risk', riskFields);
