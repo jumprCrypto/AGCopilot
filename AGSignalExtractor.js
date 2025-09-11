@@ -274,6 +274,8 @@
                 'Deployer Balance',
                 'Deployer Balance at Mint',
                 'Fresh Deployer',
+                'Funding Label',
+                'Skip If No KYC/CEX Funding',
                 'Funding Address',
                 'Deployer Age',
                 'Token Age',
@@ -292,8 +294,8 @@
                 // Format liquidity
                 const liquidityFormatted = swap.criteria?.liquidity ? `$${swap.criteria.liquidity}` : '';
                 
-                // Wallet stats (updated format: F: X KYC: Y Unq: Z)
-                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.smCount || 0}`;
+                // Wallet stats (updated format: F: X KYC: Y Unq: Z DM: W)
+                const walletStats = `F: ${swap.criteria?.uniqueCount || 0} KYC: ${swap.criteria?.kycCount || 0} Unq: ${swap.criteria?.uniqueCount || 0} SM: ${swap.criteria?.smCount || 0} D: ${swap.criteria?.dormantCount || 0}`;
                 
                 // Platform logic based on CA ending
                 let platform = 'Unknown';
@@ -351,6 +353,8 @@
                     swap.criteria?.deployerBalance || '',                     // Deployer Balance
                     swap.criteria?.deployerBalanceAtMint || '',               // Deployer Balance at Mint
                     swap.criteria?.freshDeployer ? 'Yes' : 'No',              // Fresh Deployer
+                    swap.criteria?.fundingLabel || '',                        // Funding Label
+                    swap.criteria?.skipIfNoKycCexFunding ? 'Yes' : 'No',     // Skip If No KYC/CEX Funding
                     '',                                                       // Funding Address (not available in current data)
                     deployerAge,                                              // Deployer Age
                     tokenAge,                                                 // Token Age
@@ -585,7 +589,7 @@
                 }
 
                 const button = container.querySelector('button');
-                if (button && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                if (button && (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Skip If No KYC/CEX Funding")) {
                     const targetValue = value || "Don't care";
                     const currentValue = button.textContent.trim();
                     
@@ -617,7 +621,7 @@
                     }
                 }
                 
-                if (toggleButton && (labelText === "Description" || labelText === "Fresh Deployer")) {
+                if (toggleButton && (labelText === "Description" || labelText === "Fresh Deployer" || labelText === "Skip If No KYC/CEX Funding")) {
                     const targetValue = value || "Don't care";
                     let currentValue = toggleButton.textContent.trim();
                     
