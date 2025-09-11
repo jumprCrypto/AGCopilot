@@ -105,6 +105,8 @@
         'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
         'Max KYC Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
+        'Min Dormant Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
+        'Max Dormant Wallets': { min: 1, max: 20, step: 1, type: 'integer' },
 
         // Risk
         'Min Bundled %': { min: 0, max: 50, step: 1 },
@@ -144,7 +146,9 @@
             "Min Holders": undefined,
             "Max Holders": undefined,
             "Holders Growth %": undefined,
-            "Holders Growth Minutes": undefined
+            "Holders Growth Minutes": undefined,
+            "Min Dormant Wallets": undefined,
+            "Max Dormant Wallets": undefined
         },
         risk: {
             "Min Bundled %": undefined,
@@ -745,7 +749,7 @@
         const settingCategories = {
             'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
+            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
             'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             // Dynamically add TP fields if present
@@ -1476,6 +1480,8 @@
                 'Max Unique Wallets': 'maxUniqueWallets',
                 'Min KYC Wallets': 'minKycWallets',
                 'Max KYC Wallets': 'maxKycWallets',
+                'Min Dormant Wallets': 'minDormantWallets',
+                'Max Dormant Wallets': 'maxDormantWallets',
                 
                 // Risk
                 'Min Bundled %': 'minBundledPercent',
@@ -2614,7 +2620,7 @@
     function getClusteringParameters() {
         return [
             'signalMcap', 'agScore', 'tokenAge', 'deployerAge', 'deployerBalance',
-            'uniqueCount', 'kycCount', 'liquidity', 'liquidityPct', 'buyVolumePct',
+            'uniqueCount', 'kycCount', 'dormantCount', 'liquidity', 'liquidityPct', 'buyVolumePct',
             'bundledPct', 'drainedPct', 'volMcapPct', 'winPredPercent', 'ttc'
         ];
     }
@@ -3126,6 +3132,26 @@
                 };
             })(),
             
+            dormantWallets: (() => {
+                const counts = getValidValues('dormantCount');
+                if (counts.length === 0) return { min: 0, max: 20, avg: 0, count: 0 };
+                
+                const rawMin = Math.min(...counts);
+                const rawMax = Math.max(...counts);
+                const avg = counts.reduce((sum, c) => sum + c, 0) / counts.length;
+                
+                // Apply buffer to make ranges INCLUSIVE
+                const bufferedMin = Math.round(applyBuffer(rawMin, true)); // Decrease min
+                const bufferedMax = Math.round(applyBuffer(rawMax, false)); // Increase max
+                
+                return {
+                    min: bufferedMin,
+                    max: bufferedMax,
+                    avg: Math.round(avg),
+                    count: counts.length
+                };
+            })(),
+            
             // Holders Analysis
             holders: (() => {
                 const counts = getValidValues('holdersCount');
@@ -3393,6 +3419,12 @@
         if (analysis.kycWallets && analysis.kycWallets.max !== undefined && analysis.kycWallets.count > 0) {
             config['Max KYC Wallets'] = analysis.kycWallets.max;
         }
+        if (analysis.dormantWallets && analysis.dormantWallets.min !== undefined && analysis.dormantWallets.count > 0) {
+            config['Min Dormant Wallets'] = analysis.dormantWallets.min;
+        }
+        if (analysis.dormantWallets && analysis.dormantWallets.max !== undefined && analysis.dormantWallets.count > 0) {
+            config['Max Dormant Wallets'] = analysis.dormantWallets.max;
+        }
         if (analysis.holders && analysis.holders.min !== undefined && analysis.holders.count > 0) {
             config['Min Holders'] = analysis.holders.min;
         }
@@ -3557,6 +3589,11 @@
             const min = config['Min KYC Wallets'] || 0;
             const max = config['Max KYC Wallets'] || '∞';
             lines.push(`KYC Wallets: ${min} - ${max}`);
+        }
+        if (config['Min Dormant Wallets'] !== undefined || config['Max Dormant Wallets'] !== undefined) {
+            const min = config['Min Dormant Wallets'] || 0;
+            const max = config['Max Dormant Wallets'] || '∞';
+            lines.push(`Dormant Wallets: ${min} - ${max}`);
         }
         if (config['Holders Growth %'] !== undefined) {
             lines.push(`Holders Growth %: ${config['Holders Growth %']}%`);
@@ -3914,6 +3951,7 @@
                 'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
                 'Max Drained %': 'risk', 'Max Drained Count': 'risk',
                 'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets', 'Max Dormant Wallets': 'wallets',
                 'Min Holders': 'wallets', 'Max Holders': 'wallets',
                 // Holder Growth Filter
                 'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
@@ -5263,7 +5301,7 @@
             },
             wallets: {
                 sectionTitle: 'Wallets',
-                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes']
+                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes']
             },
             risk: {
                 sectionTitle: 'Risk',
