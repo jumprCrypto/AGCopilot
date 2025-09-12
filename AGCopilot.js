@@ -2882,7 +2882,13 @@
                             clusteredAnalyses.push({
                                 id: `cluster_${index + 1}`,
                                 name: `Cluster ${index + 1}`,
-                                analysis: clusterAnalysis
+                                analysis: clusterAnalysis,
+                                signals: cluster.signals,
+                                signalCount: cluster.size,
+                                tokenCount: cluster.tokenCount,
+                                uniqueTokens: cluster.uniqueTokens,
+                                tightness: cluster.avgDistance,
+                                threshold: cluster.threshold
                             });
                         } catch (error) {
                             console.warn(`⚠️ Failed to analyze cluster ${index + 1}:`, error.message);
@@ -2897,7 +2903,7 @@
                             totalSignals: allSignals.length,
                             clusteredSignals: clusteredSignals,
                             coverage: clusterCoverage,
-                            fallbackAnalysis: generateFullAnalysis(allSignals, bufferPercent, outlierMethod)
+                            fallbackAnalysis: generateFullAnalysis(allSignals, bufferPercent, outlierMethod, allTokenData.length)
                         };
                     }
                 } else {
@@ -2910,8 +2916,7 @@
         
         // Fallback to standard analysis (or if clustering disabled/failed)
         console.log(`📊 Using standard analysis for all ${allSignals.length} signals from ${allTokenData.length} tokens`);
-        const standardAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod);
-        standardAnalysis.tokenCount = allTokenData.length; // Add token count
+        const standardAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod, allTokenData.length);
         return {
             type: 'standard',
             analysis: standardAnalysis,
@@ -2920,8 +2925,10 @@
     }
     
     // Generate full analysis from all signals (original logic)
-    function generateFullAnalysis(allSignals, bufferPercent, outlierMethod) {
-        return generateAnalysisFromSignals(allSignals, bufferPercent, outlierMethod);
+    function generateFullAnalysis(allSignals, bufferPercent, outlierMethod, tokenCount = 0) {
+        const analysis = generateAnalysisFromSignals(allSignals, bufferPercent, outlierMethod);
+        analysis.tokenCount = tokenCount; // Add token count to the analysis
+        return analysis;
     }
     
     // Generate analysis for a cluster
@@ -3356,13 +3363,19 @@
 
     // Generate the tightest possible configuration from analysis
     function generateTightestConfig(analysis) {
+        // Safety check for undefined analysis
+        if (!analysis) {
+            console.error('❌ generateTightestConfig called with undefined analysis');
+            return null;
+        }
+
         const config = {
             metadata: {
                 generatedAt: new Date().toISOString(),
-                basedOnSignals: analysis.totalSignals,
-                basedOnTokens: analysis.tokenCount,
-                bufferPercent: analysis.bufferPercent,
-                outlierMethod: analysis.outlierMethod,
+                basedOnSignals: analysis.totalSignals || 0,
+                basedOnTokens: analysis.tokenCount || 0,
+                bufferPercent: analysis.bufferPercent || 0,
+                outlierMethod: analysis.outlierMethod || 'none',
                 configType: 'Tightest Generated Config'
             }
         };
@@ -3536,7 +3549,7 @@
             lines.push(`🎯 CLUSTER ${config.metadata.clusterInfo.clusterId} CONFIG`);
             lines.push('═'.repeat(50));
             lines.push(`🔗 ${config.metadata.clusterInfo.clusterName}: ${config.metadata.clusterInfo.description}`);
-            lines.push(`🎯 Tightness Score: ${config.metadata.clusterInfo.tightness.toFixed(3)} (lower = tighter)`);
+            lines.push(`🎯 Tightness Score: ${(config.metadata.clusterInfo.tightness || 0).toFixed(3)} (lower = tighter)`);
             lines.push(`📏 Distance Threshold: ${config.metadata.clusterInfo.threshold}`);
         } else {
             lines.push('🎯 TIGHTEST GENERATED CONFIG');
@@ -7394,12 +7407,14 @@
             clusterButtonsContainer.appendChild(button);
         });
         
-        // Add fallback button
-        const fallbackButton = document.createElement('button');
-        fallbackButton.innerHTML = `All Signals (${fallbackAnalysis.tokenCount} CAs)`;
-        fallbackButton.style.cssText = buttonStyle;
-        fallbackButton.onclick = () => selectClusterConfig('fallback', clusters, fallbackAnalysis);
-        clusterButtonsContainer.appendChild(fallbackButton);
+        // Add fallback button (only if fallback analysis is available)
+        if (fallbackAnalysis) {
+            const fallbackButton = document.createElement('button');
+            fallbackButton.innerHTML = `All Signals (${fallbackAnalysis.tokenCount || 0} CAs)`;
+            fallbackButton.style.cssText = buttonStyle;
+            fallbackButton.onclick = () => selectClusterConfig('fallback', clusters, fallbackAnalysis);
+            clusterButtonsContainer.appendChild(fallbackButton);
+        }
         
         // Show the cluster selection section
         clusterSection.style.display = 'block';
@@ -7411,8 +7426,14 @@
         let selectedCluster = null;
         
         if (configId === 'fallback') {
-            selectedConfig = generateTightestConfig(fallbackAnalysis);
-            window.lastGeneratedConfig = selectedConfig;
+            if (fallbackAnalysis) {
+                selectedConfig = generateTightestConfig(fallbackAnalysis);
+                window.lastGeneratedConfig = selectedConfig;
+            } else {
+                console.error('❌ Fallback analysis not available');
+                updateSignalStatus('❌ Fallback analysis not available', true);
+                return;
+            }
         } else {
             selectedConfig = window[`clusterConfig_${configId}`];
             window.lastGeneratedConfig = selectedConfig;
@@ -7629,14 +7650,14 @@
                 window.lastGeneratedConfig = bestConfig;
                 
                 // Display best cluster info
-                updateSignalStatus(`🏆 Best Cluster: ${bestCluster.name} with ${bestCluster.signalCount} signals (tightness: ${bestCluster.tightness.toFixed(3)})`);
+                updateSignalStatus(`🏆 Best Cluster: ${bestCluster.name} with ${bestCluster.signalCount} signals (tightness: ${(bestCluster.tightness || 0).toFixed(3)})`);
                 
                 // Display each cluster
                 analysis.clusters.forEach((cluster, index) => {
                     const generatedConfig = generateTightestConfig(cluster.analysis);
                     const formattedConfig = formatConfigForDisplay(generatedConfig);
                     
-                    console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${cluster.tightness.toFixed(3)}) ===`);
+                    console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${(cluster.tightness || 0).toFixed(3)}) ===`);
                     // Validate config against the signals it was based on
                     validateConfigAgainstSignals(generatedConfig, cluster.signals, cluster.name);
                     
@@ -7653,14 +7674,17 @@
                 });
                 
                 // Also generate and display fallback config
-                const fallbackConfig = generateTightestConfig(analysis.fallback);
-                window.fallbackConfig = fallbackConfig;
+                const fallbackConfig = analysis.fallbackAnalysis ? 
+                    generateTightestConfig(analysis.fallbackAnalysis) : null;
                 
-                console.log(`\n=== FALLBACK CONFIG (All ${analysis.totalSignals} signals) ===`);
-                // Validate fallback config against all signals
-                const allSignalsArray = [];
-                allTokenData.forEach(tokenData => {
-                    tokenData.swaps.forEach(swap => {
+                if (fallbackConfig) {
+                    window.fallbackConfig = fallbackConfig;
+                    
+                    console.log(`\n=== FALLBACK CONFIG (All ${analysis.totalSignals} signals) ===`);
+                    // Validate fallback config against all signals
+                    const allSignalsArray = [];
+                    allTokenData.forEach(tokenData => {
+                        tokenData.swaps.forEach(swap => {
                         if (swap.criteria) {
                             allSignalsArray.push({
                                 ...swap.criteria,
@@ -7676,9 +7700,14 @@
                 updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs + 1 fallback - details logged to console`);
                 updateSignalStatus(`🎯 Main config set to best cluster: ${bestCluster.name}`);
                 updateSignalStatus(`💡 Use Copy button for best cluster config, or check console for all configs`);
+                } else {
+                    updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs - details logged to console`);
+                    updateSignalStatus(`🎯 Main config set to best cluster: ${bestCluster.name}`);
+                    updateSignalStatus(`💡 Use Copy button for best cluster config, or check console for all configs`);
+                }
                 
                 // Create cluster selection UI
-                createClusterSelectionUI(analysis.clusters, analysis.fallback);
+                createClusterSelectionUI(analysis.clusters, analysis.fallbackAnalysis);
                 updateSignalStatus(`⚠️ Remember to set your Start and End Dates in the Backtester`);
                 
             } else {
@@ -8304,6 +8333,12 @@
     
     // Validate that a generated config would match the original signals it was based on
     function validateConfigAgainstSignals(config, originalSignals, configName = 'Config') {
+        // Safety check for undefined originalSignals
+        if (!originalSignals || !Array.isArray(originalSignals) || originalSignals.length === 0) {
+            console.log(`⚠️ ${configName}: No signals provided for validation`);
+            return;
+        }
+
         let matchingSignals = 0;
         const failReasons = {};
         
