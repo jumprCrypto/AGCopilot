@@ -24,7 +24,7 @@
         USE_LATIN_HYPERCUBE_SAMPLING: true,
         
         // Outlier-resistant scoring system (controlled via scoring mode below)
-        // Scoring mode: 'robust' | 'tp_only' | 'winrate_only'
+        // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only'
         SCORING_MODE: 'robust',
         MIN_WIN_RATE: 35.0,        // Win rate for small samples (<500 tokens)
         MIN_WIN_RATE_MEDIUM_SAMPLE: 33.0, // Win rate for medium samples (500-999 tokens)
@@ -570,7 +570,7 @@
     function getScoringMode() {
         const modeSelect = document.getElementById('scoring-mode-select');
         if (modeSelect && modeSelect.value) {
-            return modeSelect.value; // 'robust' | 'tp_only' | 'winrate_only'
+            return modeSelect.value; // 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only'
         }
         return CONFIG.SCORING_MODE || 'robust';
     }
@@ -1176,6 +1176,11 @@
             // Get burst rate limiter stats
             const burstStats = burstRateLimiter.getStats();
             
+            // 🚀 OPTIMIZATION: Get cache performance metrics
+            const cache = window.globalConfigCache;
+            const cacheMetrics = cache ? cache.getMetrics() : null;
+            const cacheEnabled = CONFIG.USE_CONFIG_CACHING && cache;
+            
             // Calculate time remaining
             const timeRemaining = this.formatTimeRemaining();
             const progressPercent = this.maxRuntimeMs > 0 ? 
@@ -1191,6 +1196,17 @@
                     ${burstStats.rateLimitHits > 0 ? 
                         `<div>⚠️ Rate Hits: <span style="color: #ff4444;">${burstStats.rateLimitHits}</span></div>` : 
                         '<div>✅ No Rate Hits</div>'
+                    }
+                    ${cacheEnabled && cacheMetrics && cacheMetrics.totalRequests > 0 ? 
+                        `<div>💾 Cache: <span style="color: #4CAF50;">${cacheMetrics.hitRatePercent}</span></div>` :
+                        (cacheEnabled ? 
+                            '<div>💾 Cache: <span style="color: #ffa500;">Ready</span></div>' :
+                            '<div>💾 Cache: <span style="color: #ff4444;">Off</span></div>'
+                        )
+                    }
+                    ${cacheEnabled && cacheMetrics && cacheMetrics.apiCallsSaved > 0 ? 
+                        `<div>🚀 Saved: <span style="color: #4CAF50;">${cacheMetrics.apiCallsSaved} API calls</span></div>` :
+                        ''
                     }
                 </div>
             `;
@@ -1223,7 +1239,8 @@
                             <div>Score: <span style="color: #4CAF50; font-weight: bold;">${metrics.score?.toFixed(1) || 'N/A'}</span></div>
                             <div>Tokens: <span style="color: #fff;">${metrics.totalTokens || 0}</span></div>
                             <div>TP PnL: <span style="color: ${(metrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(metrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
-                            <div>Win Rate: <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
+                            <div>WR (2x): <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
+                            <div>WR (TP): <span style="color: #4CAF50;">${(metrics.realWinRate || 0).toFixed(1)}% (${metrics.tokensHitTp || 0}/${metrics.totalTokens || 0})</span></div>
                         </div>
                         <div style="font-size: 9px; color: #aaa; margin-top: 4px;">Method: ${this.currentBest.method}</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
@@ -1322,6 +1339,9 @@
                     } else if (response.status === 404) {
                         // Not found - this is likely a legitimate "token not found" case
                         throw new Error(`Token not found in database (HTTP 404) - may be too new, unlisted, or incorrect address`);
+                    } else if (response.status === 502) {
+                        // Bad Gateway - server temporarily unavailable
+                        throw new Error(`Server temporarily unavailable (HTTP 502 Bad Gateway) - will retry after delay`);
                     } else if (response.status === 500) {
                         // Server error - might be temporary
                         throw new Error(`Server error (HTTP 500) - API may be experiencing issues`);
@@ -1347,6 +1367,12 @@
                     // BurstRateLimiter will handle the next throttle() call appropriately
                     // Add a small additional delay for rate limit errors
                     await sleep(1000);
+                } else if (error.message.includes('Server temporarily unavailable (HTTP 502')) {
+                    // For 502 Bad Gateway errors, wait 5 minutes before retrying
+                    const waitTime = 5 * 60 * 1000; // 5 minutes in milliseconds
+                    console.log(`⏳ Server unavailable (502). Waiting 5 minutes before retry... (${new Date().toLocaleTimeString()})`);
+                    await sleep(waitTime);
+                    console.log(`🔄 Resuming after 5-minute wait (${new Date().toLocaleTimeString()})`);
                 } else {
                     // For other errors, use standard retry delay
                     const retryDelay = CONFIG.RETRY_DELAY * attempt;
@@ -1712,10 +1738,7 @@
         // Fetch results from API
         async fetchResults(config, retries = 3) {
             try {
-                // Use burst rate limiting for optimal performance
-                await burstRateLimiter.throttle();
-                
-                // Map AGCopilot config to API parameters
+                // Map AGCopilot config to API parameters FIRST for cache key generation
                 const apiParams = this.mapParametersToAPI(config);
                 
                 // Validate parameters
@@ -1727,6 +1750,17 @@
                         validation: validation.errors
                     };
                 }
+                
+                // 🚀 OPTIMIZATION: Check cache BEFORE rate limiting to avoid consuming rate limit tokens on cache hits
+                const cache = window.globalConfigCache;
+                if (CONFIG.USE_CONFIG_CACHING && cache && cache.has(config)) {
+                    const cached = cache.get(config);
+                    console.log(`    💾 Cache hit (bypassed rate limiting): API call saved | ${cache.getPerformanceSummary()}`);
+                    return cached;
+                }
+                
+                // Only apply rate limiting for actual API calls
+                await burstRateLimiter.throttle();
                 
                 const url = this.buildApiUrl(apiParams);
                 
@@ -1791,6 +1825,31 @@
                                 }
                             }
                             
+                            // Handle 502 errors specifically (Bad Gateway - server temporarily unavailable)
+                            if (response.status === 502) {
+                                console.warn(`⚠️ Server Error (502) - Bad Gateway - Backtester temporarily unavailable`);
+                                console.warn(`🔍 Full API URL: ${url}`);
+                                
+                                const waitTime = 5 * 60 * 1000; // 5 minutes in milliseconds
+                                console.warn(`⏳ Waiting 5 minutes (${waitTime/1000}s) before retry due to 502 Bad Gateway...`);
+                                console.warn(`🕐 Current time: ${new Date().toLocaleTimeString()}`);
+                                console.warn(`🕐 Will retry at: ${new Date(Date.now() + waitTime).toLocaleTimeString()}`);
+                                
+                                if (attempt < retries) {
+                                    await sleep(waitTime);
+                                    console.warn(`🔄 Retrying after 5-minute wait (attempt ${attempt + 1}/${retries})`);
+                                    continue;
+                                } else {
+                                    // On final retry failure, return a special result to continue optimization
+                                    return {
+                                        success: false,
+                                        error: 'Server temporarily unavailable (502 Bad Gateway) after all retries with 5-minute waits',
+                                        isServerError: true,
+                                        retryable: true
+                                    };
+                                }
+                            }
+                            
                             // Handle 500 errors specifically (often caused by invalid parameters)
                             if (response.status === 500) {
                                 console.error(`❌ Server Error (500) - likely invalid parameters`);
@@ -1825,7 +1884,9 @@
                             athPnlPercent: data.averageAthGain || 0,
                             athPnlSOL: data.pnlSolAth || 0,
                             totalSpent: data.totalSolSpent || 0,
-                            winRate: data.winRate || 0,
+                            winRate: data.winRate || 0, // Legacy win rate from API
+                            tokensHitTp: data.tokensHitTp || 0, // Tokens that hit at least 1 TP
+                            realWinRate: data.tokensHitTp && data.totalTokens ? (data.tokensHitTp / data.totalTokens * 100) : 0, // Real win rate
                             cleanPnL: data.cleanPnL || 0,
                             totalSignals: data.totalAvailableSignals || 0
                         };
@@ -1836,12 +1897,21 @@
                             throw new Error(`Invalid metrics returned: tpPnlPercent=${transformedMetrics.tpPnlPercent}, totalTokens=${transformedMetrics.totalTokens}`);
                         }
                         
-                        return {
+                        const result = {
                             success: true,
                             metrics: transformedMetrics,
                             rawResponse: data,
                             source: 'API'
                         };
+                        
+                        // 🚀 OPTIMIZATION: Cache the result after successful API call
+                        const cache = window.globalConfigCache;
+                        if (CONFIG.USE_CONFIG_CACHING && cache) {
+                            cache.set(config, result);
+                            console.log(`    🎯 API call completed & cached | ${cache.getPerformanceSummary()}`);
+                        }
+                        
+                        return result;
                         
                     } catch (error) {
                         console.warn(`❌ API attempt ${attempt} failed: ${error.message}`);
@@ -1990,7 +2060,7 @@
             // Reuse global config cache
             const cache = window.globalConfigCache || (window.globalConfigCache = new ConfigCache(1000));
 
-            // Helper to fetch with cache + min/max validation
+            // Helper to fetch with validation (cache now handled in BacktesterAPI.fetchResults)
             const fetchWithCacheValidated = async (cfg, label) => {
                 const completeCfg = ensureCompleteConfig(cfg);
                 // Validate min/max pairs via API param mapping
@@ -2000,13 +2070,9 @@
                     console.log(`    ⚠️ Skipping invalid config (${label}): ${validation.errors.join(', ')}`);
                     return { success: false, error: 'invalid_config' };
                 }
-                if (CONFIG.USE_CONFIG_CACHING && cache.has(completeCfg)) {
-                    const cached = cache.get(completeCfg);
-                    console.log(`    💾 Cache hit: ${label}`);
-                    return cached;
-                }
+                
+                // Cache checking and setting now handled in BacktesterAPI.fetchResults for better rate limit optimization
                 const res = await backtesterAPI.fetchResults(completeCfg);
-                if (CONFIG.USE_CONFIG_CACHING) cache.set(completeCfg, res);
                 return res;
             };
 
@@ -2120,7 +2186,7 @@
                         });
                         
                         const logPrefix = improvement > MIN_IMPROVEMENT_THRESHOLD ? '✅' : '📊';
-                        console.log(`    ${logPrefix} ${value}: score=${currentScore.toFixed(1)} (raw=${(result.metrics.tpPnlPercent||0).toFixed(1)}%, WR=${(result.metrics.winRate||0).toFixed(1)}%) Δ=${improvement.toFixed(1)} [${result.metrics.totalTokens} tokens]`);
+                        console.log(`    ${logPrefix} ${value}: score=${currentScore.toFixed(1)} (raw=${(result.metrics.tpPnlPercent||0).toFixed(1)}%, LWR=${(result.metrics.winRate||0).toFixed(1)}%, RWR=${(result.metrics.realWinRate||0).toFixed(1)}%) Δ=${improvement.toFixed(1)} [${result.metrics.totalTokens} tokens]`);
                         
                         // Update progress
                         window.optimizationTracker.updateProgress(testCount, failedCount);
@@ -2274,9 +2340,13 @@
 
     const mode = getScoringMode();
 
-    // Use raw TP PnL % and Win Rate
+    // Use raw TP PnL % and Win Rate (legacy or real based on mode)
     const rawPnL = metrics.tpPnlPercent;
-    const winRate = metrics.winRate || 0;
+    const legacyWinRate = metrics.winRate || 0; // Original API win rate
+    const realWinRate = metrics.realWinRate || 0; // Calculated from tokensHitTp
+    
+    // Choose win rate based on scoring mode
+    const winRate = (mode === 'robust_real') ? realWinRate : legacyWinRate;
         
         // Reliability factor based on sample size (more tokens = more reliable)
         // Uses logarithmic scaling: log(tokens)/log(100) capped at 1.0
@@ -2300,8 +2370,8 @@
             sampleTier = 'Small';
         }
         
-        // Reject configurations that don't meet minimum win rate requirements (only for robust mode)
-        if (mode === 'robust' && winRate < effectiveMinWinRate) {
+        // Reject configurations that don't meet minimum win rate requirements (for robust modes)
+        if ((mode === 'robust_real' || mode === 'legacy_resistant') && winRate < effectiveMinWinRate) {
             return {
                 score: -Infinity, // Ensure this config is never selected as best
                 rejected: true,
@@ -2330,7 +2400,9 @@
             returnWeight = 0.0; consistencyWeight = 1.0; reliabilityWeight = 0.0;
             scoringMethodDesc = 'Win Rate Only';
         } else {
-            scoringMethodDesc = `Robust Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min win rate${mode==='robust'?' met':''})`;
+            const winRateType = mode === 'robust_real' ? 'Real' : 'Legacy';
+            const scoringType = mode === 'robust_real' ? 'Robust (Real Win Rate)' : 'Legacy Resistant';
+            scoringMethodDesc = `${scoringType} Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min ${winRateType.toLowerCase()} win rate)`;
         }
 
         // Composite score
@@ -2345,6 +2417,9 @@
             components: {
                 rawPnL: metrics.tpPnlPercent,
                 winRate: winRate,
+                legacyWinRate: legacyWinRate,
+                realWinRate: realWinRate,
+                tokensHitTp: metrics.tokensHitTp,
                 reliabilityFactor: reliabilityFactor,
                 effectiveMinWinRate: effectiveMinWinRate,
                 sampleTier: sampleTier,
@@ -2353,7 +2428,8 @@
                 consistencyComponent: consistencyComponent,
                 baseScore: baseScore,
                 reliabilityAdjustedScore: reliabilityAdjustedScore,
-                finalScore: finalScore
+                finalScore: finalScore,
+                scoringMode: mode
             },
             scoringMethod: scoringMethodDesc
         };
@@ -3693,6 +3769,13 @@
             this.cache = new Map();
             this.maxSize = maxSize;
             this.accessOrder = [];
+            // 🚀 OPTIMIZATION: Add cache hit tracking
+            this.metrics = {
+                hits: 0,
+                misses: 0,
+                apiCallsSaved: 0,
+                totalRequests: 0
+            };
         }
 
         generateKey(config) {
@@ -3726,7 +3809,13 @@
 
         get(config) {
             const key = this.generateKey(config);
+            this.metrics.totalRequests++;
+            
             if (this.cache.has(key)) {
+                // 🚀 OPTIMIZATION: Track cache hits
+                this.metrics.hits++;
+                this.metrics.apiCallsSaved++;
+                
                 // Update access order for LRU
                 const index = this.accessOrder.indexOf(key);
                 if (index > -1) {
@@ -3734,6 +3823,9 @@
                 }
                 this.accessOrder.push(key);
                 return this.cache.get(key);
+            } else {
+                // Track cache misses
+                this.metrics.misses++;
             }
             return null;
         }
@@ -3760,11 +3852,46 @@
         clear() {
             this.cache.clear();
             this.accessOrder = [];
+            // Reset metrics when cache is cleared
+            this.metrics = {
+                hits: 0,
+                misses: 0,
+                apiCallsSaved: 0,
+                totalRequests: 0
+            };
         }
 
         size() {
             return this.cache.size;
         }
+        
+        // 🚀 OPTIMIZATION: Get cache performance metrics
+        getMetrics() {
+            const hitRate = this.metrics.totalRequests > 0 ? 
+                (this.metrics.hits / this.metrics.totalRequests * 100).toFixed(1) : '0.0';
+            
+            return {
+                ...this.metrics,
+                hitRate: parseFloat(hitRate),
+                hitRatePercent: `${hitRate}%`,
+                cacheSize: this.cache.size,
+                maxSize: this.maxSize
+            };
+        }
+        
+        // 🚀 OPTIMIZATION: Get cache performance summary
+        getPerformanceSummary() {
+            const metrics = this.getMetrics();
+            return `Cache: ${metrics.hits}/${metrics.totalRequests} hits (${metrics.hitRatePercent}) | ${metrics.apiCallsSaved} API calls saved | ${metrics.cacheSize}/${metrics.maxSize} entries`;
+        }
+    }
+
+    // 🚀 OPTIMIZATION: Initialize global cache for configuration results
+    if (!window.globalConfigCache) {
+        window.globalConfigCache = new ConfigCache(1000);
+        console.log('💾 Global configuration cache initialized (capacity: 1000)');
+    } else {
+        console.log('💾 Global configuration cache already exists');
     }
 
     // ========================================
@@ -6650,7 +6777,8 @@
                                         font-size: 10px;
                                         outline: none;
                                     " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                        <option value="robust" selected>Outlier-Resistant (PnL + Win Rate)</option>
+                                        <option value="robust_real" selected>Robust Scoring (PnL + Real Win Rate)</option>
+                                        <option value="legacy_resistant">Legacy Resistant (PnL + API Win Rate)</option>
                                         <option value="tp_only">TP PnL % Only</option>
                                         <option value="winrate_only">Win Rate Only</option>
                                     </select>
@@ -7891,7 +8019,8 @@
             
             const features = [];
             const mode = CONFIG.SCORING_MODE;
-            if (mode === 'robust') features.push('outlier-resistant scoring');
+            if (mode === 'robust_real') features.push('robust scoring with real win rate');
+            if (mode === 'legacy_resistant') features.push('legacy outlier-resistant scoring');
             if (mode === 'tp_only') features.push('TP PnL scoring');
             if (mode === 'winrate_only') features.push('Win Rate scoring');
             if (simulatedAnnealing) features.push('simulated annealing');
@@ -8451,6 +8580,26 @@
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
         
+        // 🚀 OPTIMIZATION: Add global cache debug function
+        window.checkCacheStatus = function() {
+            const cache = window.globalConfigCache;
+            const cacheEnabled = CONFIG.USE_CONFIG_CACHING && cache;
+            const metrics = cache ? cache.getMetrics() : null;
+            
+            console.log('\n%c💾 CACHE STATUS DEBUG', 'color: #00aaff; font-size: 14px; font-weight: bold;');
+            console.log(`Cache object exists: ${cache ? '✅ Yes' : '❌ No'}`);
+            console.log(`CONFIG.USE_CONFIG_CACHING: ${CONFIG.USE_CONFIG_CACHING ? '✅ Enabled' : '❌ Disabled'}`);
+            console.log(`Cache enabled: ${cacheEnabled ? '✅ Yes' : '❌ No'}`);
+            if (metrics) {
+                console.log(`Cache metrics:`, metrics);
+                console.log(`Performance: ${cache.getPerformanceSummary()}`);
+            }
+            
+            return { cache, cacheEnabled, metrics };
+        };
+        
+        console.log('%c💡 TIP: Run window.checkCacheStatus() in console to debug cache issues', 'color: #ffaa00; font-style: italic;');
+        
         // Auto-enable split-screen mode by default (after a short delay to ensure DOM is ready)
         setTimeout(() => {
             if (window.innerWidth >= 1200) {
@@ -8460,6 +8609,13 @@
                 console.log('🖥️ Screen too narrow for auto-enabling split-screen mode, keeping floating mode');
             }
         }, 100);
+        
+        // 🚀 CACHE OPTIMIZATION SUMMARY
+        console.log('\n%c🚀 CACHE OPTIMIZATION ENABLED', 'color: #00ff88; font-size: 14px; font-weight: bold;');
+        console.log('%c✅ Cache hits now bypass rate limiting entirely', 'color: #00ff88; font-weight: bold;');
+        console.log('%c✅ Enhanced cache metrics and performance tracking', 'color: #00ff88; font-weight: bold;');
+        console.log('%c✅ Real-time cache performance shown in optimization display', 'color: #00ff88; font-weight: bold;');
+        console.log('%c📈 Expected performance improvement: Significantly faster optimization with fewer API calls!', 'color: #ffaa00; font-weight: bold;');
         
         return ui;
     } catch (error) {
