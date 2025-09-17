@@ -24,7 +24,7 @@
         USE_LATIN_HYPERCUBE_SAMPLING: true,
         
         // Outlier-resistant scoring system (controlled via scoring mode below)
-        // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only'
+        // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only' | 'real_winrate_only'
         SCORING_MODE: 'robust',
         MIN_WIN_RATE: 35.0,        // Win rate for small samples (<500 tokens)
         MIN_WIN_RATE_MEDIUM_SAMPLE: 33.0, // Win rate for medium samples (500-999 tokens)
@@ -570,7 +570,7 @@
     function getScoringMode() {
         const modeSelect = document.getElementById('scoring-mode-select');
         if (modeSelect && modeSelect.value) {
-            return modeSelect.value; // 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only'
+            return modeSelect.value; // 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only' | 'real_winrate_only'
         }
         return CONFIG.SCORING_MODE || 'robust';
     }
@@ -2346,7 +2346,7 @@
     const realWinRate = metrics.realWinRate || 0; // Calculated from tokensHitTp
     
     // Choose win rate based on scoring mode
-    const winRate = (mode === 'robust_real') ? realWinRate : legacyWinRate;
+    const winRate = (mode === 'robust_real' || mode === 'real_winrate_only') ? realWinRate : legacyWinRate;
         
         // Reliability factor based on sample size (more tokens = more reliable)
         // Uses logarithmic scaling: log(tokens)/log(100) capped at 1.0
@@ -2398,7 +2398,10 @@
             scoringMethodDesc = 'TP PnL % Only';
         } else if (mode === 'winrate_only') {
             returnWeight = 0.0; consistencyWeight = 1.0; reliabilityWeight = 0.0;
-            scoringMethodDesc = 'Win Rate Only';
+            scoringMethodDesc = 'Win Rate Only (Legacy)';
+        } else if (mode === 'real_winrate_only') {
+            returnWeight = 0.0; consistencyWeight = 1.0; reliabilityWeight = 0.0;
+            scoringMethodDesc = 'Real Win Rate Only';
         } else {
             const winRateType = mode === 'robust_real' ? 'Real' : 'Legacy';
             const scoringType = mode === 'robust_real' ? 'Robust (Real Win Rate)' : 'Legacy Resistant';
@@ -4266,7 +4269,7 @@
                 // Store scoring details in metrics for analysis
                 metrics.robustScoring = robustScoring;
                 const modeForMetric = getScoringMode();
-                metrics.optimizedMetric = modeForMetric === 'tp_only' ? 'tpPnlPercent' : (modeForMetric === 'winrate_only' ? 'winRate' : 'robustScore');
+                metrics.optimizedMetric = modeForMetric === 'tp_only' ? 'tpPnlPercent' : (modeForMetric === 'winrate_only' ? 'winRate' : (modeForMetric === 'real_winrate_only' ? 'realWinRate' : 'robustScore'));
                 metrics.optimizedValue = currentScore;
                 
                 // PnL optimization mode (default)
@@ -6781,6 +6784,7 @@
                                         <option value="legacy_resistant">Legacy Resistant (PnL + API Win Rate)</option>
                                         <option value="tp_only">TP PnL % Only</option>
                                         <option value="winrate_only">Win Rate Only</option>
+                                        <option value="real_winrate_only">Real Win Rate Only</option>
                                     </select>
                                 </div>
                             </div>
