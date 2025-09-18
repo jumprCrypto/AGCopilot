@@ -2370,8 +2370,8 @@
             sampleTier = 'Small';
         }
         
-        // Reject configurations that don't meet minimum win rate requirements (for robust modes)
-        if ((mode === 'robust_real' || mode === 'legacy_resistant') && winRate < effectiveMinWinRate) {
+        // Reject configurations that don't meet minimum win rate requirements (for robust and real win rate modes)
+        if ((mode === 'robust_real' || mode === 'legacy_resistant' || mode === 'real_winrate_only') && winRate < effectiveMinWinRate) {
             return {
                 score: -Infinity, // Ensure this config is never selected as best
                 rejected: true,
@@ -8027,6 +8027,7 @@
             if (mode === 'legacy_resistant') features.push('legacy outlier-resistant scoring');
             if (mode === 'tp_only') features.push('TP PnL scoring');
             if (mode === 'winrate_only') features.push('Win Rate scoring');
+            if (mode === 'real_winrate_only') features.push('Real Win Rate scoring');
             if (simulatedAnnealing) features.push('simulated annealing');
             if (latinHypercube) features.push('Latin hypercube sampling');
             if (correlatedParams) features.push('correlated parameters');
