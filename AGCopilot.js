@@ -26,9 +26,9 @@
         // Outlier-resistant scoring system (controlled via scoring mode below)
         // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only' | 'real_winrate_only'
         SCORING_MODE: 'robust',
-        MIN_WIN_RATE: 35.0,        // Win rate for small samples (<500 tokens)
-        MIN_WIN_RATE_MEDIUM_SAMPLE: 33.0, // Win rate for medium samples (500-999 tokens)
-        MIN_WIN_RATE_LARGE_SAMPLE: 30.0,  // Win rate for large samples (1000+ tokens)
+        MIN_WIN_RATE: 25.0,        // Win rate for small samples (<500 tokens)
+        MIN_WIN_RATE_MEDIUM_SAMPLE: 15.0, // Win rate for medium samples (500-999 tokens)
+        MIN_WIN_RATE_LARGE_SAMPLE: 10.0,  // Win rate for large samples (1000+ tokens)
         MEDIUM_SAMPLE_THRESHOLD: 500,     // Token count threshold for medium sample tier
         LARGE_SAMPLE_THRESHOLD: 1000,     // Token count threshold for large sample tier
         RELIABILITY_WEIGHT: 0.3,   // Weight for sample size and consistency (0.0-1.0)
