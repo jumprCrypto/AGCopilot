@@ -18,8 +18,6 @@
         
         // Feature flags (keeping all original features)
         USE_CONFIG_CACHING: true,
-        USE_PARAMETER_IMPACT_ANALYSIS: true,
-        USE_GENETIC_ALGORITHM: true,
         USE_SIMULATED_ANNEALING: true,
         USE_LATIN_HYPERCUBE_SAMPLING: true,
         
@@ -2250,76 +2248,6 @@
             throw error;
         }
     }
-
-    // ========================================
-    // 📊 UI METRICS EXTRACTOR (Enhanced from original AGCopilot)
-    // ========================================
-    async function extractMetricsFromUI() {
-        try {
-            const metrics = {};
-            const statDivs = Array.from(document.querySelectorAll('div.text-xl.font-bold'));
-
-            for (const div of statDivs) {
-                const label = div.parentElement.querySelector('div.text-xs.text-gray-400');
-                if (label) {
-                    const labelText = label.textContent.trim().toLowerCase();
-                    const value = div.textContent.trim();
-
-                    switch (labelText) {
-                        case 'tokens matched':
-                            const tokenMatch = value.match(/(\d{1,3}(?:,\d{3})*)/);
-                            if (tokenMatch) {
-                                metrics.totalTokens = parseInt(tokenMatch[1].replace(/,/g, ''));
-                            }
-                            break;
-                        case 'tp pnl %':
-                            const tpPnlMatch = value.match(/([+-]?\d+(?:\.\d+)?)%/);
-                            if (tpPnlMatch) {
-                                metrics.tpPnlPercent = parseFloat(tpPnlMatch[1]);
-                            }
-                            break;
-                        case 'tp pnl (sol)':
-                            const tpPnlSolMatch = value.match(/([+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?)/);
-                            if (tpPnlSolMatch) {
-                                metrics.tpPnlSOL = parseFloat(tpPnlSolMatch[1].replace(/,/g, ''));
-                            }
-                            break;
-                        case 'signal ath pnl %':
-                        case 'ath pnl %':
-                            const athPnlMatch = value.match(/([+-]?\d+(?:\.\d+)?)%/);
-                            if (athPnlMatch) {
-                                metrics.athPnlPercent = parseFloat(athPnlMatch[1]);
-                            }
-                            break;
-                        case 'total sol spent':
-                            const spentMatch = value.match(/(\d{1,3}(?:,\d{3})*(?:\.\d+)?)/);
-                            if (spentMatch) {
-                                metrics.totalSpent = parseFloat(spentMatch[1].replace(/,/g, ''));
-                            }
-                            break;
-                        case 'win rate (≥2x)':
-                            const winRateMatch = value.match(/(\d+(?:\.\d+)?)%/);
-                            if (winRateMatch) {
-                                metrics.winRate = parseFloat(winRateMatch[1]);
-                            }
-                            break;
-                    }
-                }
-            }
-
-            // Validate required metrics
-            if (metrics.tpPnlPercent === undefined || metrics.totalTokens === undefined) {
-                console.warn('⚠️ Missing required metrics in UI extraction');
-                return null;
-            }
-
-            return metrics;
-        } catch (error) {
-            console.warn('❌ Failed to extract metrics from UI:', error);
-            return null;
-        }
-    }
-
     // ========================================
     // 📊 ROBUST SCORING SYSTEM (Outlier-Resistant)
     // ========================================
@@ -3899,7 +3827,7 @@
 
     // ========================================
     // 🧬 ADVANCED OPTIMIZATION COMPONENTS
-    // Latin Hypercube Sampling, Simulated Annealing, and Genetic Algorithms
+    // Latin Hypercube Sampling and Simulated Annealing
     // ========================================
     
     // Latin Hypercube Sampler for better parameter space exploration
@@ -5283,27 +5211,6 @@
             }
         }
     }
-
-    // Simple connectivity test (no longer needed)
-    async function testConnectivity() {
-        // Just test that we can interact with the UI
-        try {
-            const testConfig = {
-                basic: { "Min MCAP (USD)": 5000 }
-            };
-            
-            return {
-                success: true,
-                message: 'UI interaction ready'
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-    
     // Function to read current field value from the UI
     function getFieldValue(labelText) {
         try {
@@ -5960,38 +5867,6 @@
             updateStatus(`❌ Failed to apply preset ${presetName} to UI`, true);
         }
     }
-
-    // Apply configuration from clipboard to UI
-    async function applyConfigFromClipboard() {
-        try {
-            const clipboardText = await navigator.clipboard.readText();
-            const config = JSON.parse(clipboardText);
-            
-            // Validate that it's a proper configuration
-            if (config && typeof config === 'object' && (config.basic || config.tokenDetails || config.wallets || config.risk || config.advanced)) {
-                updateStatus('📋 Applying configuration from clipboard to UI...');
-                const completeConfig = ensureCompleteConfig(config);
-                const success = await applyConfigToUI(completeConfig, true); // Skip stop check for manual clipboard application
-                
-                if (success) {
-                    updateStatus('✅ Clipboard configuration applied to UI successfully!');
-                    // Test it to show the results
-                    updateStatus('📊 Testing clipboard configuration...');
-                    const result = await testConfigurationAPI(config, 'Clipboard Config');
-                    if (result.success) {
-                        updateStatus(`📊 Clipboard config results: ${result.metrics.totalTokens} tokens, ${result.metrics.tpPnlPercent?.toFixed(1)}% TP PnL`);
-                    }
-                } else {
-                    updateStatus('❌ Failed to apply clipboard configuration to UI', true);
-                }
-            } else {
-                updateStatus('❌ Invalid configuration format in clipboard', true);
-            }
-        } catch (error) {
-            updateStatus('❌ Failed to read/parse clipboard configuration', true);
-        }
-    }
-
     // ========================================
     // 🎨 UI FUNCTIONS
     // ========================================
