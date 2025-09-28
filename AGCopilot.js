@@ -1,4 +1,4 @@
-(async function () {
+async function bootstrap() {
     console.clear();
     console.log('%c🤖 AG Copilot v2.0 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
     console.log('%c🔍 Direct API Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
@@ -228,11 +228,93 @@
         }
     };
 
+    const externalConfigModule = (typeof requireModule === 'function') ? (() => {
+        try {
+            return requireModule('agcopilot/config');
+        } catch (error) {
+            console.warn('ℹ️ agcopilot/config module not available; using inline defaults.', error);
+            return null;
+        }
+    })() : null;
+
+    if (externalConfigModule?.createConfigContext) {
+        try {
+            const context = externalConfigModule.createConfigContext();
+            if (context?.CONFIG) Object.assign(CONFIG, context.CONFIG);
+            if (context?.PARAM_RULES) Object.assign(PARAM_RULES, context.PARAM_RULES);
+            if (context?.COMPLETE_CONFIG_TEMPLATE) Object.assign(COMPLETE_CONFIG_TEMPLATE, context.COMPLETE_CONFIG_TEMPLATE);
+            if (context?.PRESETS) Object.assign(PRESETS, context.PRESETS);
+            console.log('🔄 Loaded configuration from agcopilot/config module');
+        } catch (err) {
+            console.error('❌ Failed to apply configuration context from module; falling back to inline defaults.', err);
+        }
+    }
+
     // ========================================
     // �🛠️ UTILITIES
     // ========================================
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-    
+    let sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    let deepClone = function deepCloneFallback(obj) {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (obj instanceof Date) return new Date(obj.getTime());
+        if (Array.isArray(obj)) return obj.map(item => deepClone(item));
+        const cloned = {};
+        for (const key in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                cloned[key] = deepClone(obj[key]);
+            }
+        }
+        return cloned;
+    };
+    let formatTimestamp = function formatTimestampFallback(timestamp) {
+        if (!timestamp) return 'N/A';
+        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
+    };
+    let formatMcap = function formatMcapFallback(mcap) {
+        if (!mcap) return 'N/A';
+        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
+        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
+        return `$${mcap}`;
+    };
+    let formatPercent = function formatPercentFallback(value) {
+        if (value === null || value === undefined) return 'N/A';
+        return `${Number(value).toFixed(2)}%`;
+    };
+    let ensureCompleteConfig = function ensureCompleteConfigFallback(config) {
+        const completeConfig = deepClone(COMPLETE_CONFIG_TEMPLATE);
+        if (config && typeof config === 'object') {
+            for (const [section, sectionConfig] of Object.entries(config)) {
+                if (completeConfig[section]) {
+                    Object.assign(completeConfig[section], sectionConfig);
+                } else {
+                    completeConfig[section] = sectionConfig;
+                }
+            }
+        }
+        return completeConfig;
+    };
+
+    const utilsCoreModule = (typeof requireModule === 'function') ? (() => {
+        try {
+            return requireModule('agcopilot/utils/core');
+        } catch (error) {
+            console.warn('ℹ️ agcopilot/utils/core module not available; using inline utility defaults.', error);
+            return null;
+        }
+    })() : null;
+
+    if (utilsCoreModule) {
+        if (typeof utilsCoreModule.sleep === 'function') sleep = utilsCoreModule.sleep;
+        if (typeof utilsCoreModule.deepClone === 'function') deepClone = utilsCoreModule.deepClone;
+        if (typeof utilsCoreModule.formatTimestamp === 'function') formatTimestamp = utilsCoreModule.formatTimestamp;
+        if (typeof utilsCoreModule.formatMcap === 'function') formatMcap = utilsCoreModule.formatMcap;
+        if (typeof utilsCoreModule.formatPercent === 'function') formatPercent = utilsCoreModule.formatPercent;
+        if (typeof utilsCoreModule.ensureCompleteConfig === 'function') {
+            const moduleEnsure = utilsCoreModule.ensureCompleteConfig;
+            ensureCompleteConfig = (config) => moduleEnsure(config, COMPLETE_CONFIG_TEMPLATE);
+        }
+    }
+
     // Rate limiting mode toggle function
     function toggleRateLimitingMode() {
         const currentMode = CONFIG.RATE_LIMIT_MODE;
@@ -294,27 +376,6 @@
             this.totalCalls = 0;
             this.rateLimitHits = 0;
             this.successfulBursts = 0;
-            this.intraBurstDelay = CONFIG.INTRA_BURST_DELAY || 0;
-            
-            // Smart burst learning
-            this.rateLimitPositions = []; // Track where in bursts we hit rate limits
-            this.optimalBurstSize = burstLimit; // Learned optimal size
-            this.consecutiveSuccesses = 0;
-            
-            // Rolling window for accurate rate tracking (last 60 seconds)
-            this.recentCalls = []; // Array of timestamps for recent calls
-            
-            console.log(`🚀 BurstRateLimiter: ${burstLimit} calls/burst, ${(recoveryTime * safetyMargin / 1000).toFixed(1)}s recovery, ${this.intraBurstDelay}ms intra-burst delay`);
-            console.log(`🛑 Rate limit: ${CONFIG.MAX_REQUESTS_PER_MINUTE} requests/minute max`);
-            console.log(`🎯 Goal: Maximum 1 rate limit error per session`);
-        }
-
-        // Adaptive adjustment when we hit unexpected rate limits (ultra-conservative learning)
-        adaptToBurstLimit() {
-            this.rateLimitHits++;
-            this.rateLimitPositions.push(this.callCount); // Record where the 429 occurred
-            this.consecutiveSuccesses = 0; // Reset success counter
-            
             console.log(`⚠️ Rate limit hit at position ${this.callCount} in burst (hit #${this.rateLimitHits})`);
             
             if (CONFIG.SMART_BURST_SIZE) {
@@ -489,51 +550,6 @@
     const burstRateLimiter = window.burstRateLimiter;
 
     // Format functions for signal analysis
-    function formatTimestamp(timestamp) {
-        if (!timestamp) return 'N/A';
-        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
-    }
-
-    function formatMcap(mcap) {
-        if (!mcap) return 'N/A';
-        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
-        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
-        return `$${mcap}`;
-    }
-
-    function formatPercent(value) {
-        if (value === null || value === undefined) return 'N/A';
-        return `${value.toFixed(2)}%`;
-    }
-
-    // Efficient deep clone utility function
-    function deepClone(obj) {
-        if (obj === null || typeof obj !== "object") return obj;
-        if (obj instanceof Date) return new Date(obj.getTime());
-        if (Array.isArray(obj)) return obj.map(item => deepClone(item));
-        
-        const cloned = {};
-        for (const key in obj) {
-            if (obj.hasOwnProperty(key)) {
-                cloned[key] = deepClone(obj[key]);
-            }
-        }
-        return cloned;
-    }
-
-    // Ensure complete config by merging with template
-    function ensureCompleteConfig(config) {
-        const completeConfig = deepClone(COMPLETE_CONFIG_TEMPLATE);
-        for (const [section, sectionConfig] of Object.entries(config)) {
-            if (completeConfig[section]) {
-                Object.assign(completeConfig[section], sectionConfig);
-            } else {
-                completeConfig[section] = sectionConfig;
-            }
-        }
-        return completeConfig;
-    }
-
     // Get selected trigger mode from UI
     function getTriggerMode() {
         const triggerSelect = document.getElementById('trigger-mode-select');
@@ -8501,5 +8517,21 @@
     } catch (error) {
         console.error('❌ Initialization error:', error);
         throw error;
-    }  
+    }
+}
+
+(function() {
+    if (typeof defineModule === 'function') {
+        defineModule('agcopilot/entry', [], () => {
+            if (!window.agCopilot) {
+                window.agCopilot = {};
+            }
+            window.agCopilot.bootstrap = bootstrap;
+            return window.agCopilot;
+        });
+    } else {
+        bootstrap().catch((err) => {
+            console.error('❌ AG Copilot bootstrap failed:', err);
+        });
+    }
 })();
