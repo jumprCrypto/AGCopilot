@@ -544,6 +544,16 @@
         return 4; // Default to Launchpads if no selection
     }
 
+    const WEEKDAY_OPTIONS = [
+        { id: 'weekday-monday', value: 'Monday' },
+        { id: 'weekday-tuesday', value: 'Tuesday' },
+        { id: 'weekday-wednesday', value: 'Wednesday' },
+        { id: 'weekday-thursday', value: 'Thursday' },
+        { id: 'weekday-friday', value: 'Friday' },
+        { id: 'weekday-saturday', value: 'Saturday' },
+        { id: 'weekday-sunday', value: 'Sunday' }
+    ];
+
     // Get selected sources from UI checkboxes
     function getSelectedSources() {
         const sources = [];
@@ -562,6 +572,32 @@
         });
         
         return sources;
+    }
+
+    function getSelectedWeekdays() {
+        return WEEKDAY_OPTIONS
+            .map(({ id, value }) => {
+                const checkbox = document.getElementById(id);
+                return checkbox && checkbox.checked ? value : null;
+            })
+            .filter(Boolean);
+    }
+
+    function setSelectedWeekdays(weekdays) {
+        const hasCustomSelection = Array.isArray(weekdays) && weekdays.length > 0;
+        const normalized = hasCustomSelection
+            ? weekdays.map(day => String(day).trim().toLowerCase())
+            : null;
+
+        WEEKDAY_OPTIONS.forEach(({ id, value }) => {
+            const checkbox = document.getElementById(id);
+            if (!checkbox) return;
+            if (!hasCustomSelection) {
+                checkbox.checked = true;
+                return;
+            }
+            checkbox.checked = normalized.includes(value.toLowerCase());
+        });
     }
 
     // Get scoring mode from UI or config
@@ -1600,6 +1636,26 @@
                 apiParams.toDate = dateRange.toDate;
                 console.log(`📅 Including toDate parameter: ${dateRange.toDate}`);
             }
+
+            const configWeekdays = Array.isArray(config?.weekdays) ? config.weekdays : null;
+            const selectedWeekdays = (configWeekdays && configWeekdays.length > 0)
+                ? configWeekdays
+                : getSelectedWeekdays();
+
+            if (Array.isArray(selectedWeekdays) && selectedWeekdays.length > 0) {
+                const normalizedWeekdays = [];
+                const seen = new Set();
+                WEEKDAY_OPTIONS.forEach(({ value }) => {
+                    const match = selectedWeekdays.find(day => String(day).trim().toLowerCase() === value.toLowerCase());
+                    if (match && !seen.has(value)) {
+                        normalizedWeekdays.push(value);
+                        seen.add(value);
+                    }
+                });
+                if (normalizedWeekdays.length > 0) {
+                    apiParams.weekdays = normalizedWeekdays;
+                }
+            }
             
             return apiParams;
         }        
@@ -1610,6 +1666,9 @@
             
             if (typeof config === 'object' && config !== null) {
                 Object.values(config).forEach(section => {
+                    if (Array.isArray(section)) {
+                        return;
+                    }
                     if (typeof section === 'object' && section !== null) {
                         Object.assign(flat, section);
                     }
@@ -1670,6 +1729,15 @@
                     value.forEach(source => {
                         if (source !== undefined && source !== null && source !== '') {
                             params.append('sources', source);
+                        }
+                    });
+                    return;
+                }
+
+                if (key === 'weekdays' && Array.isArray(value)) {
+                    value.forEach(day => {
+                        if (day !== undefined && day !== null && day !== '') {
+                            params.append('weekdays', day);
                         }
                     });
                     return;
@@ -5406,6 +5474,11 @@
             if (dateRange.toDate) config.dateRange.toDate = dateRange.toDate;
         }
 
+        const weekdays = getSelectedWeekdays();
+        if (weekdays.length > 0) {
+            config.weekdays = weekdays;
+        }
+
         // Read Take Profits (TP) if visible in UI
         try {
             // Attempt to read up to 6 TP rows by label convention
@@ -5782,6 +5855,12 @@
                     totalFields++;
                     successCount++;
                 }
+            }
+
+            if (Array.isArray(config.weekdays) && config.weekdays.length > 0) {
+                setSelectedWeekdays(config.weekdays);
+            } else {
+                setSelectedWeekdays(null);
             }
 
             // Apply TP fields if provided in config.tpSettings or config.takeProfits
@@ -6396,6 +6475,124 @@
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                        </div>
+
+                        <!-- Weekday Filter -->
+                        <div style="margin-bottom: 8px;">
+                            <label style="
+                                font-size: 11px;
+                                font-weight: 500;
+                                color: #a0aec0;
+                                display: block;
+                                margin-bottom: 4px;
+                            ">Weekdays</label>
+                            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-monday" value="Monday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Monday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-tuesday" value="Tuesday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Tuesday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-wednesday" value="Wednesday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Wednesday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-thursday" value="Thursday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Thursday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-friday" value="Friday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Friday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-saturday" value="Saturday" style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Saturday
+                                </label>
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    cursor: pointer;
+                                ">
+                                    <input type="checkbox" id="weekday-sunday" value="Sunday" checked style="
+                                        margin-right: 6px;
+                                        width: 12px;
+                                        height: 12px;
+                                        accent-color: #63b3ed;
+                                    ">
+                                    Sunday
+                                </label>
                             </div>
                         </div>
 
