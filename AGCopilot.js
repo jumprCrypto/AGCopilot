@@ -534,70 +534,192 @@
         return completeConfig;
     }
 
-    // Get selected trigger mode from UI
+    // Get selected trigger mode from UI dropdown
     function getTriggerMode() {
         const triggerSelect = document.getElementById('trigger-mode-select');
         if (triggerSelect) {
             const value = triggerSelect.value;
-            return value === '' ? null : parseInt(value); // Handle empty string for "Bullish Bonding"
+            return value === '' ? null : parseInt(value, 10); // Handle empty string for "Bullish Bonding"
         }
         return 4; // Default to Launchpads if no selection
     }
 
-    const WEEKDAY_OPTIONS = [
-        { id: 'weekday-monday', value: 'Monday' },
-        { id: 'weekday-tuesday', value: 'Tuesday' },
-        { id: 'weekday-wednesday', value: 'Wednesday' },
-        { id: 'weekday-thursday', value: 'Thursday' },
-        { id: 'weekday-friday', value: 'Friday' },
-        { id: 'weekday-saturday', value: 'Saturday' },
-        { id: 'weekday-sunday', value: 'Sunday' }
-    ];
+    const WEEKDAY_FULL_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    // Get selected sources from UI checkboxes
+    const SECTION_LABEL_MAP = {
+        'Start Date': 'Calculation Settings',
+        'End Date': 'Calculation Settings',
+        'Buying Amount (SOL)': 'Calculation Settings',
+        'Entry Grace %': 'Calculation Settings',
+        'Sources': 'Basic',
+        'Weekdays': 'Time',
+        'Start Hour': 'Time',
+        'Start Minute': 'Time',
+        'End Hour': 'Time',
+        'End Minute': 'Time'
+    };
+
+    function forceExpandBacktesterSection(sectionTitle) {
+        if (!sectionTitle) return false;
+
+        const headerButtons = Array.from(document.querySelectorAll('button[type="button"]'));
+        const header = headerButtons.find(btn => btn.textContent && btn.textContent.includes(sectionTitle));
+        if (!header) {
+            return false;
+        }
+
+        const isExpanded = header.getAttribute('aria-expanded');
+        if (isExpanded === 'true') {
+            return true;
+        }
+
+        header.click();
+        void header.offsetHeight; // force reflow
+        return true;
+    }
+
+    function findBacktesterInput(labelText, selector = 'input') {
+        const resolveLabel = () => {
+            const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+            return labels.find(el => el.textContent.trim() === labelText);
+        };
+
+        let match = resolveLabel();
+        if (!match) {
+            forceExpandBacktesterSection(SECTION_LABEL_MAP[labelText]);
+            match = resolveLabel();
+        }
+
+        if (!match) return null;
+
+        const directSibling = match.nextElementSibling;
+        if (directSibling && directSibling.matches(selector)) {
+            return directSibling;
+        }
+
+        if (directSibling) {
+            const nested = directSibling.querySelector(selector);
+            if (nested) return nested;
+        }
+
+        let container = match.parentElement;
+        let depth = 0;
+        while (container && depth < 4) {
+            const candidate = container.querySelector(selector);
+            if (candidate) return candidate;
+            container = container.parentElement;
+            depth++;
+        }
+
+        return null;
+    }
+
+    // Get selected sources from backtester UI
     function getSelectedSources() {
-        const sources = [];
-        const sourceCheckboxes = [
-            { id: 'source-pumpfun', value: '1' },
-            { id: 'source-launchcoin', value: '2' },
-            { id: 'source-launchpad', value: '3' },
-            { id: 'source-native', value: '4' }
-        ];
-        
-        sourceCheckboxes.forEach(({ id, value }) => {
-            const checkbox = document.getElementById(id);
-            if (checkbox && checkbox.checked) {
-                sources.push(value);
+        const sourceValueMap = {
+            pumpfun: '1',
+            launchcoin: '2',
+            launchpad: '3',
+            native: '4'
+        };
+
+        const resolveLabel = () => Array.from(document.querySelectorAll('.sidebar-label'))
+            .find(el => el.textContent.trim() === 'Sources');
+
+        let label = resolveLabel();
+        if (!label) {
+            forceExpandBacktesterSection('Basic');
+            label = resolveLabel();
+        }
+
+        const detectedSources = [];
+
+        if (label) {
+            const container = label.nextElementSibling || label.parentElement;
+            const buttons = container ? Array.from(container.querySelectorAll('button')) : [];
+
+            buttons.forEach(button => {
+                const descriptor = (button.getAttribute('title') || button.textContent || '').trim().toLowerCase();
+                const matchKey = Object.keys(sourceValueMap).find(key => descriptor.includes(key));
+                if (!matchKey) return;
+
+                const isActive = button.getAttribute('aria-pressed') === 'true' ||
+                    button.getAttribute('data-selected') === 'true' ||
+                    button.dataset?.selected === 'true' ||
+                    button.classList.contains('bg-blue-500') ||
+                    button.classList.contains('bg-blue-600') ||
+                    button.classList.contains('bg-blue-700') ||
+                    (button.classList.contains('text-white') && !button.classList.contains('text-gray-300'));
+
+                if (isActive) {
+                    detectedSources.push(sourceValueMap[matchKey]);
+                }
+            });
+
+            if (detectedSources.length > 0) {
+                return Array.from(new Set(detectedSources));
             }
-        });
-        
-        return sources;
+        }
+
+        return [];
     }
 
     function getSelectedWeekdays() {
-        return WEEKDAY_OPTIONS
-            .map(({ id, value }) => {
-                const checkbox = document.getElementById(id);
-                return checkbox && checkbox.checked ? value : null;
+        const resolveLabel = () => Array.from(document.querySelectorAll('.sidebar-label'))
+            .find(el => el.textContent.trim() === 'Weekdays');
+
+        let label = resolveLabel();
+        if (!label) {
+            forceExpandBacktesterSection('Time');
+            label = resolveLabel();
+        }
+
+        if (!label) return [];
+
+        const container = label.parentElement || label.nextElementSibling;
+        const buttons = container ? Array.from(container.querySelectorAll('button')) : [];
+        if (buttons.length === 0) return [];
+
+        const selected = buttons
+            .map(btn => {
+                const title = btn.getAttribute('title') || btn.textContent.trim();
+                if (!title) return null;
+                const normalized = WEEKDAY_FULL_NAMES.find(day => day.toLowerCase().startsWith(title.toLowerCase()));
+                if (!normalized) return null;
+
+                const isActive = btn.getAttribute('aria-pressed') === 'true' ||
+                    btn.getAttribute('data-selected') === 'true' ||
+                    btn.dataset?.selected === 'true' ||
+                    btn.classList.contains('bg-blue-500') ||
+                    btn.classList.contains('bg-blue-600') ||
+                    btn.classList.contains('bg-blue-700') ||
+                    btn.classList.contains('bg-indigo-500') ||
+                    btn.classList.contains('bg-indigo-600') ||
+                    (btn.classList.contains('text-white') && !btn.classList.contains('text-gray-300'));
+
+                return isActive ? normalized : null;
             })
             .filter(Boolean);
+
+        if (selected.length === 0) {
+            // Fall back to treating all weekdays as selected if no active buttons detected
+            return [...WEEKDAY_FULL_NAMES];
+        }
+
+        const seen = new Set();
+        const ordered = [];
+        WEEKDAY_FULL_NAMES.forEach(day => {
+            if (selected.some(sel => sel.toLowerCase() === day.toLowerCase()) && !seen.has(day)) {
+                seen.add(day);
+                ordered.push(day);
+            }
+        });
+        return ordered;
     }
 
     function setSelectedWeekdays(weekdays) {
-        const hasCustomSelection = Array.isArray(weekdays) && weekdays.length > 0;
-        const normalized = hasCustomSelection
-            ? weekdays.map(day => String(day).trim().toLowerCase())
-            : null;
-
-        WEEKDAY_OPTIONS.forEach(({ id, value }) => {
-            const checkbox = document.getElementById(id);
-            if (!checkbox) return;
-            if (!hasCustomSelection) {
-                checkbox.checked = true;
-                return;
-            }
-            checkbox.checked = normalized.includes(value.toLowerCase());
-        });
+        // Backtester UI manages weekday selection directly; no action needed here.
+        void weekdays;
     }
 
     // Get scoring mode from UI or config
@@ -611,10 +733,10 @@
 
     // Get date range from UI
     function getDateRange() {
-        const fromDateElement = document.getElementById('from-date');
-        const toDateElement = document.getElementById('to-date');
-        const fromDate = fromDateElement ? fromDateElement.value : null;
-        const toDate = toDateElement ? toDateElement.value : null;
+    const fromDateInput = findBacktesterInput('Start Date', 'input[type="date"]');
+    const toDateInput = findBacktesterInput('End Date', 'input[type="date"]');
+    const fromDate = fromDateInput ? fromDateInput.value : null;
+    const toDate = toDateInput ? toDateInput.value : null;
         
         // Return null for empty strings to avoid adding empty parameters
         return {
@@ -765,10 +887,12 @@
         });
 
         // Filter out undefined/empty values and group by category
+        const takeProfitSettingPattern = /^TP \d+ % (Gain|Sell)$/;
         const validSettings = {};
         Object.entries(flatConfig).forEach(([key, value]) => {
             const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer' || key === 'Skip If No KYC/CEX Funding' || key === 'Has Buy Signal');
-            if (value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
+            const isTakeProfitSetting = takeProfitSettingPattern.test(key);
+            if (!isTakeProfitSetting && value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
                 // For toggle buttons (Description/Fresh Deployer/Skip If No KYC/CEX Funding), only include if they're set to "Yes" (true)
                 if (isButtonToggle) {
                     if (value === true) {
@@ -785,9 +909,7 @@
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
-            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
-            // Dynamically add TP fields if present
-            'Take Profits': Object.keys(validSettings).filter(k => /TP \d+ % (Gain|Sell)/.test(k))
+            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
         };
 
         let dialogHTML = `
@@ -1645,7 +1767,7 @@
             if (Array.isArray(selectedWeekdays) && selectedWeekdays.length > 0) {
                 const normalizedWeekdays = [];
                 const seen = new Set();
-                WEEKDAY_OPTIONS.forEach(({ value }) => {
+                WEEKDAY_FULL_NAMES.forEach(value => {
                     const match = selectedWeekdays.find(day => String(day).trim().toLowerCase() === value.toLowerCase());
                     if (match && !seen.has(value)) {
                         normalizedWeekdays.push(value);
@@ -5823,45 +5945,7 @@
                 }
             }
 
-            // Handle date range fields separately (they're not in the standard sections)
-            if (config.dateRange) {
-                if (config.dateRange.fromDate) {
-                    const fromDateElement = document.getElementById('from-date');
-                    if (fromDateElement) {
-                        fromDateElement.value = config.dateRange.fromDate;
-                        totalFields++;
-                        successCount++;
-                    }
-                }
-                if (config.dateRange.toDate) {
-                    const toDateElement = document.getElementById('to-date');
-                    if (toDateElement) {
-                        toDateElement.value = config.dateRange.toDate;
-                        totalFields++;
-                        successCount++;
-                    }
-                }
-            } else {
-                // Clear date fields if no dateRange is specified in config
-                const fromDateElement = document.getElementById('from-date');
-                const toDateElement = document.getElementById('to-date');
-                if (fromDateElement) {
-                    fromDateElement.value = '';
-                    totalFields++;
-                    successCount++;
-                }
-                if (toDateElement) {
-                    toDateElement.value = '';
-                    totalFields++;
-                    successCount++;
-                }
-            }
-
-            if (Array.isArray(config.weekdays) && config.weekdays.length > 0) {
-                setSelectedWeekdays(config.weekdays);
-            } else {
-                setSelectedWeekdays(null);
-            }
+            // Date range and weekday filters remain under user control in the backtester UI.
 
             // Apply TP fields if provided in config.tpSettings or config.takeProfits
             try {
@@ -6266,7 +6350,7 @@
                 <!-- Configuration Tab -->
                 <div id="config-tab" class="tab-content active">
                     
-                        <!-- Presets and Settings Row 1 -->
+                        <!-- Presets and Trigger Mode Row -->
                         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px;">
                             <div>
                                 <label style="
@@ -6319,121 +6403,8 @@
                             </div>
                         </div>
                         
-                        <!-- Sources Filter Row -->
-                        <div style="margin-bottom: 8px;">
-                            <label style="
-                                font-size: 11px;
-                                font-weight: 500;
-                                color: #a0aec0;
-                                display: block;
-                                margin-bottom: 4px;
-                            ">Sources Filter</label>
-                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="source-pumpfun" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Pumpfun
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="source-launchcoin" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Launchcoin
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="source-launchpad" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Launchpad
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="source-native" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Native
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <!-- Date Range and Target Row 2 -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 2px;
-                                ">From Date</label>
-                                <input type="date" id="from-date" style="
-                                    width: 100%;
-                                    padding: 3px 4px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 9px;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 2px;
-                                ">To Date</label>
-                                <input type="date" id="to-date" style="
-                                    width: 100%;
-                                    padding: 3px 4px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 9px;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
+                        <!-- Optimization Targets Row -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                             <div>
                                 <label style="
                                     font-size: 10px;
@@ -6475,124 +6446,6 @@
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                        </div>
-
-                        <!-- Weekday Filter -->
-                        <div style="margin-bottom: 8px;">
-                            <label style="
-                                font-size: 11px;
-                                font-weight: 500;
-                                color: #a0aec0;
-                                display: block;
-                                margin-bottom: 4px;
-                            ">Weekdays</label>
-                            <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-monday" value="Monday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Monday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-tuesday" value="Tuesday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Tuesday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-wednesday" value="Wednesday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Wednesday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-thursday" value="Thursday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Thursday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-friday" value="Friday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Friday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-saturday" value="Saturday" style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Saturday
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    cursor: pointer;
-                                ">
-                                    <input type="checkbox" id="weekday-sunday" value="Sunday" checked style="
-                                        margin-right: 6px;
-                                        width: 12px;
-                                        height: 12px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    Sunday
-                                </label>
                             </div>
                         </div>
 
