@@ -83,6 +83,8 @@
 
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
+        // Make PARAM_RULES globally available for Base Config Builder
+        // (Will be set to window.PARAM_RULES after the object definition)
         // Basic
         'Min MCAP (USD)': { min: 0, max: 20000, step: 1000, type: 'integer'},
         'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
@@ -123,6 +125,9 @@
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
+    
+    // Make PARAM_RULES globally available for Base Config Builder
+    window.PARAM_RULES = PARAM_RULES;
 
     // Complete config template for backward compatibility (with Description and Fresh Deployer)
     const COMPLETE_CONFIG_TEMPLATE = {
@@ -559,6 +564,23 @@
         'End Minute': 'Time'
     };
 
+    let cachedWeekdays = null;
+    let cachedSources = null;
+
+    function invalidateSelectionCache(options = {}) {
+        const { weekdays = true, sources = true } = options;
+
+        if (weekdays) {
+            cachedWeekdays = null;
+            try { window.agCachedWeekdays = null; } catch (_) {}
+        }
+
+        if (sources) {
+            cachedSources = null;
+            try { window.agCachedSources = null; } catch (_) {}
+        }
+    }
+
     function forceExpandBacktesterSection(sectionTitle) {
         if (!sectionTitle) return false;
 
@@ -615,7 +637,16 @@
     }
 
     // Get selected sources from backtester UI
-    function getSelectedSources() {
+    function getSelectedSources(options = {}) {
+        const { forceRefresh = false } = options;
+        if (!Array.isArray(cachedSources) && typeof window !== 'undefined' && Array.isArray(window.agCachedSources)) {
+            cachedSources = [...window.agCachedSources];
+        }
+
+        if (!forceRefresh && Array.isArray(cachedSources)) {
+            return [...cachedSources];
+        }
+
         const sourceValueMap = {
             pumpfun: '1',
             launchcoin: '2',
@@ -627,7 +658,7 @@
             .find(el => el.textContent.trim() === 'Sources');
 
         let label = resolveLabel();
-        if (!label) {
+        if (!label && (forceRefresh || !Array.isArray(cachedSources))) {
             forceExpandBacktesterSection('Basic');
             label = resolveLabel();
         }
@@ -656,29 +687,55 @@
                 }
             });
 
-            if (detectedSources.length > 0) {
-                return Array.from(new Set(detectedSources));
-            }
+            const unique = Array.from(new Set(detectedSources));
+            cachedSources = unique;
+            try { window.agCachedSources = [...unique]; } catch (_) {}
+            return [...unique];
         }
 
-        return [];
+        if (!Array.isArray(cachedSources)) {
+            cachedSources = [];
+            try { window.agCachedSources = []; } catch (_) {}
+        }
+        return [...cachedSources];
     }
 
-    function getSelectedWeekdays() {
+    function getSelectedWeekdays(options = {}) {
+        const { forceRefresh = false } = options;
+        if (!Array.isArray(cachedWeekdays) && typeof window !== 'undefined' && Array.isArray(window.agCachedWeekdays)) {
+            cachedWeekdays = [...window.agCachedWeekdays];
+        }
+
+        if (!forceRefresh && Array.isArray(cachedWeekdays)) {
+            return [...cachedWeekdays];
+        }
+
         const resolveLabel = () => Array.from(document.querySelectorAll('.sidebar-label'))
             .find(el => el.textContent.trim() === 'Weekdays');
 
         let label = resolveLabel();
-        if (!label) {
+        if (!label && (forceRefresh || !Array.isArray(cachedWeekdays))) {
             forceExpandBacktesterSection('Time');
             label = resolveLabel();
         }
 
-        if (!label) return [];
+        if (!label) {
+            if (!Array.isArray(cachedWeekdays)) {
+                cachedWeekdays = [...WEEKDAY_FULL_NAMES];
+                try { window.agCachedWeekdays = [...cachedWeekdays]; } catch (_) {}
+            }
+            return [...cachedWeekdays];
+        }
 
         const container = label.parentElement || label.nextElementSibling;
         const buttons = container ? Array.from(container.querySelectorAll('button')) : [];
-        if (buttons.length === 0) return [];
+        if (buttons.length === 0) {
+            if (!Array.isArray(cachedWeekdays)) {
+                cachedWeekdays = [...WEEKDAY_FULL_NAMES];
+                try { window.agCachedWeekdays = [...cachedWeekdays]; } catch (_) {}
+            }
+            return [...cachedWeekdays];
+        }
 
         const selected = buttons
             .map(btn => {
@@ -703,7 +760,9 @@
 
         if (selected.length === 0) {
             // Fall back to treating all weekdays as selected if no active buttons detected
-            return [...WEEKDAY_FULL_NAMES];
+            cachedWeekdays = [...WEEKDAY_FULL_NAMES];
+            try { window.agCachedWeekdays = [...cachedWeekdays]; } catch (_) {}
+            return [...cachedWeekdays];
         }
 
         const seen = new Set();
@@ -714,12 +773,14 @@
                 ordered.push(day);
             }
         });
-        return ordered;
+        cachedWeekdays = ordered;
+        try { window.agCachedWeekdays = [...ordered]; } catch (_) {}
+        return [...ordered];
     }
 
     function setSelectedWeekdays(weekdays) {
-        // Backtester UI manages weekday selection directly; no action needed here.
-        void weekdays;
+        cachedWeekdays = Array.isArray(weekdays) ? [...weekdays] : null;
+        try { window.agCachedWeekdays = Array.isArray(weekdays) ? [...weekdays] : null; } catch (_) {}
     }
 
     // Get scoring mode from UI or config
@@ -1738,8 +1799,11 @@
                 apiParams.triggerMode = triggerMode; // Use selected trigger mode (skip if null for Bullish Bonding)
             }
             
-            // Add selected sources from UI checkboxes
-            const selectedSources = getSelectedSources();
+            // Add selected sources from UI
+            const configSources = Array.isArray(config?.sources) ? config.sources : null;
+            const selectedSources = Array.isArray(configSources)
+                ? configSources
+                : getSelectedSources();
             if (selectedSources.length > 0) {
                 // API expects multiple sources parameters like: sources=1&sources=2&sources=3
                 apiParams.sources = selectedSources;
@@ -1760,7 +1824,7 @@
             }
 
             const configWeekdays = Array.isArray(config?.weekdays) ? config.weekdays : null;
-            const selectedWeekdays = (configWeekdays && configWeekdays.length > 0)
+            const selectedWeekdays = Array.isArray(configWeekdays)
                 ? configWeekdays
                 : getSelectedWeekdays();
 
@@ -2131,6 +2195,9 @@
 
     // Initialize the API client
     const backtesterAPI = new BacktesterAPI();
+    
+    // Make backtesterAPI globally available for Base Config Builder
+    window.backtesterAPI = backtesterAPI;
 
     // ========================================
     // 🔬 PARAMETER IMPACT DISCOVERY (Integrated from AGPinDiscovery)  
@@ -5596,9 +5663,14 @@
             if (dateRange.toDate) config.dateRange.toDate = dateRange.toDate;
         }
 
-        const weekdays = getSelectedWeekdays();
+        const weekdays = getSelectedWeekdays({ forceRefresh: true });
         if (weekdays.length > 0) {
             config.weekdays = weekdays;
+        }
+
+        const sources = getSelectedSources({ forceRefresh: true });
+        if (Array.isArray(sources)) {
+            config.sources = [...sources];
         }
 
         // Read Take Profits (TP) if visible in UI
@@ -5875,6 +5947,8 @@
         }
 
         updateStatus('⚙️ Applying configuration to backtester UI...');
+
+    invalidateSelectionCache();
         
         const sectionMap = {
             basic: 'Basic',
@@ -7099,7 +7173,7 @@
                             </div>
                             
                             <!-- Secondary Action Buttons Grid -->
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px;">
                                 <button id="parameter-discovery" style="
                                     padding: 10px;
                                     background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
@@ -7112,6 +7186,20 @@
                                     transition: all 0.2s;
                                 " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
                                     🔬 Parameter Discovery
+                                </button>
+                                
+                                <button id="load-base-config-builder" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    🏗️ Base Config Builder
                                 </button>
                                 
                                 <button id="toggle-rate-limit-btn" style="
@@ -7273,6 +7361,14 @@
         
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
+        
+        // Make additional functions globally available for Base Config Builder
+        window.getCurrentConfiguration = getCurrentConfiguration;
+        window.ensureCompleteConfig = ensureCompleteConfig;
+        window.calculateRobustScore = calculateRobustScore;
+        window.getScaledTokenThresholds = getScaledTokenThresholds;
+        window.generateTestValuesFromRules = generateTestValuesFromRules;
+        window.applyConfigToUI = applyConfigToUI;
         
         // Always use split-screen mode (after a short delay to ensure DOM is ready)
         setTimeout(() => {
@@ -8176,6 +8272,46 @@
             }
         });
         
+        // Base Config Builder button handler
+        safeAddEventListener('load-base-config-builder', 'click', async () => {
+            const button = document.getElementById('load-base-config-builder');
+            
+            try {
+                // Update button state
+                if (button) {
+                    button.disabled = true;
+                    button.innerHTML = '⏳ Loading...';
+                }
+                
+                updateStatus('🏗️ Loading Base Config Builder from GitHub...', true);
+                
+                // Load Base Config Builder script from GitHub
+                const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGBaseConfigBuilder.js';
+                const response = await fetch(scriptUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load Base Config Builder: HTTP ${response.status}`);
+                }
+                
+                const scriptContent = await response.text();
+                
+                // Execute the script
+                eval(scriptContent);
+                
+                updateStatus('✅ Base Config Builder loaded successfully! Check for new UI window.', false);
+                
+            } catch (error) {
+                console.error('❌ Base Config Builder loading error:', error);
+                updateStatus(`❌ Failed to load Base Config Builder: ${error.message}`, false);
+            } finally {
+                // Restore button state
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '🏗️ Base Config Builder';
+                }
+            }
+        });
+        
         // Signal Analysis event handlers
         safeAddEventListener('analyze-signals-btn', 'click', async () => {
             await handleSignalAnalysis();
@@ -8258,6 +8394,8 @@
         let appliedFields = 0;
         let totalFields = 0;
         const results = [];        
+
+        invalidateSelectionCache();
         
         // Helper function to track field setting (without section opening)
         const trackField = async (fieldName, value) => {
