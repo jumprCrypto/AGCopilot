@@ -6416,6 +6416,9 @@
                     <button class="tab-button active" onclick="switchTab('config-tab')" id="config-tab-btn">
                         ⚙️ Configuration
                     </button>
+                    <button class="tab-button" onclick="switchTab('base-config-tab')" id="base-config-tab-btn">
+                        🏗️ Base Cfg Builder
+                    </button>
                     <button class="tab-button" onclick="switchTab('signal-tab')" id="signal-tab-btn">
                         🔍 Signal Analysis
                     </button>
@@ -6824,6 +6827,23 @@
                         </div>
                 </div>
 
+                <!-- Base Config Builder Tab -->
+                <div id="base-config-tab" class="tab-content">
+                    <div id="base-config-loading" style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Base Config Builder...</div>
+                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                    </div>
+                </div>
+
                 <!-- Signal Analysis Tab -->
                 <div id="signal-tab" class="tab-content">
                         <!-- Contract Input -->
@@ -7173,7 +7193,7 @@
                             </div>
                             
                             <!-- Secondary Action Buttons Grid -->
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
                                 <button id="parameter-discovery" style="
                                     padding: 10px;
                                     background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
@@ -7186,20 +7206,6 @@
                                     transition: all 0.2s;
                                 " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
                                     🔬 Parameter Discovery
-                                </button>
-                                
-                                <button id="load-base-config-builder" style="
-                                    padding: 10px;
-                                    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-                                    border: none;
-                                    border-radius: 6px;
-                                    color: white;
-                                    font-weight: 500;
-                                    cursor: pointer;
-                                    font-size: 12px;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                    🏗️ Base Config Builder
                                 </button>
                                 
                                 <button id="toggle-rate-limit-btn" style="
@@ -7249,6 +7255,11 @@
             const activeContent = document.getElementById(activeTabId);
             if (activeContent) {
                 activeContent.classList.add('active');
+            }
+            
+            // Auto-load Base Config Builder when tab is clicked
+            if (activeTabId === 'base-config-tab') {
+                loadBaseConfigBuilderInTab();
             }
         };
         
@@ -7943,7 +7954,111 @@
     }
 
     // ========================================
-    // 🎮 EVENT HANDLERS
+    // �️ BASE CONFIG BUILDER TAB HANDLER  
+    // ========================================
+    
+    // Load Base Config Builder in the tab (with loading state management)
+    let baseConfigBuilderLoaded = false;
+    
+    async function loadBaseConfigBuilderInTab() {
+        // Don't reload if already loaded
+        if (baseConfigBuilderLoaded) {
+            return;
+        }
+        
+        const tabContent = document.getElementById('base-config-tab');
+        const loadingDiv = document.getElementById('base-config-loading');
+        
+        try {
+            // Show loading state if not already shown
+            if (loadingDiv) {
+                loadingDiv.innerHTML = `
+                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Base Config Builder...</div>
+                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                `;
+            }
+            
+            // Load Base Config Builder script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGBaseConfigBuilder.js';
+            const response = await fetch(scriptUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load Base Config Builder: HTTP ${response.status}`);
+            }
+            
+            const scriptContent = await response.text();
+            
+            // Execute the script - it will automatically detect tab integration
+            eval(scriptContent);
+            
+            baseConfigBuilderLoaded = true;
+            console.log('✅ Base Config Builder loaded successfully in tab!');
+            
+        } catch (error) {
+            console.error('Base Config Builder loading error:', error);
+            
+            // Show error state in tab
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Base Config Builder</div>
+                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
+                        <button onclick="window.retryLoadBaseConfig()" style="
+                            padding: 8px 16px;
+                            background: rgba(139, 92, 246, 0.2);
+                            border: 1px solid rgba(139, 92, 246, 0.4);
+                            border-radius: 6px;
+                            color: #a78bfa;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 600;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
+                           onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
+                            🔄 Retry Loading
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    // Global retry function for error recovery
+    window.retryLoadBaseConfig = function() {
+        baseConfigBuilderLoaded = false;
+        const tabContent = document.getElementById('base-config-tab');
+        if (tabContent) {
+            tabContent.innerHTML = `
+                <div id="base-config-loading" style="
+                    text-align: center; 
+                    padding: 40px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 200px;
+                ">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Base Config Builder...</div>
+                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                </div>
+            `;
+        }
+        loadBaseConfigBuilderInTab();
+    };
+
+    // ========================================
+    // �🎮 EVENT HANDLERS
     // ========================================
     function setupEventHandlers() {
         // Helper function to safely add event listener
@@ -8272,45 +8387,9 @@
             }
         });
         
-        // Base Config Builder button handler
-        safeAddEventListener('load-base-config-builder', 'click', async () => {
-            const button = document.getElementById('load-base-config-builder');
-            
-            try {
-                // Update button state
-                if (button) {
-                    button.disabled = true;
-                    button.innerHTML = '⏳ Loading...';
-                }
-                
-                updateStatus('🏗️ Loading Base Config Builder from GitHub...', true);
-                
-                // Load Base Config Builder script from GitHub
-                const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGBaseConfigBuilder.js';
-                const response = await fetch(scriptUrl);
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to load Base Config Builder: HTTP ${response.status}`);
-                }
-                
-                const scriptContent = await response.text();
-                
-                // Execute the script
-                eval(scriptContent);
-                
-                updateStatus('✅ Base Config Builder loaded successfully! Check for new UI window.', false);
-                
-            } catch (error) {
-                console.error('❌ Base Config Builder loading error:', error);
-                updateStatus(`❌ Failed to load Base Config Builder: ${error.message}`, false);
-            } finally {
-                // Restore button state
-                if (button) {
-                    button.disabled = false;
-                    button.innerHTML = '🏗️ Base Config Builder';
-                }
-            }
-        });
+        // Base Config Builder tab loads automatically when clicked (handled in switchTab function)
+        
+
         
         // Signal Analysis event handlers
         safeAddEventListener('analyze-signals-btn', 'click', async () => {
@@ -8589,8 +8668,9 @@
         return { matchingSignals, totalSignals: originalSignals.length, matchRate: parseFloat(matchRate), failReasons };
     }
 
+
     // ========================================
-    // 🎬 INITIALIZATION
+    // �🎬 INITIALIZATION
     // ========================================
     console.log('🔧 Initializing AG Copilot Enhanced + Signal Analysis...');
     
@@ -8691,3 +8771,6 @@
         throw error;
     }  
 })();
+
+
+

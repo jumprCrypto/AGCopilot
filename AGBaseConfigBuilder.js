@@ -1,7 +1,13 @@
 (async function () {
     console.clear();
     console.log('%c🏗️ AG Base Config Builder v1.0 🏗️', 'color: purple; font-size: 16px; font-weight: bold;');
-    console.log('%c🎯 Build wide, stable base configurations for optimization starting points', 'color: green; font-size: 12px;');
+    
+    // Check if we're being loaded in the AGCopilot tab
+    const isInTab = document.getElementById('base-config-tab');
+    if (!isInTab) {
+        console.log('%c✨ Can be integrated into the main AGCopilot interface!', 'color: green; font-size: 12px;');
+        console.log('💡 Use the "🏗️ Base Config" tab in AGCopilot for integrated experience');
+    }
 
     // ========================================
     // 🎯 BASE CONFIG BUILDER CONFIGURATION
@@ -93,8 +99,7 @@
         MAX_PARAMETER_TESTS: 200,    // Limit total parameter tests
         EARLY_STOP_THRESHOLD: 0.85,  // Stop if we find config with 85% of target tokens
         
-        // Rate limiting - more conservative for base config building
-        USE_SLOWER_RATE_LIMIT: true, // Use slower rate limiting by default
+        // Rate limiting
         INTER_TEST_DELAY: 2000,      // 2s between each test for stability
     };
 
@@ -364,39 +369,35 @@
             existingUI.remove();
         }
 
-        // Check if AGCopilot UI exists to position alongside it
-        const agcopilotUI = document.getElementById('agcopilot-ui');
-        const leftOffset = agcopilotUI ? '420px' : '20px'; // Position next to AGCopilot if present
+        // Check if we're being loaded in the AGCopilot tab
+        const tabContainer = document.getElementById('base-config-tab');
+        const isInTab = !!tabContainer;
 
         const ui = document.createElement('div');
         ui.id = 'base-config-builder-ui';
+        
         ui.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: ${leftOffset};
-            width: 380px;
-            max-height: 90vh;
-            background: #1e2a3a;
-            border: 2px solid #4a5568;
-            border-radius: 12px;
-            padding: 16px;
-            z-index: 10001;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            color: #e2e8f0;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-            overflow-y: auto;
+                position: static;
+                top: auto;
+                left: auto;
+                width: 100%;
+                max-height: none;
+                height: auto;
+                background: transparent;
+                border: none;
+                border-radius: 0;
+                padding: 16px 20px;
+                margin: 0;
+                z-index: auto;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+                color: #e2e8f0;
+                box-shadow: none;
+                overflow-y: auto;
         `;
 
         const tokenTarget = getTokenTarget();
 
         ui.innerHTML = `
-            <div style="text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #4a5568;">
-                <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #f7fafc; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    🏗️ Base Config Builder
-                </h3>
-                <div style="font-size: 10px; color: #a0aec0; margin-top: 4px;">Build stable foundation configs for optimization</div>
-            </div>
-            
             <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 11px;">
                 <strong>🎯 Goal:</strong> Find time-independent parameters that give ${tokenTarget.minTarget}-${tokenTarget.maxTarget} tokens (${tokenTarget.days} days)
                 <br><strong>� Quality:</strong> TP PnL ≥ ${BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT}% for viable base configs
@@ -443,15 +444,6 @@
                 </label>
                 <input type="number" id="time-limit" value="${BASE_CONFIG.MAX_RUNTIME_MINUTES}" min="5" max="60" step="5"
                        style="width: 100%; padding: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; color: #e2e8f0; font-size: 12px; text-align: center;">
-            </div>
-            
-            <div style="margin-bottom: 16px;">
-                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
-                    <input type="checkbox" id="use-slower-limits" ${BASE_CONFIG.USE_SLOWER_RATE_LIMIT ? 'checked' : ''} 
-                           style="margin-right: 8px; accent-color: #8b5cf6;">
-                    <span style="color: #e2e8f0;">Use Slower Rate Limiting (Recommended)</span>
-                </label>
-                <div style="font-size: 9px; color: #a0aec0; margin-left: 20px;">More conservative API usage</div>
             </div>
             
             <button id="start-base-config-btn" style="
@@ -516,22 +508,20 @@
                     ">📋 Copy Config</button>
                 </div>
             </div>
-            
-            <div style="margin-top: 16px; padding-top: 12px; border-top: 2px solid #4a5568; text-align: center;">
-                <button id="close-base-builder-btn" style="
-                    padding: 6px 16px; 
-                    background: rgba(237, 100, 166, 0.2); 
-                    border: 1px solid rgba(237, 100, 166, 0.4);
-                    border-radius: 16px; 
-                    color: #ed64a6; 
-                    font-size: 10px; 
-                    cursor: pointer;
-                    font-weight: 600;
-                ">✕ Close</button>
-            </div>
         `;
 
-        document.body.appendChild(ui);
+        // Smart rendering: tab integration or standalone
+        if (isInTab) {
+            // Clear the tab and render Base Config Builder full-size
+            tabContainer.innerHTML = '';
+            tabContainer.appendChild(ui);
+            console.log('🏗️ Base Config Builder rendered full-size in AGCopilot tab');
+        } else {
+            // Fallback to body if no tab container (standalone mode)
+            document.body.appendChild(ui);
+            console.log('🏗️ Base Config Builder rendered as standalone window');
+        }
+        
         return ui;
     }
 
@@ -565,7 +555,6 @@
             const maxTargetTokens = parseInt(document.getElementById('max-target-tokens').value) || BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY;
             const minTpPnl = parseFloat(document.getElementById('min-tp-pnl').value) || BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT;
             const timeLimit = parseInt(document.getElementById('time-limit').value) || BASE_CONFIG.MAX_RUNTIME_MINUTES;
-            const useSlowerLimits = document.getElementById('use-slower-limits').checked;
             
             // Validate inputs
             if (maxTargetTokens <= minTargetTokens) {
@@ -580,15 +569,6 @@
             BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY = maxTargetTokens;
             BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT = minTpPnl;
             BASE_CONFIG.MAX_RUNTIME_MINUTES = timeLimit;
-            
-            // Switch to slower rate limiting if requested
-            if (useSlowerLimits && typeof window.toggleRateLimitingMode === 'function') {
-                const currentMode = window.CONFIG ? window.CONFIG.RATE_LIMIT_MODE : 'normal';
-                if (currentMode === 'normal') {
-                    window.toggleRateLimitingMode();
-                    updateBaseConfigStatus('🔄 Switched to slower rate limiting for stability');
-                }
-            }
             
             updateBaseConfigStatus('🏗️ Starting base config building...');
             updateBaseConfigStatus(`🎯 Target: ${minTargetTokens} tokens, Time limit: ${timeLimit} minutes`);
@@ -664,11 +644,6 @@
             } else {
                 updateBaseConfigStatus('❌ No base config available to copy', true);
             }
-        });
-        
-        // Close button
-        document.getElementById('close-base-builder-btn').addEventListener('click', () => {
-            document.getElementById('base-config-builder-ui').remove();
         });
     }
 
