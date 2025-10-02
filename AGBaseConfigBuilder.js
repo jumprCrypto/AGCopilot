@@ -14,9 +14,9 @@
     // ========================================
     const BASE_CONFIG = {
         // Target metrics for base config
-        TARGET_MIN_TOKENS_WEEKLY: 500,  // Minimum tokens per week for a "wide" config
-        TARGET_MAX_TOKENS_WEEKLY: 750,  // Maximum tokens per week for a "base" config (not too loose)
-        TARGET_MIN_WIN_RATE: 15.0,      // Minimum win rate to consider viable
+        TARGET_MIN_TOKENS_PER_DAY: 70,   // Minimum tokens per day for a "wide" config (~500/week)
+        TARGET_MAX_TOKENS_PER_DAY: 110,  // Maximum tokens per day for a "base" config (~750/week)
+        TARGET_MIN_WIN_RATE: 15.0,       // Minimum win rate to consider viable
         TARGET_MIN_PNL: 5.0,             // Minimum TP PnL % to be worth optimizing
         TARGET_MIN_TP_PNL_PERCENT: 20.0, // Minimum TP PnL% threshold for quality base configs
         
@@ -138,19 +138,23 @@
     function getTokenTarget() {
         const scaling = window.getScaledTokenThresholds ? window.getScaledTokenThresholds() : null;
         if (scaling && scaling.scalingInfo) {
-            const weeklyMinTarget = BASE_CONFIG.TARGET_MIN_TOKENS_WEEKLY * (scaling.scalingInfo.days / 7);
-            const weeklyMaxTarget = BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY * (scaling.scalingInfo.days / 7);
+            const dailyMinTarget = BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY * scaling.scalingInfo.days;
+            const dailyMaxTarget = BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY * scaling.scalingInfo.days;
             return {
-                minTarget: Math.round(weeklyMinTarget),
-                maxTarget: Math.round(weeklyMaxTarget),
+                minTarget: Math.round(dailyMinTarget),
+                maxTarget: Math.round(dailyMaxTarget),
+                minPerDay: BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY,
+                maxPerDay: BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY,
                 days: scaling.scalingInfo.days,
                 isScaled: true
             };
         }
         
         return {
-            minTarget: BASE_CONFIG.TARGET_MIN_TOKENS_WEEKLY,
-            maxTarget: BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY,
+            minTarget: BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY * 7,
+            maxTarget: BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY * 7,
+            minPerDay: BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY,
+            maxPerDay: BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY,
             days: 7,
             isScaled: false
         };
@@ -165,7 +169,7 @@
         console.log('%c🎯 Starting Systematic Tightening Strategy', 'color: blue; font-weight: bold;');
         
         const tokenTarget = getTokenTarget();
-        console.log(`🎯 Target Range: ${tokenTarget.minTarget}-${tokenTarget.maxTarget} tokens (${tokenTarget.days} days${tokenTarget.isScaled ? ', scaled' : ''})`);
+        console.log(`🎯 Target Range: ${tokenTarget.minPerDay}-${tokenTarget.maxPerDay} tokens/day (${tokenTarget.minTarget}-${tokenTarget.maxTarget} total over ${tokenTarget.days} days${tokenTarget.isScaled ? ', scaled' : ''})`);
         
         // Start with current UI config as baseline
         const startConfig = await window.getCurrentConfiguration();
@@ -181,8 +185,9 @@
         
         const baselineTokens = baselineResult.metrics.totalTokens;
         const baselineScore = calculateScore(baselineResult.metrics);
+        const baselinePerDay = (baselineTokens / tokenTarget.days).toFixed(1);
         
-        console.log(`✅ Baseline: ${baselineTokens} tokens, Score: ${baselineScore.toFixed(1)}`);
+        console.log(`✅ Baseline: ${baselinePerDay} tokens/day (${baselineTokens} total), Score: ${baselineScore.toFixed(1)}`);
         
         // Check if baseline is already in target range
         const baselineInRange = baselineTokens >= tokenTarget.minTarget && baselineTokens <= tokenTarget.maxTarget;
@@ -222,7 +227,8 @@
             // Log if we're in the target range but continue optimizing
             const inRange = bestTokens >= tokenTarget.minTarget && bestTokens <= tokenTarget.maxTarget;
             if (inRange && testCount % 10 === 0) { // Log every 10th test when in range
-                console.log(`📍 Currently in range: ${bestTokens} tokens, Score: ${bestScore.toFixed(1)} - continuing to optimize...`);
+                const perDay = (bestTokens / tokenTarget.days).toFixed(1);
+                console.log(`📍 Currently in range: ${perDay} tokens/day (${bestTokens} total), Score: ${bestScore.toFixed(1)} - continuing to optimize...`);
             }
             
             console.log(`\n🔬 Testing parameter: ${paramInfo.param}`);
@@ -267,8 +273,10 @@
                     const tokens = result.metrics.totalTokens;
                     const score = calculateScore(result.metrics);
                     const improvement = tokens - bestTokens;
+                    const tokensPerDay = (tokens / tokenTarget.days).toFixed(1);
+                    const improvementPerDay = (improvement / tokenTarget.days).toFixed(1);
                     
-                    console.log(`    📊 Result: ${tokens} tokens (Δ${improvement > 0 ? '+' : ''}${improvement}), Score: ${score.toFixed(1)}`);
+                    console.log(`    📊 Result: ${tokensPerDay} tokens/day (Δ${improvement > 0 ? '+' : ''}${improvementPerDay}/day), Score: ${score.toFixed(1)}`);
                     
                     // Calculate distances and ranges
                     const currentInRange = bestTokens >= tokenTarget.minTarget && bestTokens <= tokenTarget.maxTarget;
@@ -319,7 +327,7 @@
                         bestConfig = testConfig;
                         bestTokens = tokens;
                         bestScore = score;
-                        console.log(`    ✅ New best! ${tokens} tokens (${reason}), Score: ${score.toFixed(1)}, PnL: ${currentPnl.toFixed(1)}%`);
+                        console.log(`    ✅ New best! ${tokensPerDay} tokens/day (${reason}), Score: ${score.toFixed(1)}, PnL: ${currentPnl.toFixed(1)}%`);
                     } else if (!meetsPnlThreshold) {
                         console.log(`    ⚠️  Rejected: PnL ${currentPnl.toFixed(1)}% < ${BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT}% threshold`);
                     }
@@ -330,8 +338,9 @@
             }
         }
         
+        const finalPerDay = (bestTokens / tokenTarget.days).toFixed(1);
         console.log(`\n🏁 Base Config Building Complete!`);
-        console.log(`📊 Final: ${bestTokens} tokens (range: ${tokenTarget.minTarget}-${tokenTarget.maxTarget}), Score: ${bestScore.toFixed(1)}`);
+        console.log(`📊 Final: ${finalPerDay} tokens/day (${bestTokens} total, target: ${tokenTarget.minPerDay}-${tokenTarget.maxPerDay}/day), Score: ${bestScore.toFixed(1)}`);
         console.log(`🧪 Total tests: ${testCount}`);
         
         const finalResult = await window.backtesterAPI.fetchResults(bestConfig);
@@ -406,16 +415,16 @@
             
             <div style="margin-bottom: 16px;">
                 <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #63b3ed;">
-                    🎯 Token Range:
+                    🎯 Tokens Per Day Range:
                 </label>
                 <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center;">
-                    <input type="number" id="min-target-tokens" value="${tokenTarget.minTarget}" min="100" max="1000" step="50"
+                    <input type="number" id="min-target-tokens" value="${tokenTarget.minPerDay}" min="10" max="200" step="5"
                            style="width: 100%; padding: 6px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; font-size: 11px; text-align: center;">
                     <span style="color: #a0aec0; font-size: 12px; padding: 0 4px;">-</span>
-                    <input type="number" id="max-target-tokens" value="${tokenTarget.maxTarget}" min="200" max="2000" step="50"
+                    <input type="number" id="max-target-tokens" value="${tokenTarget.maxPerDay}" min="20" max="300" step="5"
                            style="width: 100%; padding: 6px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; font-size: 11px; text-align: center;">
                 </div>
-                <div style="font-size: 9px; color: #a0aec0; margin-top: 2px;">Target token range for balanced base config</div>
+                <div style="font-size: 9px; color: #a0aec0; margin-top: 2px;">Target tokens per day (will scale to ${tokenTarget.days} days = ${tokenTarget.minTarget}-${tokenTarget.maxTarget} total)</div>
             </div>
             
             <div style="margin-bottom: 16px;">
@@ -550,28 +559,28 @@
             // Validate dependencies
             validateDependencies();
             
-            // Get UI settings
-            const minTargetTokens = parseInt(document.getElementById('min-target-tokens').value) || BASE_CONFIG.TARGET_MIN_TOKENS_WEEKLY;
-            const maxTargetTokens = parseInt(document.getElementById('max-target-tokens').value) || BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY;
+            // Get UI settings (now per-day values)
+            const minTargetTokensPerDay = parseInt(document.getElementById('min-target-tokens').value) || BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY;
+            const maxTargetTokensPerDay = parseInt(document.getElementById('max-target-tokens').value) || BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY;
             const minTpPnl = parseFloat(document.getElementById('min-tp-pnl').value) || BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT;
             const timeLimit = parseInt(document.getElementById('time-limit').value) || BASE_CONFIG.MAX_RUNTIME_MINUTES;
             
             // Validate inputs
-            if (maxTargetTokens <= minTargetTokens) {
-                throw new Error('Maximum target tokens must be greater than minimum target tokens');
+            if (maxTargetTokensPerDay <= minTargetTokensPerDay) {
+                throw new Error('Maximum target tokens per day must be greater than minimum');
             }
             if (minTpPnl < 0 || minTpPnl > 100) {
                 throw new Error('TP PnL threshold must be between 0% and 100%');
             }
             
             // Update config
-            BASE_CONFIG.TARGET_MIN_TOKENS_WEEKLY = minTargetTokens;
-            BASE_CONFIG.TARGET_MAX_TOKENS_WEEKLY = maxTargetTokens;
+            BASE_CONFIG.TARGET_MIN_TOKENS_PER_DAY = minTargetTokensPerDay;
+            BASE_CONFIG.TARGET_MAX_TOKENS_PER_DAY = maxTargetTokensPerDay;
             BASE_CONFIG.TARGET_MIN_TP_PNL_PERCENT = minTpPnl;
             BASE_CONFIG.MAX_RUNTIME_MINUTES = timeLimit;
             
             updateBaseConfigStatus('🏗️ Starting base config building...');
-            updateBaseConfigStatus(`🎯 Target: ${minTargetTokens} tokens, Time limit: ${timeLimit} minutes`);
+            updateBaseConfigStatus(`🎯 Target: ${minTargetTokensPerDay}-${maxTargetTokensPerDay} tokens/day, Time limit: ${timeLimit} minutes`);
             
             // Hide results from previous runs
             document.getElementById('base-config-results').style.display = 'none';
@@ -580,8 +589,11 @@
             const result = await buildBaseConfigSystematic();
             const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
             
+            const tokenTarget = getTokenTarget();
+            const resultPerDay = (result.metrics.totalTokens / tokenTarget.days).toFixed(1);
+            
             updateBaseConfigStatus(`✅ Base config building complete in ${duration} minutes!`);
-            updateBaseConfigStatus(`📊 Result: ${result.metrics.totalTokens} tokens, Score: ${calculateScore(result.metrics).toFixed(1)}`);
+            updateBaseConfigStatus(`📊 Result: ${resultPerDay} tokens/day (${result.metrics.totalTokens} total), Score: ${calculateScore(result.metrics).toFixed(1)}`);
             updateBaseConfigStatus(`🧪 Total tests performed: ${result.tests}`);
             
             // Store result for UI buttons
@@ -597,9 +609,13 @@
             
             const actualPnl = result.metrics.tpPnlPercent || 0;
             const pnlStatus = actualPnl >= minTpPnl ? '✅' : '❌';
+            const tokensPerDay = (result.metrics.totalTokens / tokenTarget.days).toFixed(1);
+            const inRange = tokensPerDay >= minTargetTokensPerDay && tokensPerDay <= maxTargetTokensPerDay;
+            const rangeIcon = inRange ? '🎯' : '⚠️';
             
             metricsDiv.innerHTML = `
-                <strong>Tokens:</strong> ${result.metrics.totalTokens} (range: ${minTargetTokens}-${maxTargetTokens})
+                <strong>Tokens/Day:</strong> ${rangeIcon} ${tokensPerDay} (target: ${minTargetTokensPerDay}-${maxTargetTokensPerDay})
+                <br><strong>Total:</strong> ${result.metrics.totalTokens} over ${tokenTarget.days} days
                 <br><strong>TP PnL:</strong> ${actualPnl.toFixed(1)}% ${pnlStatus} (threshold: ${minTpPnl}%)
                 <br><strong>Win Rate:</strong> ${result.metrics.winRate?.toFixed(1) || 'N/A'}%
                 <br><strong>Tests:</strong> ${result.tests}, <strong>Duration:</strong> ${duration}m
@@ -660,7 +676,7 @@
                 console.log('✅ Base Config Builder initialized successfully!');
                 console.log('🎯 Purpose: Build stable, time-independent base configurations');
                 console.log('📋 Focus: AG Score, KYC Wallets, Bundled %, Deployer Balance, etc.');
-                console.log('🏗️ Goal: Find configs with 500+ tokens/week for optimization starting points');
+                console.log('🏗️ Goal: Find configs with 70-110 tokens/day for optimization starting points');
                 return;
                 
             } catch (error) {

@@ -1107,23 +1107,6 @@
             }
         });
 
-        // Optimize with generated config
-        safeAddEventListener('optimize-generated-config-btn', 'click', async () => {
-            if (window.lastGeneratedConfig && typeof window.applyConfigToBacktester === 'function') {
-                await window.applyConfigToBacktester(window.lastGeneratedConfig);
-                updateSignalStatus('⚙️ Generated config applied, starting optimization...');
-                if (!window.STOPPED) {
-                    await sleep(1000);
-                    const startBtn = document.getElementById('start-optimization');
-                    if (startBtn) {
-                        startBtn.click();
-                    }
-                }
-            } else {
-                updateSignalStatus('❌ Cannot optimize without a generated config', true);
-            }
-        });
-
         // Copy generated config
         safeAddEventListener('copy-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
@@ -1384,7 +1367,7 @@
             
             <!-- Generated Config Actions -->
             <div id="generated-config-actions" style="margin-top: 16px; display: none;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                     <button id="apply-generated-config-btn" style="
                         padding: 10px 8px;
                         background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
@@ -1397,19 +1380,6 @@
                         transition: all 0.2s;
                     " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
                         ⚙️ Apply
-                    </button>
-                    <button id="optimize-generated-config-btn" style="
-                        padding: 10px 8px;
-                        background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
-                        border: none;
-                        border-radius: 4px;
-                        color: white;
-                        font-size: 11px;
-                        cursor: pointer;
-                        font-weight: 500;
-                        transition: all 0.2s;
-                    " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                        🚀 Optimize
                     </button>
                     <button id="copy-config-btn" style="
                         padding: 10px 8px;

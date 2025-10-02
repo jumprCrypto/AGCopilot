@@ -83,8 +83,6 @@
 
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
-        // Make PARAM_RULES globally available for Base Config Builder
-        // (Will be set to window.PARAM_RULES after the object definition)
         // Basic
         'Min MCAP (USD)': { min: 0, max: 20000, step: 1000, type: 'integer'},
         'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
@@ -518,6 +516,32 @@
 
     // Make deepClone globally available for external scripts
     window.deepClone = deepClone;
+
+    // ========================================
+    // 🎨 FORMATTING UTILITIES
+    // ========================================
+    
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return 'N/A';
+        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
+    }
+
+    function formatMcap(mcap) {
+        if (!mcap) return 'N/A';
+        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
+        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
+        return `$${mcap}`;
+    }
+
+    function formatPercent(value) {
+        if (value === null || value === undefined) return 'N/A';
+        return `${value.toFixed(2)}%`;
+    }
+
+    // Make formatting functions globally available for external scripts
+    window.formatTimestamp = formatTimestamp;
+    window.formatMcap = formatMcap;
+    window.formatPercent = formatPercent;
 
     // Ensure complete config by merging with template
     function ensureCompleteConfig(config) {
@@ -2736,108 +2760,11 @@
     
 
     // ========================================
-    // 📊 SIGNAL PROCESSING & CONFIG GENERATION - Now in AGSignalAnalysis.js
+    // 🎯 SIGNAL ANALYSIS - CORE FUNCTIONS STILL IN AGCopilot.js
     // ========================================
+    // Note: These functions are used internally by AGCopilot for signal analysis
+    // Additional UI and workflow functions are in AGSignalAnalysis.js
     
-    // All signal analysis functions have been moved to AGSignalAnalysis.js:
-    // - processTokenData, removeOutliers, generateBatchSummary
-    // - formatTimestamp, formatMcap, formatPercent  
-    // - getClusteringParameters, normalizeSignals, calculateSignalDistance, findSignalClusters
-    // - analyzeSignalCriteria, generateFullAnalysis, generateClusterAnalysis
-    // - generateTightestConfig, generateAnalysisFromSignals, formatConfigForDisplay
-    // - validateConfigAgainstSignals, fetchWithRetry, getTokenInfo, getAllTokenSwaps
-    // These functions are available via window.AGSignalAnalysis namespace
-    
-    /*
-    function processTokenData(tokenInfo, swaps) {
-        const result = {
-            // Basic Token Info
-            tokenAddress: tokenInfo.tokenAddress,
-            tokenName: tokenInfo.token,
-            symbol: tokenInfo.symbol,
-            currentMcap: formatMcap(tokenInfo.currentMcap),
-            currentMcapRaw: tokenInfo.currentMcap,
-            athMcap: formatMcap(tokenInfo.athMcap),
-            athMcapRaw: tokenInfo.athMcap,
-            athTime: formatTimestamp(tokenInfo.athTime),
-            atlMcap: formatMcap(tokenInfo.atlMcap),
-            atlMcapRaw: tokenInfo.atlMcap,
-            atlTime: formatTimestamp(tokenInfo.atlTime),
-            
-            // Performance Metrics
-            athMultiplier: tokenInfo.athMcap && tokenInfo.signalMcap ? 
-                (tokenInfo.athMcap / tokenInfo.signalMcap).toFixed(2) + 'x' : 'N/A',
-            athMultiplierRaw: tokenInfo.athMcap && tokenInfo.signalMcap ? 
-                (tokenInfo.athMcap / tokenInfo.signalMcap) : 0,
-            currentFromAth: tokenInfo.athMcap && tokenInfo.currentMcap ? 
-                formatPercent(((tokenInfo.currentMcap - tokenInfo.athMcap) / tokenInfo.athMcap) * 100) : 'N/A',
-            
-            // Signal Analysis
-            totalSignals: swaps.length,
-            firstSignalTime: formatTimestamp(swaps[swaps.length - 1]?.timestamp),
-            lastSignalTime: formatTimestamp(swaps[0]?.timestamp),
-            firstSignalMcap: formatMcap(swaps[swaps.length - 1]?.signalMcap),
-            lastSignalMcap: formatMcap(swaps[0]?.signalMcap),
-            
-            // Win Prediction Analysis
-            avgWinPred: swaps.length > 0 ? 
-                formatPercent(swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / swaps.length) : 'N/A',
-            maxWinPred: swaps.length > 0 ? 
-                formatPercent(Math.max(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
-            minWinPred: swaps.length > 0 ? 
-                formatPercent(Math.min(...swaps.map(swap => swap.winPredPercent || 0))) : 'N/A',
-            
-            // Trigger Mode Analysis
-            triggerModes: [...new Set(swaps.map(swap => swap.triggerMode))].join(', '),
-            
-            // Latest Criteria (from most recent swap)
-            latestCriteria: tokenInfo.criteria
-        };
-        
-        return result;
-    }
-
-    function generateBatchSummary(allTokenData) {
-        const summary = {
-            totalTokens: allTokenData.length,
-            totalSignals: allTokenData.reduce((sum, token) => sum + token.processed.totalSignals, 0),
-            avgSignalsPerToken: 0,
-            topPerformers: [],
-            avgWinPred: 0,
-            athMultipliers: []
-        };
-        
-        if (allTokenData.length > 0) {
-            summary.avgSignalsPerToken = (summary.totalSignals / allTokenData.length).toFixed(1);
-            
-            // Calculate average win prediction across all tokens
-            const allWinPreds = allTokenData.map(token => {
-                const avgWinPred = token.swaps.reduce((sum, swap) => sum + (swap.winPredPercent || 0), 0) / token.swaps.length;
-                return avgWinPred;
-            });
-            summary.avgWinPred = (allWinPreds.reduce((sum, pred) => sum + pred, 0) / allWinPreds.length).toFixed(2);
-            
-            // Get top performers by ATH multiplier
-            summary.topPerformers = allTokenData
-                .map(token => ({
-                    name: token.processed.tokenName,
-                    symbol: token.processed.symbol,
-                    athMultiplier: token.processed.athMultiplierRaw || 0,
-                    athMultiplierText: token.processed.athMultiplier,
-                    signals: token.processed.totalSignals
-                }))
-                .sort((a, b) => b.athMultiplier - a.athMultiplier)
-                .slice(0, 5);
-            
-            // Extract ATH multipliers for statistics
-            summary.athMultipliers = allTokenData
-                .map(token => token.processed.athMultiplierRaw || 0)
-                .filter(mult => mult > 0);
-        }
-        
-        return summary;
-    }
-
     // Outlier filtering functions
     function removeOutliers(values, method = 'none') {
         if (!values || values.length === 0) return values;
@@ -2885,6 +2812,9 @@
                 return validValues;
         }
     }
+
+    // Make removeOutliers globally available for external scripts
+    window.removeOutliers = removeOutliers;
 
     // ========================================
     // 🎯 SIGNAL CLUSTERING FUNCTIONS
@@ -3959,8 +3889,11 @@
         return lines.join('\n');
     }
 
+    // Make formatConfigForDisplay globally available for external scripts
+    window.formatConfigForDisplay = formatConfigForDisplay;
+
     // ========================================
-    // 💾 CONFIG CACHE (keeping original implementation)
+    // 💾 CONFIG CACHE
     // ========================================
     class ConfigCache {
         constructor(maxSize = 1000) {
@@ -6226,7 +6159,7 @@
         isSplitScreenMode = false;
         console.log('🖥️ Floating mode restored');
     }
-    */
+    
     
     // ========================================
     // 🎨 UI FUNCTIONS & LAYOUT MANAGEMENT 
@@ -7127,13 +7060,8 @@
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
         
-        // Make additional functions globally available for Base Config Builder
-        window.getCurrentConfiguration = getCurrentConfiguration;
-        window.ensureCompleteConfig = ensureCompleteConfig;
-        window.calculateRobustScore = calculateRobustScore;
-        window.getScaledTokenThresholds = getScaledTokenThresholds;
-        window.generateTestValuesFromRules = generateTestValuesFromRules;
-        window.applyConfigToUI = applyConfigToUI;
+        // Note: Core functions are now exported globally before initialization
+        // See GLOBAL EXPORTS FOR EXTERNAL SCRIPTS section
         
         // Always use split-screen mode (after a short delay to ensure DOM is ready)
         setTimeout(() => {
@@ -7253,15 +7181,6 @@
     // 🔍 SIGNAL ANALYSIS TAB (External Script)
     // ========================================
     
-    // Signal Analysis is now handled by the external AGSignalAnalysis.js script
-    // loaded dynamically in the Signal Analysis tab via loadSignalAnalysisInTab() function
-    
-    // createClusterSelectionUI function moved to AGSignalAnalysis.js
-    
-    // selectClusterConfig function moved to AGSignalAnalysis.js
-    
-    // handleSignalAnalysis function moved to AGSignalAnalysis.js
-
     // ========================================
     // 🔄 UI COLLAPSE/EXPAND FUNCTIONS
     // ========================================
@@ -8080,9 +7999,27 @@
         
         return appliedResults;
     }
+
+    // ========================================
+    // 🌍 GLOBAL EXPORTS FOR EXTERNAL SCRIPTS
+    // ========================================
+    // Export functions needed by Base Config Builder and other modules
+    // These must be available before external scripts load
+    // NOTE: Many utility functions are already exported where they're defined:
+    //   - deepClone, formatTimestamp, formatMcap, formatPercent (near top of file)
+    //   - removeOutliers (after outlier detection functions)
+    //   - formatConfigForDisplay (after config formatting function)
+    //   - ensureCompleteConfig (after config template)
     
-    // validateConfigAgainstSignals function moved to AGSignalAnalysis.js
-    // Available via window.AGSignalAnalysis.validateConfigAgainstSignals()
+    window.getCurrentConfiguration = getCurrentConfiguration;
+    window.getCurrentConfigFromUI = getCurrentConfigFromUI;
+    window.calculateRobustScore = calculateRobustScore;
+    window.getScaledTokenThresholds = getScaledTokenThresholds;
+    window.generateTestValuesFromRules = generateTestValuesFromRules;
+    window.applyConfigToUI = applyConfigToUI;
+    window.applyConfigToBacktester = applyConfigToBacktester;
+    
+    console.log('✅ Global functions exported for external scripts');
 
 
     // ========================================
