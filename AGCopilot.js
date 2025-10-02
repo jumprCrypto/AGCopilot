@@ -179,6 +179,9 @@
     takeProfits: []
     };
 
+    // Make COMPLETE_CONFIG_TEMPLATE globally available for external scripts
+    window.COMPLETE_CONFIG_TEMPLATE = COMPLETE_CONFIG_TEMPLATE;
+
     // ========================================
     // 🎯 PRESET CONFIGURATIONS
     // ========================================
@@ -237,6 +240,9 @@
     // �🛠️ UTILITIES
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    // Make sleep globally available for external scripts
+    window.sleep = sleep;
     
     // Rate limiting mode toggle function
     function toggleRateLimitingMode() {
@@ -493,23 +499,7 @@
     // Create local references for backward compatibility
     const burstRateLimiter = window.burstRateLimiter;
 
-    // Format functions for signal analysis
-    function formatTimestamp(timestamp) {
-        if (!timestamp) return 'N/A';
-        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
-    }
 
-    function formatMcap(mcap) {
-        if (!mcap) return 'N/A';
-        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
-        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
-        return `$${mcap}`;
-    }
-
-    function formatPercent(value) {
-        if (value === null || value === undefined) return 'N/A';
-        return `${value.toFixed(2)}%`;
-    }
 
     // Efficient deep clone utility function
     function deepClone(obj) {
@@ -526,6 +516,9 @@
         return cloned;
     }
 
+    // Make deepClone globally available for external scripts
+    window.deepClone = deepClone;
+
     // Ensure complete config by merging with template
     function ensureCompleteConfig(config) {
         const completeConfig = deepClone(COMPLETE_CONFIG_TEMPLATE);
@@ -538,6 +531,9 @@
         }
         return completeConfig;
     }
+
+    // Make ensureCompleteConfig globally available for external scripts
+    window.ensureCompleteConfig = ensureCompleteConfig;
 
     // Get selected trigger mode from UI dropdown
     function getTriggerMode() {
@@ -1537,7 +1533,7 @@
     }
 
     // ========================================
-    // 🌐 API FUNCTIONS (from AGSignalExtractor)
+    // 🌐 API FUNCTIONS - Now in AGSignalAnalysis.js
     // ========================================
     async function fetchWithRetry(url, maxRetries = CONFIG.MAX_RETRIES) {
         await burstRateLimiter.throttle(); // Use the same burst rate limiter as the main optimization
@@ -2669,6 +2665,9 @@
         return cleanedConfig;
     }
 
+    // Make cleanConfiguration globally available for external scripts
+    window.cleanConfiguration = cleanConfiguration;
+
     // Test configuration via API call (New: Direct API instead of UI scraping)
     async function testConfigurationAPI(config, testName = 'API Test') {
         try {
@@ -2737,8 +2736,19 @@
     
 
     // ========================================
-    // � SIGNAL PROCESSING & CONFIG GENERATION (from AGSignalExtractor)
+    // 📊 SIGNAL PROCESSING & CONFIG GENERATION - Now in AGSignalAnalysis.js
     // ========================================
+    
+    // All signal analysis functions have been moved to AGSignalAnalysis.js:
+    // - processTokenData, removeOutliers, generateBatchSummary
+    // - formatTimestamp, formatMcap, formatPercent  
+    // - getClusteringParameters, normalizeSignals, calculateSignalDistance, findSignalClusters
+    // - analyzeSignalCriteria, generateFullAnalysis, generateClusterAnalysis
+    // - generateTightestConfig, generateAnalysisFromSignals, formatConfigForDisplay
+    // - validateConfigAgainstSignals, fetchWithRetry, getTokenInfo, getAllTokenSwaps
+    // These functions are available via window.AGSignalAnalysis namespace
+    
+    /*
     function processTokenData(tokenInfo, swaps) {
         const result = {
             // Basic Token Info
@@ -6108,53 +6118,7 @@
     // 🎨 UI FUNCTIONS
     // ========================================
     
-    // Generate preset dropdown options dynamically from PRESETS object with priority sorting
-    function generatePresetOptions() {
-        let options = '<option value="">-- Select a Preset --</option>';
-        
-        // Convert PRESETS object to array with keys and sort by priority
-        const sortedPresets = Object.entries(PRESETS).sort(([keyA, configA], [keyB, configB]) => {
-            const priorityA = configA.priority || 999; // Default high priority if not set
-            const priorityB = configB.priority || 999;
-            return priorityA - priorityB;
-        });
-        
-        let currentCategory = null;
-        
-        // Add sorted presets with category headers
-        sortedPresets.forEach(([presetKey, presetConfig]) => {
-            // Add category separator if category changed
-            if (presetConfig.category && presetConfig.category !== currentCategory) {
-                currentCategory = presetConfig.category;
-                options += `<optgroup label="── ${currentCategory} ──">`;
-            }
-            
-            const displayName = getPresetDisplayName(presetKey, presetConfig);
-            options += `<option value="${presetKey}">${displayName}</option>`;
-        });
-        
-        return options;
-    }
-    
-    function getPresetDisplayName(presetKey, presetConfig) {        
-        // Use description if available, otherwise generate from key
-        if (presetConfig && presetConfig.description) {
-            // Add priority indicator for high priority items
-            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
-                                 (presetConfig.priority <= 5) ? '🔥 ' : 
-                                (presetConfig.priority <= 10) ? '⭐ ' : '';
-            return `${priorityIcon}${presetConfig.description}`;
-        }
-        
-        // Fallback to original naming logic
-        let displayName = presetKey
-            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
-            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
-            .trim();
-            
-        return displayName;
-    }
+    // Functions moved to below comment block
     
     // ========================================
     // 🖥️ SPLIT-SCREEN LAYOUT FUNCTIONS
@@ -6261,6 +6225,59 @@
         
         isSplitScreenMode = false;
         console.log('🖥️ Floating mode restored');
+    }
+    */
+    
+    // ========================================
+    // 🎨 UI FUNCTIONS & LAYOUT MANAGEMENT 
+    // ========================================
+    
+    // Generate preset dropdown options dynamically from PRESETS object with priority sorting
+    function generatePresetOptions() {
+        let options = '<option value="">-- Select a Preset --</option>';
+        
+        // Convert PRESETS object to array with keys and sort by priority
+        const sortedPresets = Object.entries(PRESETS).sort(([keyA, configA], [keyB, configB]) => {
+            const priorityA = configA.priority || 999; // Default high priority if not set
+            const priorityB = configB.priority || 999;
+            return priorityA - priorityB;
+        });
+        
+        let currentCategory = null;
+        
+        // Add sorted presets with category headers
+        sortedPresets.forEach(([presetKey, presetConfig]) => {
+            // Add category separator if category changed
+            if (presetConfig.category && presetConfig.category !== currentCategory) {
+                currentCategory = presetConfig.category;
+                options += `<optgroup label="── ${currentCategory} ──">`;
+            }
+            
+            const displayName = getPresetDisplayName(presetKey, presetConfig);
+            options += `<option value="${presetKey}">${displayName}</option>`;
+        });
+        
+        return options;
+    }
+    
+    function getPresetDisplayName(presetKey, presetConfig) {        
+        // Use description if available, otherwise generate from key
+        if (presetConfig && presetConfig.description) {
+            // Add priority indicator for high priority items
+            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
+                                 (presetConfig.priority <= 5) ? '🔥 ' : 
+                                (presetConfig.priority <= 10) ? '⭐ ' : '';
+            return `${priorityIcon}${presetConfig.description}`;
+        }
+        
+        // Fallback to original naming logic
+        let displayName = presetKey
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
+            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+            .trim();
+            
+        return displayName;
     }
     
     // Clean up split-screen when UI is removed
@@ -6419,7 +6436,7 @@
                     <button class="tab-button" onclick="switchTab('base-config-tab')" id="base-config-tab-btn">
                         🏗️ Base Cfg Builder
                     </button>
-                    <button class="tab-button" onclick="switchTab('signal-tab')" id="signal-tab-btn">
+                    <button class="tab-button" onclick="switchTab('signal-analysis-tab')" id="signal-analysis-tab-btn">
                         🔍 Signal Analysis
                     </button>
                 </div>
@@ -6844,286 +6861,21 @@
                     </div>
                 </div>
 
-                <!-- Signal Analysis Tab -->
-                <div id="signal-tab" class="tab-content">
-                        <!-- Contract Input -->
-                        <div style="margin-bottom: 12px;">
-                            <label style="
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: #a0aec0;
-                                display: block;
-                                margin-bottom: 6px;
-                            ">Contract Addresses</label>
-                            <textarea id="signal-contract-input" placeholder="Contract addresses (one per line)..." style="
-                                width: 100%;
-                                padding: 12px;
-                                background: #2d3748;
-                                border: 1px solid #4a5568;
-                                border-radius: 4px;
-                                color: #e2e8f0;
-                                font-size: 12px;
-                                height: 80px;
-                                resize: vertical;
-                                outline: none;
-                                transition: border-color 0.2s;
-                                font-family: 'Monaco', 'Menlo', monospace;
-                            " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'"></textarea>
-                        </div>
-                        
-                        <div style="
-                            font-size: 11px;
-                            color: #718096;
-                            text-align: center;
-                            margin-bottom: 16px;
-                            padding: 8px;
-                            background: #2d3748;
-                            border-radius: 4px;
-                            border: 1px solid #4a5568;
-                        ">
-                            💡 Analyze successful signals to generate optimal configs
-                        </div>
-                        
-                        <!-- Settings Grid -->
-                        <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px;">
-                            <div>
-                                <label style="
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 4px;
-                                ">Signals/Token</label>
-                                <input type="number" id="signals-per-token" value="6" min="1" max="999" style="
-                                    width: 60px;
-                                    padding: 6px 8px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 11px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                            <div>
-                                <label style="
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 4px;
-                                ">Buffer %</label>
-                                <input type="number" id="config-buffer" value="10" min="0" max="50" style="
-                                    width: 55px;
-                                    padding: 6px 8px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 11px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                            <div style="display: flex; align-items: center; justify-content: center;">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 11px;
-                                    color: #e2e8f0;
-                                    font-weight: 500;
-                                ">
-                                    <input type="checkbox" id="enable-signal-clustering" checked style="
-                                        margin-right: 6px;
-                                        transform: scale(1.0);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    🎯 Clustering
-                                </label>
-                            </div>
-                            <button id="analyze-signals-btn" style="
-                                padding: 8px 16px;
-                                background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-                                border: none;
-                                border-radius: 4px;
-                                color: white;
-                                font-weight: 500;
-                                cursor: pointer;
-                                font-size: 12px;
-                                transition: all 0.2s;
-                            " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                🔍 Analyze
-                            </button>
-                        </div>
-                        
-                        <!-- Outlier Filtering -->
-                        <div style="margin-bottom: 16px;">
-                            <label style="
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: #a0aec0;
-                                display: block;
-                                margin-bottom: 8px;
-                            ">Outlier Filter</label>
-                            <div style="
-                                background: #2d3748;
-                                border: 1px solid #4a5568;
-                                border-radius: 4px;
-                                padding: 8px;
-                                display: grid;
-                                grid-template-columns: repeat(4, 1fr);
-                                gap: 8px;
-                            ">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 11px;
-                                    color: #e2e8f0;
-                                    padding: 4px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
-                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-none" value="none" style="
-                                        margin-right: 4px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span>None</span>
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 11px;
-                                    color: #e2e8f0;
-                                    padding: 4px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
-                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-iqr" value="iqr" checked style="
-                                        margin-right: 4px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span>IQR</span>
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 11px;
-                                    color: #e2e8f0;
-                                    padding: 4px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
-                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-percentile" value="percentile" style="
-                                        margin-right: 4px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span>Percentile</span>
-                                </label>
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 11px;
-                                    color: #e2e8f0;
-                                    padding: 4px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" onmouseout="this.style.background='transparent'">
-                                    <input type="radio" name="signal-outlier-filter" id="signal-outlier-zscore" value="zscore" style="
-                                        margin-right: 4px;
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span>Z-Score</span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <!-- Analysis Results -->
-                        <div id="signal-analysis-results" style="
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 6px;
-                            padding: 12px;
-                            font-size: 12px;
-                            min-height: 60px;
-                            max-height: 150px;
-                            overflow-y: auto;
-                            display: none;
-                            scrollbar-width: thin;
-                            scrollbar-color: #4a5568 transparent;
-                        ">
-                            <div style="color: #a0aec0;">Analysis results will appear here...</div>
-                        </div>
-                        
-                        <!-- Cluster Selection Section -->
-                        <div id="cluster-selection" style="margin-top: 16px; display: none;">
-                            <div style="
-                                font-size: 12px;
-                                font-weight: 600;
-                                margin-bottom: 8px;
-                                color: #63b3ed;
-                                display: flex;
-                                align-items: center;
-                                gap: 6px;
-                            ">
-                                🎯 Select Config
-                            </div>
-                            <div id="cluster-buttons" style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
-                                <!-- Cluster buttons will be added dynamically -->
-                            </div>
-                        </div>
-                        
-                        <!-- Generated Config Actions -->
-                        <div id="generated-config-actions" style="margin-top: 16px; display: none;">
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-                                <button id="apply-generated-config-btn" style="
-                                    padding: 10px 8px;
-                                    background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
-                                    border: none;
-                                    border-radius: 4px;
-                                    color: white;
-                                    font-size: 11px;
-                                    cursor: pointer;
-                                    font-weight: 500;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                    ⚙️ Apply
-                                </button>
-                                <button id="optimize-generated-config-btn" style="
-                                    padding: 10px 8px;
-                                    background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
-                                    border: none;
-                                    border-radius: 4px;
-                                    color: white;
-                                    font-size: 11px;
-                                    cursor: pointer;
-                                    font-weight: 500;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                    🚀 Optimize
-                                </button>
-                                <button id="copy-config-btn" style="
-                                    padding: 10px 8px;
-                                    background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
-                                    border: none;
-                                    border-radius: 4px;
-                                    color: white;
-                                    font-size: 11px;
-                                    cursor: pointer;
-                                    font-weight: 500;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                    📋 Copy
-                                </button>
-                            </div>
-                        </div>
+                <!-- Signal Analysis Tab (External Script) -->
+                <div id="signal-analysis-tab" class="tab-content">
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Signal Analysis...</div>
+                        <div style="color: #718096; font-size: 11px;">This tab will load AGSignalAnalysis.js from GitHub</div>
+                    </div>
                 </div>
 
                 <!-- Permanent Results Section at Bottom -->
@@ -7257,9 +7009,11 @@
                 activeContent.classList.add('active');
             }
             
-            // Auto-load Base Config Builder when tab is clicked
+            // Auto-load external scripts when tabs are clicked
             if (activeTabId === 'base-config-tab') {
                 loadBaseConfigBuilderInTab();
+            } else if (activeTabId === 'signal-analysis-tab') {
+                loadSignalAnalysisInTab();
             }
         };
         
@@ -7496,412 +7250,17 @@
     }
 
     // ========================================
-    // 🔍 SIGNAL ANALYSIS FUNCTIONS
+    // 🔍 SIGNAL ANALYSIS TAB (External Script)
     // ========================================
     
-    // Get selected outlier filtering method
-    function getSignalOutlierFilterMethod() {
-        const methods = ['none', 'iqr', 'percentile', 'zscore'];
-        for (const method of methods) {
-            const radio = document.getElementById(`signal-outlier-${method}`);
-            if (radio && radio.checked) {
-                return method;
-            }
-        }
-        return 'none'; // Default fallback
-    }
+    // Signal Analysis is now handled by the external AGSignalAnalysis.js script
+    // loaded dynamically in the Signal Analysis tab via loadSignalAnalysisInTab() function
     
-    // Update signal analysis status
-    function updateSignalStatus(message, isError = false) {
-        const statusArea = document.getElementById('signal-analysis-results');
-        if (statusArea) {
-            statusArea.style.display = 'block';
-            const timestamp = new Date().toLocaleTimeString();
-            const icon = isError ? '❌' : '📝';
-            const color = isError ? '#ff6b6b' : '#ffffff';
-            
-            statusArea.innerHTML += `<div style="color: ${color}; margin: 2px 0;">
-                <span style="opacity: 0.7;">${timestamp}</span> ${icon} ${message}
-            </div>`;
-            statusArea.scrollTop = statusArea.scrollHeight;
-        }
-    }
+    // createClusterSelectionUI function moved to AGSignalAnalysis.js
     
-    // Create cluster selection UI
-    function createClusterSelectionUI(clusters, fallbackAnalysis) {
-        const clusterSection = document.getElementById('cluster-selection');
-        const clusterButtonsContainer = document.getElementById('cluster-buttons');
-        
-        if (!clusterSection || !clusterButtonsContainer) return;
-        
-        // Clear existing buttons
-        clusterButtonsContainer.innerHTML = '';
-        
-        // Create button style
-        const buttonStyle = `
-            padding: 4px 8px; 
-            margin: 2px; 
-            border: 1px solid #4ECDC4; 
-            border-radius: 3px; 
-            background: rgba(78, 205, 196, 0.1); 
-            color: #4ECDC4; 
-            font-size: 9px; 
-            cursor: pointer;
-            transition: all 0.2s;
-        `;
-        
-        const activeButtonStyle = `
-            padding: 4px 8px; 
-            margin: 2px; 
-            border: 1px solid #FF6B6B; 
-            border-radius: 3px; 
-            background: rgba(255, 107, 107, 0.2); 
-            color: #FF6B6B; 
-            font-size: 9px; 
-            cursor: pointer;
-            font-weight: bold;
-        `;
-        
-        // Add cluster buttons
-        clusters.forEach((cluster, index) => {
-            const button = document.createElement('button');
-            button.innerHTML = `${cluster.name} (${cluster.tokenCount} CAs)`;
-            button.style.cssText = index === 0 ? activeButtonStyle : buttonStyle;
-            button.onclick = () => selectClusterConfig(cluster.id, clusters, fallbackAnalysis);
-            clusterButtonsContainer.appendChild(button);
-        });
-        
-        // Add fallback button (only if fallback analysis is available)
-        if (fallbackAnalysis) {
-            const fallbackButton = document.createElement('button');
-            fallbackButton.innerHTML = `All Signals (${fallbackAnalysis.tokenCount || 0} CAs)`;
-            fallbackButton.style.cssText = buttonStyle;
-            fallbackButton.onclick = () => selectClusterConfig('fallback', clusters, fallbackAnalysis);
-            clusterButtonsContainer.appendChild(fallbackButton);
-        }
-        
-        // Show the cluster selection section
-        clusterSection.style.display = 'block';
-    }
+    // selectClusterConfig function moved to AGSignalAnalysis.js
     
-    // Switch to a different cluster config
-    function selectClusterConfig(configId, clusters, fallbackAnalysis) {
-        let selectedConfig;
-        let selectedCluster = null;
-        
-        if (configId === 'fallback') {
-            if (fallbackAnalysis) {
-                selectedConfig = generateTightestConfig(fallbackAnalysis);
-                window.lastGeneratedConfig = selectedConfig;
-            } else {
-                console.error('❌ Fallback analysis not available');
-                updateSignalStatus('❌ Fallback analysis not available', true);
-                return;
-            }
-        } else {
-            selectedConfig = window[`clusterConfig_${configId}`];
-            window.lastGeneratedConfig = selectedConfig;
-            
-            // Find the selected cluster to get the contract addresses
-            selectedCluster = clusters.find(cluster => cluster.id === configId);
-        }
-        
-        // Update button states
-        const buttons = document.querySelectorAll('#cluster-buttons button');
-        buttons.forEach(btn => {
-            if ((configId === 'fallback' && btn.innerHTML.includes('All Signals')) ||
-                (configId !== 'fallback' && btn.innerHTML.includes(configId.replace('cluster_', 'Cluster ')))) {
-                btn.style.cssText = `
-                    padding: 4px 8px; 
-                    margin: 2px; 
-                    border: 1px solid #FF6B6B; 
-                    border-radius: 3px; 
-                    background: rgba(255, 107, 107, 0.2); 
-                    color: #FF6B6B; 
-                    font-size: 9px; 
-                    cursor: pointer;
-                    font-weight: bold;
-                `;
-            } else {
-                btn.style.cssText = `
-                    padding: 4px 8px; 
-                    margin: 2px; 
-                    border: 1px solid #4ECDC4; 
-                    border-radius: 3px; 
-                    background: rgba(78, 205, 196, 0.1); 
-                    color: #4ECDC4; 
-                    font-size: 9px; 
-                    cursor: pointer;
-                    transition: all 0.2s;
-                `;
-            }
-        });
-        
-        // Show config summary
-        const configType = configId === 'fallback' ? 'All Signals Config' : `Cluster ${configId.replace('cluster_', '')} Config`;
-        updateSignalStatus(`🔄 Switched to: ${configType}`);
-        console.log(`\n=== SELECTED: ${configType} ===`);
-        
-        // Log contract addresses for the selected cluster
-        if (selectedCluster && selectedCluster.tokens) {
-            console.log(`📋 Contract Addresses in ${selectedCluster.name}:`);
-            selectedCluster.tokens.forEach((address, index) => {
-                console.log(`   ${index + 1}. ${address}`);
-            });
-            console.log(`📊 Total: ${selectedCluster.tokens.length} contract addresses`);
-        } else if (configId === 'fallback') {
-            // For fallback, show all contract addresses from the original input
-            const contractAddresses = document.getElementById('signal-contract-input').value
-                .split('\n')
-                .map(addr => addr.trim())
-                .filter(addr => addr.length > 0);
-            console.log(`📋 Contract Addresses in All Signals Config:`);
-            contractAddresses.forEach((address, index) => {
-                console.log(`   ${index + 1}. ${address}`);
-            });
-            console.log(`📊 Total: ${contractAddresses.length} contract addresses`);
-        }
-        
-        console.log(formatConfigForDisplay(selectedConfig));
-    }
-    
-    // Main signal analysis handler
-    async function handleSignalAnalysis() {
-        try {
-            const contractAddresses = document.getElementById('signal-contract-input').value
-                .split('\n')
-                .map(addr => addr.trim())
-                .filter(addr => addr.length > 0);
-            
-            if (contractAddresses.length === 0) {
-                updateSignalStatus('Please enter at least one contract address', true);
-                return;
-            }
-            
-            const signalsPerToken = parseInt(document.getElementById('signals-per-token').value) || 3;
-            const bufferInput = document.getElementById('config-buffer');
-            const bufferPercent = bufferInput && bufferInput.value !== '' ? parseFloat(bufferInput.value) : 0;
-            const outlierMethod = getSignalOutlierFilterMethod();
-            
-            // Clear previous results
-            document.getElementById('signal-analysis-results').innerHTML = '';
-            updateSignalStatus(`Starting analysis of ${contractAddresses.length} contract addresses...`);
-            
-            // Validate contract addresses
-            const validAddresses = [];
-            const invalidAddresses = [];
-            
-            contractAddresses.forEach((addr, index) => {
-                if (addr.length >= 32 && /^[A-Za-z0-9]+$/.test(addr)) {
-                    validAddresses.push(addr);
-                } else {
-                    invalidAddresses.push({addr, reason: addr.length < 32 ? 'too short' : 'invalid characters'});
-                }
-            });
-            
-            if (invalidAddresses.length > 0) {
-                updateSignalStatus(`⚠️ Skipping ${invalidAddresses.length} invalid addresses:`, true);
-                invalidAddresses.forEach(({addr, reason}) => {
-                    updateSignalStatus(`  • ${addr.substring(0, 12)}... (${reason})`, true);
-                });
-            }
-            
-            if (validAddresses.length === 0) {
-                updateSignalStatus('No valid contract addresses found. Please check format.', true);
-                return;
-            }
-            
-            updateSignalStatus(`📝 Processing ${validAddresses.length} valid addresses (${signalsPerToken} signals each)...`);
-            
-            // Show rate limiter info
-            const burstStats = burstRateLimiter.getStats();
-            updateSignalStatus(`🚦 Using burst rate limiting: ${burstStats.currentBurstSize}/${CONFIG.RATE_LIMIT_THRESHOLD} burst, ${CONFIG.INTRA_BURST_DELAY}ms delays`);
-            
-            const allTokenData = [];
-            const errors = [];
-            
-            // Process each token
-            for (let i = 0; i < validAddresses.length; i++) {
-                const address = validAddresses[i];
-                const shortAddr = `${address.substring(0, 6)}...${address.substring(-4)}`;
-                updateSignalStatus(`[${i + 1}/${validAddresses.length}] Processing ${shortAddr}...`);
-                
-                try {
-                    // Get token info and swaps with detailed logging
-                    console.log(`\n🔍 === Processing Token ${i + 1}/${validAddresses.length}: ${shortAddr} ===`);
-                    
-                    const tokenInfo = await getTokenInfo(address);
-                    console.log(`✅ Token info found: ${tokenInfo.token} (${tokenInfo.symbol})`);
-                    
-                    const allSwaps = await getAllTokenSwaps(address);
-                    console.log(`✅ Found ${allSwaps.length} total swaps`);
-                    
-                    // Limit swaps per token
-                    const limitedSwaps = allSwaps.slice(0, signalsPerToken);
-                    console.log(`📊 Using ${limitedSwaps.length} signals (limited from ${allSwaps.length})`);
-                    
-                    // Process token data
-                    const processed = processTokenData(tokenInfo, limitedSwaps);
-                    
-                    // Validate processed data
-                    if (!processed.tokenName || !processed.symbol) {
-                        console.warn(`⚠️ Incomplete token data for ${shortAddr}:`, {
-                            tokenName: processed.tokenName,
-                            symbol: processed.symbol
-                        });
-                    }
-                    
-                    allTokenData.push({
-                        address: address, 
-                        processed: processed,
-                        swaps: limitedSwaps
-                    });
-                    
-                    updateSignalStatus(`✅ [${i + 1}/${validAddresses.length}] ${processed.tokenName} (${processed.symbol}): ${limitedSwaps.length} signals`);
-                    console.log(`✅ Successfully processed ${shortAddr}\n`);
-                    
-                } catch (error) {
-                    console.error(`❌ Failed to process ${shortAddr}:`, error);
-                    errors.push({ address, error: error.message });
-                    updateSignalStatus(`❌ [${i + 1}/${validAddresses.length}] Failed ${shortAddr}: ${error.message}`, true);
-                }
-            }
-            
-            // Summary of results
-            updateSignalStatus(`📊 Processing complete: ${allTokenData.length}/${validAddresses.length} tokens successful, ${errors.length} failed`);
-            
-            if (allTokenData.length === 0) {
-                updateSignalStatus('❌ No valid token data found. All lookups failed.', true);
-                updateSignalStatus('💡 Try checking if the contract addresses are correct and the tokens have signals.', true);
-                return;
-            }
-            
-            // Log detailed summary
-            console.log(`\n📈 === SIGNAL ANALYSIS SUMMARY ===`);
-            console.log(`Total CAs provided: ${contractAddresses.length}`);
-            console.log(`Valid CAs: ${validAddresses.length}`);
-            console.log(`Successfully processed: ${allTokenData.length}`);
-            console.log(`Failed: ${errors.length}`);
-            
-            if (errors.length > 0) {
-                console.log(`❌ Failed tokens:`);
-                errors.forEach(({address, error}) => {
-                    console.log(`  • ${address.substring(0, 8)}...${address.substring(-4)}: ${error}`);
-                });
-            }
-            
-            const totalSignals = allTokenData.reduce((sum, token) => sum + token.swaps.length, 0);
-            console.log(`Total signals collected: ${totalSignals}`);
-            console.log(`Average signals per token: ${(totalSignals / allTokenData.length).toFixed(1)}`);
-            console.log(`=== END SUMMARY ===\n`);
-            
-            // Analyze signals and generate config
-            updateSignalStatus(`Analyzing ${allTokenData.length} tokens with ${outlierMethod} outlier filtering...`);
-            
-            // Check if clustering is enabled
-            const useClusteringCheckbox = document.getElementById('enable-signal-clustering');
-            const useClustering = useClusteringCheckbox ? useClusteringCheckbox.checked : false;
-            
-            const analysis = analyzeSignalCriteria(allTokenData, bufferPercent, outlierMethod, useClustering);
-            
-            if (analysis.type === 'clustered') {
-                // Handle clustered analysis
-                updateSignalStatus(`🎯 Found ${analysis.clusters.length} signal clusters (${analysis.clusteredSignals}/${analysis.totalSignals} signals)`);
-                
-                // Set the best (first) cluster as the main config
-                const bestCluster = analysis.clusters[0];
-                const bestConfig = generateTightestConfig(bestCluster.analysis);
-                window.lastGeneratedConfig = bestConfig;
-                
-                // Display best cluster info
-                updateSignalStatus(`🏆 Best Cluster: ${bestCluster.name} with ${bestCluster.signalCount} signals (tightness: ${(bestCluster.tightness || 0).toFixed(3)})`);
-                
-                // Display each cluster
-                analysis.clusters.forEach((cluster, index) => {
-                    const generatedConfig = generateTightestConfig(cluster.analysis);
-                    const formattedConfig = formatConfigForDisplay(generatedConfig);
-                    
-                    console.log(`\n=== ${cluster.name} (${cluster.signalCount} signals, tightness: ${(cluster.tightness || 0).toFixed(3)}) ===`);
-                    // Validate config against the signals it was based on
-                    validateConfigAgainstSignals(generatedConfig, cluster.signals, cluster.name);
-                    
-                    console.log(formattedConfig);
-                    
-                    // Store cluster config
-                    window[`clusterConfig_${cluster.id}`] = generatedConfig;
-                    
-                    // Show cluster summary in UI
-                    if (index < 3) { // Show first 3 clusters in UI
-                        const clusterSummary = `📊 ${cluster.name}: ${cluster.signalCount} signals, MCAP $${generatedConfig['Min MCAP (USD)']} - $${generatedConfig['Max MCAP (USD)']}`;
-                        updateSignalStatus(clusterSummary);
-                    }
-                });
-                
-                // Also generate and display fallback config
-                const fallbackConfig = analysis.fallbackAnalysis ? 
-                    generateTightestConfig(analysis.fallbackAnalysis) : null;
-                
-                if (fallbackConfig) {
-                    window.fallbackConfig = fallbackConfig;
-                    
-                    console.log(`\n=== FALLBACK CONFIG (All ${analysis.totalSignals} signals) ===`);
-                    // Validate fallback config against all signals
-                    const allSignalsArray = [];
-                    allTokenData.forEach(tokenData => {
-                        tokenData.swaps.forEach(swap => {
-                        if (swap.criteria) {
-                            allSignalsArray.push({
-                                ...swap.criteria,
-                                signalMcap: swap.signalMcap,
-                                athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
-                            });
-                        }
-                    });
-                });
-                validateConfigAgainstSignals(fallbackConfig, allSignalsArray, 'Fallback Config');
-                console.log(formatConfigForDisplay(fallbackConfig));
-                
-                updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs + 1 fallback - details logged to console`);
-                updateSignalStatus(`🎯 Main config set to best cluster: ${bestCluster.name}`);
-                updateSignalStatus(`💡 Use Copy button for best cluster config, or check console for all configs`);
-                } else {
-                    updateSignalStatus(`📋 Generated ${analysis.clusters.length} cluster configs - details logged to console`);
-                    updateSignalStatus(`🎯 Main config set to best cluster: ${bestCluster.name}`);
-                    updateSignalStatus(`💡 Use Copy button for best cluster config, or check console for all configs`);
-                }
-                
-                // Create cluster selection UI
-                createClusterSelectionUI(analysis.clusters, analysis.fallbackAnalysis);
-                updateSignalStatus(`⚠️ Remember to set your Start and End Dates in the Backtester`);
-                
-            } else {
-                // Handle standard analysis
-                const generatedConfig = generateTightestConfig(analysis.analysis);
-                
-                // Format and display the generated config
-                const formattedConfig = formatConfigForDisplay(generatedConfig);
-                console.log('\n' + formattedConfig);
-                updateSignalStatus(`📋 Generated config details logged to console`);
-                
-                // Store config globally for use by apply buttons
-                window.lastGeneratedConfig = generatedConfig;
-                
-                // Show results
-                const summary = generateBatchSummary(allTokenData);
-                updateSignalStatus(`✅ Analysis complete! Generated config from ${analysis.analysis.totalSignals} signals`);
-                updateSignalStatus(`📊 Average MCAP: $${analysis.analysis.mcap.avg}, Signals/Token: ${summary.avgSignalsPerToken}`);
-                updateSignalStatus(`🎯 Config bounds: MCAP $${generatedConfig['Min MCAP (USD)']} - $${generatedConfig['Max MCAP (USD)']}`);
-                updateSignalStatus(`📋 Config details available - use Copy button or check console`);
-            }
-            
-            // Show action buttons
-            document.getElementById('generated-config-actions').style.display = 'block';
-            
-        } catch (error) {
-            updateSignalStatus(`Analysis failed: ${error.message}`, true);
-            console.error('Signal analysis error:', error);
-        }
-    }
+    // handleSignalAnalysis function moved to AGSignalAnalysis.js
 
     // ========================================
     // 🔄 UI COLLAPSE/EXPAND FUNCTIONS
@@ -7959,6 +7318,89 @@
     
     // Load Base Config Builder in the tab (with loading state management)
     let baseConfigBuilderLoaded = false;
+    let signalAnalysisLoaded = false;
+    
+    async function loadSignalAnalysisInTab() {
+        // Don't reload if already loaded
+        if (signalAnalysisLoaded) {
+            return;
+        }
+        
+        const tabContent = document.getElementById('signal-analysis-tab');
+        
+        try {
+            // Show loading state if not already shown
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Signal Analysis...</div>
+                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                    </div>
+                `;
+            }
+            
+            // Load Signal Analysis script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGSignalAnalysis.js';
+            const response = await fetch(scriptUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load Signal Analysis: HTTP ${response.status}`);
+            }
+            
+            const scriptContent = await response.text();
+            
+            // Execute the script - it will automatically detect tab integration
+            eval(scriptContent);
+            
+            signalAnalysisLoaded = true;
+            console.log('✅ Signal Analysis loaded successfully in tab!');
+            
+        } catch (error) {
+            console.error('Signal Analysis loading error:', error);
+            
+            // Show error state in tab
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Signal Analysis</div>
+                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
+                        <button onclick="window.retryLoadSignalAnalysis()" style="
+                            padding: 8px 16px;
+                            background: rgba(139, 92, 246, 0.2);
+                            border: 1px solid rgba(139, 92, 246, 0.4);
+                            border-radius: 6px;
+                            color: #a78bfa;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 600;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
+                           onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
+                            🔄 Retry Loading
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
     
     async function loadBaseConfigBuilderInTab() {
         // Don't reload if already loaded
@@ -8055,6 +7497,30 @@
             `;
         }
         loadBaseConfigBuilderInTab();
+    };
+    
+    // Global retry function for Signal Analysis error recovery
+    window.retryLoadSignalAnalysis = function() {
+        signalAnalysisLoaded = false;
+        const tabContent = document.getElementById('signal-analysis-tab');
+        if (tabContent) {
+            tabContent.innerHTML = `
+                <div style="
+                    text-align: center; 
+                    padding: 40px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 200px;
+                ">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Signal Analysis...</div>
+                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                </div>
+            `;
+        }
+        loadSignalAnalysisInTab();
     };
 
     // ========================================
@@ -8391,9 +7857,17 @@
         
 
         
-        // Signal Analysis event handlers
+        // Signal Analysis event handlers - load external script
         safeAddEventListener('analyze-signals-btn', 'click', async () => {
-            await handleSignalAnalysis();
+            // Ensure Signal Analysis script is loaded before calling
+            if (!window.AGSignalAnalysis) {
+                await loadSignalAnalysisInTab();
+            }
+            if (window.AGSignalAnalysis && typeof window.AGSignalAnalysis.handleSignalAnalysis === 'function') {
+                await window.AGSignalAnalysis.handleSignalAnalysis();
+            } else {
+                console.error('Signal analysis not available - external script may have failed to load');
+            }
         });
         
         safeAddEventListener('apply-generated-config-btn', 'click', async () => {
@@ -8607,66 +8081,8 @@
         return appliedResults;
     }
     
-    // Validate that a generated config would match the original signals it was based on
-    function validateConfigAgainstSignals(config, originalSignals, configName = 'Config') {
-        // Safety check for undefined originalSignals
-        if (!originalSignals || !Array.isArray(originalSignals) || originalSignals.length === 0) {
-            console.log(`⚠️ ${configName}: No signals provided for validation`);
-            return;
-        }
-
-        let matchingSignals = 0;
-        const failReasons = {};
-        
-        originalSignals.forEach((signal, index) => {
-            const failures = [];
-            
-            // Check each config parameter against the signal
-            if (config['Min MCAP (USD)'] !== undefined && signal.signalMcap < config['Min MCAP (USD)']) {
-                failures.push(`MCAP ${signal.signalMcap} < Min ${config['Min MCAP (USD)']}`);
-            }
-            if (config['Max MCAP (USD)'] !== undefined && signal.signalMcap > config['Max MCAP (USD)']) {
-                failures.push(`MCAP ${signal.signalMcap} > Max ${config['Max MCAP (USD)']}`);
-            }
-            
-            if (config['Min AG Score'] !== undefined && signal.agScore < config['Min AG Score']) {
-                failures.push(`AG Score ${signal.agScore} < Min ${config['Min AG Score']}`);
-            }
-            
-            if (config['Min Token Age (sec)'] !== undefined && signal.tokenAge < config['Min Token Age (sec)']) {
-                failures.push(`Token Age ${signal.tokenAge} < Min ${config['Min Token Age (sec)']}`);
-            }
-            if (config['Max Token Age (sec)'] !== undefined && signal.tokenAge > config['Max Token Age (sec)']) {
-                failures.push(`Token Age ${signal.tokenAge} > Max ${config['Max Token Age (sec)']}`);
-            }
-            
-            // Add more validation checks as needed...
-            
-            if (failures.length === 0) {
-                matchingSignals++;
-            } else {
-                failReasons[index] = failures;
-            }
-        });
-        
-        const matchRate = ((matchingSignals / originalSignals.length) * 100).toFixed(1);
-        
-        console.log(`🔍 ${configName} Validation: ${matchingSignals}/${originalSignals.length} signals match (${matchRate}%)`);
-        
-        if (matchingSignals === 0) {
-            console.log('❌ Config validation failed - NO signals would match!');
-            console.log('🔍 First 3 failure reasons:');
-            Object.entries(failReasons).slice(0, 3).forEach(([index, failures]) => {
-                console.log(`   Signal ${index}: ${failures.join(', ')}`);
-            });
-        } else if (matchingSignals < originalSignals.length * 0.5) {
-            console.log(`⚠️ Config validation warning - Only ${matchRate}% of signals would match`);
-        } else {
-            console.log(`✅ Config validation passed - ${matchRate}% of signals would match`);
-        }
-        
-        return { matchingSignals, totalSignals: originalSignals.length, matchRate: parseFloat(matchRate), failReasons };
-    }
+    // validateConfigAgainstSignals function moved to AGSignalAnalysis.js
+    // Available via window.AGSignalAnalysis.validateConfigAgainstSignals()
 
 
     // ========================================
