@@ -6909,6 +6909,39 @@
                                    title="Currently using normal rate limiting (20s wait). Click to switch to slower mode.">
                                     ⏱️ Normal
                                 </button>
+                            </div>
+                            
+                            <!-- Base Config Builder Action Buttons (shown when base config is active) -->
+                            <div id="base-config-actions" style="display: none; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                                <button id="apply-base-config" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
+                                   onclick="window.applyBaseConfig && window.applyBaseConfig()">
+                                    ⚙️ Apply Config
+                                </button>
+                                
+                                <button id="copy-base-config" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
+                                   onclick="window.copyBaseConfig && window.copyBaseConfig()">
+                                    📋 Copy Config
+                                </button>
                             </div>   
                         </div>
                     </div>
