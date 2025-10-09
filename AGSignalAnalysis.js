@@ -1076,29 +1076,37 @@
     // 🎮 EVENT HANDLERS & INITIALIZATION
     // ========================================
     
+    // 🌐 BROWSER: Store event handlers for cleanup
+    const eventHandlers = {
+        analyzeSignals: null,
+        applyConfig: null,
+        copyConfig: null
+    };
+    
     function setupSignalAnalysisEventHandlers() {
         // Helper function to safely add event listener
         const safeAddEventListener = (elementId, event, handler) => {
             const element = document.getElementById(elementId);
             if (element) {
                 element.addEventListener(event, handler);
-                return true;
+                return { element, handler };
             }
-            return false;
+            return null;
         };
 
         // Signal analysis button
-        const success = safeAddEventListener('analyze-signals-btn', 'click', async () => {
+        eventHandlers.analyzeSignals = safeAddEventListener('analyze-signals-btn', 'click', async () => {
             await handleSignalAnalysis();
         });
-        if (success) {
+        
+        if (eventHandlers.analyzeSignals) {
             console.log('✅ Signal analysis event handler attached');
         } else {
             console.warn('⚠️ Signal analysis button not found - may not be in integrated mode');
         }
 
         // Apply generated config
-        safeAddEventListener('apply-generated-config-btn', 'click', async () => {
+        eventHandlers.applyConfig = safeAddEventListener('apply-generated-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig && typeof window.applyConfigToBacktester === 'function') {
                 await window.applyConfigToBacktester(window.lastGeneratedConfig);
                 updateSignalStatus('✅ Generated config applied to backtester!');
@@ -1108,7 +1116,7 @@
         });
 
         // Copy generated config
-        safeAddEventListener('copy-config-btn', 'click', async () => {
+        eventHandlers.copyConfig = safeAddEventListener('copy-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
                 const formattedConfig = formatConfigForDisplay(window.lastGeneratedConfig);
                 try {
@@ -1124,8 +1132,33 @@
             }
         });
         
-        return success;
+        return !!eventHandlers.analyzeSignals;
     }
+    
+    // 🌐 BROWSER: Cleanup function to prevent memory leaks
+    function cleanupSignalAnalysisEventHandlers() {
+        console.log('🧹 Cleaning up Signal Analysis event listeners...');
+        
+        // Remove all event listeners
+        Object.values(eventHandlers).forEach(handlerInfo => {
+            if (handlerInfo && handlerInfo.element && handlerInfo.handler) {
+                handlerInfo.element.removeEventListener('click', handlerInfo.handler);
+            }
+        });
+        
+        // Clear handlers
+        Object.keys(eventHandlers).forEach(key => {
+            eventHandlers[key] = null;
+        });
+        
+        console.log('✅ Signal Analysis event listeners cleaned up');
+    }
+    
+    // 🌐 BROWSER: Register cleanup on page unload
+    window.addEventListener('beforeunload', cleanupSignalAnalysisEventHandlers);
+    
+    // Expose cleanup function globally
+    window.AGSignalAnalysisCleanup = cleanupSignalAnalysisEventHandlers;
 
     // Create standalone signal analysis UI (if not in tab)
     function createSignalAnalysisUI() {
@@ -2128,8 +2161,135 @@
             config['Min AG Score'] = analysis.agScore.min.toString();
         }
         
-        // Add other parameters...
-        // (This is a simplified version - the full function would include all parameters)
+        // Token Age
+        if (analysis.tokenAge) {
+            if (analysis.tokenAge.min !== undefined) {
+                config['Min Token Age (sec)'] = Math.round(analysis.tokenAge.min);
+            }
+            if (analysis.tokenAge.max !== undefined) {
+                config['Max Token Age (sec)'] = Math.round(analysis.tokenAge.max);
+            }
+        }
+        
+        // Deployer Age (in minutes)
+        if (analysis.deployerAge && analysis.deployerAge.min !== undefined) {
+            config['Min Deployer Age (min)'] = Math.round(analysis.deployerAge.min);
+        }
+        
+        // Deployer Balance
+        if (analysis.deployerBalance && analysis.deployerBalance.min !== undefined) {
+            config['Min Deployer Balance (SOL)'] = Math.round(analysis.deployerBalance.min * 100) / 100;
+        }
+        
+        // Wallet counts
+        if (analysis.uniqueWallets) {
+            if (analysis.uniqueWallets.min !== undefined) {
+                config['Min Unique Wallets'] = Math.round(analysis.uniqueWallets.min);
+            }
+            if (analysis.uniqueWallets.max !== undefined) {
+                config['Max Unique Wallets'] = Math.round(analysis.uniqueWallets.max);
+            }
+        }
+        
+        if (analysis.kycWallets) {
+            if (analysis.kycWallets.min !== undefined) {
+                config['Min KYC Wallets'] = Math.round(analysis.kycWallets.min);
+            }
+            if (analysis.kycWallets.max !== undefined) {
+                config['Max KYC Wallets'] = Math.round(analysis.kycWallets.max);
+            }
+        }
+        
+        if (analysis.dormantWallets) {
+            if (analysis.dormantWallets.min !== undefined) {
+                config['Min Dormant Wallets'] = Math.round(analysis.dormantWallets.min);
+            }
+            if (analysis.dormantWallets.max !== undefined) {
+                config['Max Dormant Wallets'] = Math.round(analysis.dormantWallets.max);
+            }
+        }
+        
+        if (analysis.holders) {
+            if (analysis.holders.min !== undefined) {
+                config['Min Holders'] = Math.round(analysis.holders.min);
+            }
+            if (analysis.holders.max !== undefined) {
+                config['Max Holders'] = Math.round(analysis.holders.max);
+            }
+        }
+        
+        // Liquidity
+        if (analysis.liquidity) {
+            if (analysis.liquidity.min !== undefined) {
+                config['Min Liquidity (USD)'] = Math.round(analysis.liquidity.min);
+            }
+            if (analysis.liquidity.max !== undefined) {
+                config['Max Liquidity (USD)'] = Math.round(analysis.liquidity.max);
+            }
+        }
+        
+        // Percentage parameters
+        if (analysis.liquidityPct && analysis.liquidityPct.max !== undefined) {
+            config['Max Liquidity %'] = Math.round(analysis.liquidityPct.max);
+        }
+        
+        if (analysis.buyVolumePct && analysis.buyVolumePct.min !== undefined) {
+            config['Min Buy Ratio %'] = Math.round(analysis.buyVolumePct.min);
+        }
+        
+        if (analysis.bundledPct) {
+            if (analysis.bundledPct.min !== undefined) {
+                config['Min Bundled %'] = Math.round(analysis.bundledPct.min);
+            }
+            if (analysis.bundledPct.max !== undefined) {
+                config['Max Bundled %'] = Math.round(analysis.bundledPct.max);
+            }
+        }
+        
+        if (analysis.drainedPct && analysis.drainedPct.max !== undefined) {
+            config['Max Drained %'] = Math.round(analysis.drainedPct.max);
+        }
+        
+        if (analysis.volMcapPct) {
+            if (analysis.volMcapPct.min !== undefined) {
+                config['Min Vol MCAP %'] = Math.round(analysis.volMcapPct.min);
+            }
+            if (analysis.volMcapPct.max !== undefined) {
+                config['Max Vol MCAP %'] = Math.round(analysis.volMcapPct.max);
+            }
+        }
+        
+        // Win Prediction
+        if (analysis.winPred && analysis.winPred.min !== undefined) {
+            config['Min Win Pred %'] = Math.round(analysis.winPred.min);
+        }
+        
+        // TTC (Time to Complete)
+        if (analysis.ttc) {
+            if (analysis.ttc.min !== undefined) {
+                config['Min TTC (sec)'] = Math.round(analysis.ttc.min);
+            }
+            if (analysis.ttc.max !== undefined) {
+                config['Max TTC (sec)'] = Math.round(analysis.ttc.max);
+            }
+        }
+        
+        // Boolean parameters - set based on majority
+        if (analysis.freshDeployer && analysis.freshDeployer.preferredValue !== null) {
+            config['Fresh Deployer'] = analysis.freshDeployer.preferredValue;
+        }
+        
+        if (analysis.hasDescription && analysis.hasDescription.preferredValue !== null) {
+            config['Description'] = analysis.hasDescription.preferredValue;
+        }
+        
+        if (analysis.hasSignal && analysis.hasSignal.preferredValue !== null) {
+            config['Has Buy Signal'] = analysis.hasSignal.preferredValue;
+        }
+        
+        if (analysis.skipIfNoKycCexFunding && analysis.skipIfNoKycCexFunding.preferredValue !== null) {
+            config['Skip If No KYC/CEX Funding'] = analysis.skipIfNoKycCexFunding.preferredValue;
+        }
         
         return config;
     }

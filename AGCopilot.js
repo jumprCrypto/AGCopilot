@@ -1,4 +1,16 @@
 (async function () {
+    // ========================================
+    // 🌐 DOM READY CHECK (Browser-specific)
+    // ========================================
+    // Ensure DOM is fully loaded before accessing elements
+    if (document.readyState === 'loading') {
+        console.log('⏳ Waiting for DOM to be ready...');
+        await new Promise(resolve => {
+            document.addEventListener('DOMContentLoaded', resolve, { once: true });
+        });
+        console.log('✅ DOM ready, initializing AGCopilot...');
+    }
+    
     console.clear();
     console.log('%c🤖 AG Copilot v2.0 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
     console.log('%c🔍 Direct API Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
@@ -7,7 +19,7 @@
     // 🎯 CONFIGURATION
     // ========================================
     const CONFIG = {
-        // Original AGCopilot Optimization Settings (no API needed)
+        // Original AGCopilot Optimization Settings (no API nQeeded)
         MAX_RUNTIME_MIN: 30,
         BACKTEST_WAIT: 20000, // Based on rate limit recovery test (20s)
         MIN_TOKENS: 10, // Minimum tokens per day (scaled by date range)
@@ -237,7 +249,20 @@
     // ========================================
     // �🛠️ UTILITIES
     // ========================================
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const sleep = async (ms) => {
+        const sleepStart = Date.now();
+        await new Promise(resolve => setTimeout(resolve, ms));
+        const actualElapsed = Date.now() - sleepStart;
+        
+        // Detect if tab was backgrounded (browser throttles timers)
+        if (actualElapsed > ms * 1.5) {
+            const drift = actualElapsed - ms;
+            console.warn(`⚠️ Timer drift detected: expected ${ms}ms, actual ${actualElapsed}ms (${drift}ms drift)`);
+            console.warn('💡 Tab may have been backgrounded. Browser throttles timers in background tabs.');
+        }
+        
+        return actualElapsed;
+    };
     
     // Make sleep globally available for external scripts
     window.sleep = sleep;
@@ -1311,6 +1336,81 @@
             this.currentRun = 0;
             this.totalRuns = 1;
             this.maxRuntimeMs = CONFIG.MAX_RUNTIME_MIN * 60 * 1000; // Will be updated in startOptimization
+            
+            // 🌐 BROWSER: Session persistence key
+            this.persistKey = 'agcopilot_session';
+            
+            // 🌐 BROWSER: Try to restore from localStorage
+            this.restoreSession();
+        }
+        
+        // 🌐 BROWSER: Save session state to localStorage
+        saveSession() {
+            try {
+                const state = {
+                    currentBest: this.currentBest,
+                    totalTests: this.totalTests,
+                    failedTests: this.failedTests,
+                    rateLimitFailures: this.rateLimitFailures,
+                    startTime: this.startTime,
+                    isRunning: this.isRunning,
+                    currentRun: this.currentRun,
+                    totalRuns: this.totalRuns,
+                    maxRuntimeMs: this.maxRuntimeMs,
+                    timestamp: Date.now()
+                };
+                
+                localStorage.setItem(this.persistKey, JSON.stringify(state));
+            } catch (error) {
+                if (error.name === 'QuotaExceededError') {
+                    console.warn('⚠️ localStorage quota exceeded. Session persistence disabled.');
+                } else {
+                    console.warn('⚠️ Could not save session:', error.message);
+                }
+            }
+        }
+        
+        // 🌐 BROWSER: Restore session state from localStorage
+        restoreSession() {
+            try {
+                const stored = localStorage.getItem(this.persistKey);
+                if (stored) {
+                    const state = JSON.parse(stored);
+                    
+                    // Only restore if session is recent (within last hour)
+                    const ageMs = Date.now() - (state.timestamp || 0);
+                    if (ageMs < 3600000) { // 1 hour
+                        this.currentBest = state.currentBest;
+                        this.totalTests = state.totalTests || 0;
+                        this.failedTests = state.failedTests || 0;
+                        this.rateLimitFailures = state.rateLimitFailures || 0;
+                        // Don't restore isRunning - optimization should be manually restarted
+                        this.currentRun = state.currentRun || 0;
+                        this.totalRuns = state.totalRuns || 1;
+                        this.maxRuntimeMs = state.maxRuntimeMs || CONFIG.MAX_RUNTIME_MIN * 60 * 1000;
+                        
+                        if (this.currentBest) {
+                            console.log(`💾 Session restored: ${this.totalTests} tests, best score: ${this.currentBest.metrics?.tpPnlPercent?.toFixed(1) || 'N/A'}%`);
+                            this.updateBestConfigDisplay();
+                        }
+                    } else {
+                        console.log('💾 Session data expired (>1hr), starting fresh');
+                        localStorage.removeItem(this.persistKey);
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️ Could not restore session:', error.message);
+            }
+        }
+        
+        // 🌐 BROWSER: Clear session data
+        clearSession() {
+            try {
+                localStorage.removeItem(this.persistKey);
+                console.log('💾 Session data cleared');
+            } catch (error) {
+                console.warn('⚠️ Could not clear session:', error.message);
+            }
         }
 
         startOptimization(totalRuns = 1) {
@@ -1324,6 +1424,7 @@
             this.currentRun = 1;
             this.totalRuns = totalRuns;
             this.maxRuntimeMs = CONFIG.MAX_RUNTIME_MIN * 60 * 1000 * totalRuns; // Total runtime for all runs
+            this.saveSession(); // 🌐 BROWSER: Persist state
             this.updateBestConfigDisplay();
         }
         
@@ -1331,6 +1432,7 @@
         setCurrentRun(runNumber, totalRuns = null) {
             this.currentRun = runNumber;
             if (totalRuns) this.totalRuns = totalRuns;
+            this.saveSession(); // 🌐 BROWSER: Persist state
             this.updateBestConfigDisplay();
         }
         
@@ -1375,6 +1477,7 @@
         stopOptimization() {
             this.isRunning = false;
             updateBestConfigHeader('idle');  // Reset header when optimization is manually stopped
+            this.saveSession(); // 🌐 BROWSER: Persist state
             // Keep display showing final results
         }
 
@@ -1383,6 +1486,14 @@
             this.failedTests = failedCount;
             this.rateLimitFailures = rateLimitFailures;
             if (currentBest) this.currentBest = currentBest;
+            
+            // 🌐 BROWSER: Throttle saves to avoid excessive localStorage writes
+            if (!this._saveTimeout) {
+                this._saveTimeout = setTimeout(() => {
+                    this.saveSession();
+                    this._saveTimeout = null;
+                }, 5000); // Save at most every 5 seconds
+            }
             
             this.updateBestConfigDisplay();
         }
@@ -1395,6 +1506,7 @@
                     method: method,
                     timestamp: Date.now()
                 };
+                this.saveSession(); // 🌐 BROWSER: Persist state immediately on best update
                 this.updateBestConfigDisplay();
             }
         }
@@ -1829,7 +1941,7 @@
                 apiParams.sources = selectedSources;
             }
             
-            apiParams.excludeSpoofedTokens = true;            
+            //apiParams.excludeSpoofedTokens = true;            
             apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
             
             // Add date range parameters if provided
@@ -2055,6 +2167,7 @@
                     try {
                         const response = await fetch(url, {
                             method: 'GET',
+                            mode: 'cors', // Explicit CORS mode
                             credentials: 'include',
                             headers: {
                                 'Accept': 'application/json',
@@ -2186,7 +2299,27 @@
                         return result;
                         
                     } catch (error) {
-                        console.warn(`❌ API attempt ${attempt} failed: ${error.message}`);
+                        // 🌐 BROWSER: Enhanced CORS and network error handling
+                        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                            console.error('❌ Network or CORS error detected:', error.message);
+                            console.error('📋 Troubleshooting steps:');
+                            console.error('   1. Ensure you\'re on backtester.alphagardeners.xyz');
+                            console.error('   2. Check that you\'re logged in to the backtester');
+                            console.error('   3. Verify browser allows cookies from this site');
+                            console.error('   4. Disable browser extensions (uBlock, Privacy Badger, etc.)');
+                            console.error('   5. Try refreshing the page and reloading AGCopilot');
+                            
+                            if (attempt === retries) {
+                                return {
+                                    success: false,
+                                    error: `Network/CORS error: ${error.message}. Please check console for troubleshooting steps.`,
+                                    isCorsError: true,
+                                    source: 'API'
+                                };
+                            }
+                        } else {
+                            console.warn(`❌ API attempt ${attempt} failed: ${error.message}`);
+                        }
                         
                         if (attempt === retries) {
                             return {
@@ -3893,13 +4026,15 @@
     window.formatConfigForDisplay = formatConfigForDisplay;
 
     // ========================================
-    // 💾 CONFIG CACHE
+    // 💾 CONFIG CACHE (with localStorage persistence)
     // ========================================
     class ConfigCache {
-        constructor(maxSize = 1000) {
+        constructor(maxSize = 1000, persistKey = 'agcopilot_cache') {
             this.cache = new Map();
             this.maxSize = maxSize;
             this.accessOrder = [];
+            this.persistKey = persistKey;
+            
             // 🚀 OPTIMIZATION: Add cache hit tracking
             this.metrics = {
                 hits: 0,
@@ -3907,6 +4042,61 @@
                 apiCallsSaved: 0,
                 totalRequests: 0
             };
+            
+            // 🌐 BROWSER ENHANCEMENT: Load from localStorage on init
+            this.loadFromStorage();
+        }
+        
+        // 🌐 BROWSER: Load cache from localStorage
+        loadFromStorage() {
+            try {
+                const stored = localStorage.getItem(this.persistKey);
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    
+                    // Restore cache entries
+                    if (parsed.entries && Array.isArray(parsed.entries)) {
+                        // Limit to maxSize entries (in case localStorage has more)
+                        const entriesToLoad = parsed.entries.slice(-this.maxSize);
+                        this.cache = new Map(entriesToLoad);
+                        this.accessOrder = entriesToLoad.map(([key]) => key);
+                        
+                        console.log(`💾 Loaded ${this.cache.size} cached configs from localStorage`);
+                    }
+                    
+                    // Restore metrics if available
+                    if (parsed.metrics) {
+                        this.metrics = { ...this.metrics, ...parsed.metrics };
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️ Could not load cache from localStorage:', error.message);
+                // Continue with empty cache if loading fails
+            }
+        }
+        
+        // 🌐 BROWSER: Save cache to localStorage
+        saveToStorage() {
+            try {
+                const data = {
+                    entries: Array.from(this.cache.entries()),
+                    metrics: this.metrics,
+                    timestamp: Date.now()
+                };
+                
+                localStorage.setItem(this.persistKey, JSON.stringify(data));
+            } catch (error) {
+                // Likely quota exceeded - silently fail or clear old data
+                if (error.name === 'QuotaExceededError') {
+                    console.warn('⚠️ localStorage quota exceeded. Cache persistence disabled.');
+                    // Try to clear our cache to free space
+                    try {
+                        localStorage.removeItem(this.persistKey);
+                    } catch (e) { /* ignore */ }
+                } else {
+                    console.warn('⚠️ Could not save cache to localStorage:', error.message);
+                }
+            }
         }
 
         generateKey(config) {
@@ -3978,6 +4168,14 @@
                 this.accessOrder.splice(index, 1);
             }
             this.accessOrder.push(key);
+            
+            // 🌐 BROWSER: Persist to localStorage (throttled to avoid excessive writes)
+            if (!this._saveTimeout) {
+                this._saveTimeout = setTimeout(() => {
+                    this.saveToStorage();
+                    this._saveTimeout = null;
+                }, 2000); // Save at most every 2 seconds
+            }
         }
 
         clear() {
@@ -3990,6 +4188,14 @@
                 apiCallsSaved: 0,
                 totalRequests: 0
             };
+            
+            // 🌐 BROWSER: Clear localStorage
+            try {
+                localStorage.removeItem(this.persistKey);
+                console.log('💾 Cache cleared from memory and localStorage');
+            } catch (error) {
+                console.warn('⚠️ Could not clear localStorage:', error.message);
+            }
         }
 
         size() {
