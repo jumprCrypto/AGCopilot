@@ -157,7 +157,8 @@
         console.log(`🔄 Fetching swap history for: ${contractAddress.substring(0, 8)}...${contractAddress.substring(-4)}`);
         
         try {
-            const url = `${SIGNAL_CONFIG.API_BASE_URL}/swaps?search=${contractAddress}&sort=timestamp&direction=desc&limit=50`;
+            // Use the dedicated by-token endpoint to get ALL swaps (not limited to 50)
+            const url = `${SIGNAL_CONFIG.API_BASE_URL}/swaps/by-token/${contractAddress}`;
             const data = await fetchWithRetry(url);
             
             if (!data || !data.swaps || data.swaps.length === 0) {
@@ -165,7 +166,7 @@
                 throw new Error('No swap history found - token may have no signals or be very recent');
             }
             
-            console.log(`  ✅ Found ${data.swaps.length} signals for token`);
+            console.log(`  ✅ Found ${data.swaps.length} signals for token (using /swaps/by-token endpoint)`);
             return data.swaps;
             
         } catch (error) {
@@ -416,6 +417,81 @@
         return finalClusters;
     }
 
+    // Characterize cluster - identify distinctive features
+    function characterizeCluster(clusterSignals, allSignals) {
+        const characteristics = [];
+        
+        // Key parameters to analyze
+        const params = [
+            { field: 'signalMcap', name: 'MCAP', format: (v) => `$${Math.round(v).toLocaleString()}` },
+            { field: 'agScore', name: 'AG Score', format: (v) => v.toFixed(1) },
+            { field: 'uniqueCount', name: 'Unique Wallets', format: (v) => Math.round(v) },
+            { field: 'kycCount', name: 'KYC Wallets', format: (v) => Math.round(v) },
+            { field: 'liquidity', name: 'Liquidity', format: (v) => `$${Math.round(v).toLocaleString()}` },
+            { field: 'liquidityPct', name: 'Liquidity %', format: (v) => `${v.toFixed(1)}%` },
+            { field: 'tokenAge', name: 'Token Age (sec)', format: (v) => Math.round(v) },
+            { field: 'deployerAge', name: 'Deployer Age (sec)', format: (v) => Math.round(v) },
+            { field: 'buyVolumePct', name: 'Buy Volume %', format: (v) => `${v.toFixed(1)}%` },
+            { field: 'bundledPct', name: 'Bundled %', format: (v) => `${v.toFixed(1)}%` },
+            { field: 'winPredPercent', name: 'Win Pred %', format: (v) => `${v.toFixed(1)}%` }
+        ];
+        
+        params.forEach(({ field, name, format }) => {
+            const clusterValues = clusterSignals.map(s => s[field]).filter(v => v != null && !isNaN(v));
+            const allValues = allSignals.map(s => s[field]).filter(v => v != null && !isNaN(v));
+            
+            if (clusterValues.length === 0 || allValues.length === 0) return;
+            
+            const clusterMin = Math.min(...clusterValues);
+            const clusterMax = Math.max(...clusterValues);
+            const clusterAvg = clusterValues.reduce((a, b) => a + b, 0) / clusterValues.length;
+            
+            const allMin = Math.min(...allValues);
+            const allMax = Math.max(...allValues);
+            const allAvg = allValues.reduce((a, b) => a + b, 0) / allValues.length;
+            
+            // Calculate how distinctive this parameter is for the cluster
+            const rangeOverlap = Math.min(clusterMax, allMax) - Math.max(clusterMin, allMin);
+            const allRange = allMax - allMin;
+            const clusterRange = clusterMax - clusterMin;
+            const overlapRatio = allRange > 0 ? rangeOverlap / allRange : 0;
+            
+            // Calculate average deviation from overall average
+            const avgDeviation = Math.abs(clusterAvg - allAvg);
+            const avgDeviationPct = allAvg !== 0 ? (avgDeviation / allAvg) * 100 : 0;
+            
+            // Parameter is distinctive if:
+            // 1. Range is narrow (cluster range < 50% of all range), OR
+            // 2. Average is significantly different (>30% deviation), OR
+            // 3. Values are concentrated (overlap < 70%)
+            const isDistinctive = 
+                (clusterRange < allRange * 0.5) || 
+                (avgDeviationPct > 30) || 
+                (overlapRatio < 0.7);
+            
+            if (isDistinctive) {
+                characteristics.push({
+                    field,
+                    name,
+                    clusterMin: format(clusterMin),
+                    clusterMax: format(clusterMax),
+                    clusterAvg: format(clusterAvg),
+                    allMin: format(allMin),
+                    allMax: format(allMax),
+                    allAvg: format(allAvg),
+                    distinctiveness: avgDeviationPct,
+                    rangeRatio: clusterRange / allRange,
+                    description: `${format(clusterMin)} - ${format(clusterMax)} (overall: ${format(allMin)} - ${format(allMax)})`
+                });
+            }
+        });
+        
+        // Sort by distinctiveness
+        characteristics.sort((a, b) => b.distinctiveness - a.distinctiveness);
+        
+        return characteristics;
+    }
+
     // Analyze all signals to find optimal parameter bounds
     function analyzeSignalCriteria(allTokenData, bufferPercent = 10, outlierMethod = 'none', useClustering = true) {
         console.log(`\n🔬 === STARTING SIGNAL CRITERIA ANALYSIS ===`);
@@ -474,10 +550,24 @@
                 
                 const clusterAnalyses = clusters.map((cluster, index) => {
                     const clusterSignals = cluster.signals.map(idx => allSignals[idx]);
+                    
+                    // Characterize the cluster to find distinctive features
+                    const characteristics = characterizeCluster(clusterSignals, allSignals);
+                    
                     console.log(`\n📊 Cluster ${index + 1}:`);
                     console.log(`  • ${cluster.signals.length} signals from ${cluster.tokens.size} tokens`);
                     console.log(`  • Average distance: ${cluster.avgDistance.toFixed(3)} (threshold: ${cluster.threshold})`);
                     console.log(`  • Token diversity: ${((cluster.tokens.size / allTokenData.length) * 100).toFixed(1)}% of total tokens`);
+                    
+                    // Display distinctive features
+                    if (characteristics.length > 0) {
+                        console.log(`  🔍 Distinctive Features (top ${Math.min(5, characteristics.length)}):`);
+                        characteristics.slice(0, 5).forEach(char => {
+                            console.log(`     • ${char.name}: ${char.description}`);
+                        });
+                    } else {
+                        console.log(`  🔍 No highly distinctive features (signals broadly distributed)`);
+                    }
                     
                     const analysis = generateClusterAnalysis(clusterSignals, bufferPercent, outlierMethod);
                     analysis.clusterInfo = {
@@ -486,14 +576,17 @@
                         tokenCount: cluster.tokens.size,
                         avgDistance: cluster.avgDistance,
                         threshold: cluster.threshold,
-                        tokens: Array.from(cluster.tokens)
+                        tokens: Array.from(cluster.tokens),
+                        characteristics: characteristics
                     };
                     
                     return analysis;
                 });
                 
-                // Also generate fallback analysis for comparison
-                const fallbackAnalysis = generateFullAnalysis(allSignals, bufferPercent, outlierMethod, allTokenData.length);
+                // Generate fallback analysis with more generous buffer (20%) for maximum inclusivity
+                const fallbackBufferPercent = Math.max(20, bufferPercent); // At least 20% buffer for fallback
+                const fallbackAnalysis = generateFullAnalysis(allSignals, fallbackBufferPercent, outlierMethod, allTokenData.length);
+                fallbackAnalysis.configType = 'Fallback (Wide Range)'; // Mark it as fallback
                 
                 return {
                     type: 'clustered',
@@ -884,26 +977,12 @@
                         allTokenData.forEach(tokenData => {
                             tokenData.swaps.forEach(swap => {
                                 if (swap) {
-                                    // Access fields directly from swap object (not swap.criteria)
-                                    allSignalsArray.push({
-                                        signalMcap: swap.signalMcap,
-                                        agScore: swap.agScore,
-                                        tokenAge: swap.tokenAge,
-                                        deployerAge: swap.deployerAge,
-                                        deployerBalance: swap.deployerBalance,
-                                        uniqueCount: swap.uniqueCount,
-                                        kycCount: swap.kycCount,
-                                        dormantCount: swap.dormantCount,
-                                        liquidity: swap.liquidity,
-                                        liquidityPct: swap.liquidityPct,
-                                        buyVolumePct: swap.buyVolumePct,
-                                        bundledPct: swap.bundledPct,
-                                        drainedPct: swap.drainedPct,
-                                        volMcapPct: swap.volMcapPct,
-                                        winPredPercent: swap.winPredPercent,
-                                        ttc: swap.ttc,
-                                        athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
-                                    });
+                                    // Flatten criteria fields onto swap for validation
+                                    const flattenedSwap = {
+                                        ...swap,
+                                        ...(swap.criteria || {})
+                                    };
+                                    allSignalsArray.push(flattenedSwap);
                                 }
                             });
                         });
@@ -1094,7 +1173,7 @@
                         display: block;
                         margin-bottom: 4px;
                     ">Signals/Token</label>
-                    <input type="number" id="signals-per-token" value="6" min="1" max="999" style="
+                    <input type="number" id="signals-per-token" value="100" min="1" max="999" style="
                         width: 60px;
                         padding: 6px 8px;
                         background: #2d3748;
@@ -1899,9 +1978,15 @@
                 const rawMax = Math.max(...pcts);
                 const avg = pcts.reduce((sum, p) => sum + p, 0) / pcts.length;
                 
+                // Vol MCAP % has high variance, use additive buffer instead of multiplicative
+                // Add ±15 percentage points to ensure inclusivity
+                const additiveBuffer = 15;
+                const bufferedMin = Math.max(0, Math.round(rawMin - additiveBuffer));
+                const bufferedMax = Math.min(300, Math.round(rawMax + additiveBuffer));
+                
                 return {
-                    min: applyBuffer(rawMin, true), // Decrease min
-                    max: applyBuffer(rawMax, false), // Increase max
+                    min: bufferedMin,
+                    max: bufferedMax,
                     avg: Math.round(avg * 100) / 100,
                     count: pcts.length
                 };
@@ -2221,13 +2306,37 @@
         
         let matchCount = 0;
         let totalChecks = 0;
+        let failedParams = [];
         
-        // Validate key parameters
+        // Comprehensive parameter validation
         const validations = [
             { param: 'Min MCAP (USD)', field: 'signalMcap', operator: '>=' },
             { param: 'Max MCAP (USD)', field: 'signalMcap', operator: '<=' },
             { param: 'Min AG Score', field: 'agScore', operator: '>=' },
-            // Add more validations as needed
+            { param: 'Min Token Age (sec)', field: 'tokenAge', operator: '>=' },
+            { param: 'Max Token Age (sec)', field: 'tokenAge', operator: '<=' },
+            { param: 'Min Deployer Age (min)', field: 'deployerAge', operator: '>=' },
+            { param: 'Min Deployer Balance (SOL)', field: 'deployerBalance', operator: '>=' },
+            { param: 'Min Unique Wallets', field: 'uniqueCount', operator: '>=' },
+            { param: 'Max Unique Wallets', field: 'uniqueCount', operator: '<=' },
+            { param: 'Min KYC Wallets', field: 'kycCount', operator: '>=' },
+            { param: 'Max KYC Wallets', field: 'kycCount', operator: '<=' },
+            { param: 'Min Dormant Wallets', field: 'dormantCount', operator: '>=' },
+            { param: 'Max Dormant Wallets', field: 'dormantCount', operator: '<=' },
+            { param: 'Min Holders', field: 'holdersCount', operator: '>=' },
+            { param: 'Max Holders', field: 'holdersCount', operator: '<=' },
+            { param: 'Min Liquidity (USD)', field: 'liquidity', operator: '>=' },
+            { param: 'Max Liquidity (USD)', field: 'liquidity', operator: '<=' },
+            { param: 'Max Liquidity %', field: 'liquidityPct', operator: '<=' },
+            { param: 'Min Buy Ratio %', field: 'buyVolumePct', operator: '>=' },
+            { param: 'Min Bundled %', field: 'bundledPct', operator: '>=' },
+            { param: 'Max Bundled %', field: 'bundledPct', operator: '<=' },
+            { param: 'Max Drained %', field: 'drainedPct', operator: '<=' },
+            { param: 'Min Vol MCAP %', field: 'volMcapPct', operator: '>=' },
+            { param: 'Max Vol MCAP %', field: 'volMcapPct', operator: '<=' },
+            { param: 'Min Win Pred %', field: 'winPredPercent', operator: '>=' },
+            { param: 'Min TTC (sec)', field: 'ttc', operator: '>=' },
+            { param: 'Max TTC (sec)', field: 'ttc', operator: '<=' }
         ];
         
         validations.forEach(({ param, field, operator }) => {
@@ -2248,14 +2357,27 @@
                 totalChecks += originalSignals.length;
                 
                 const percentage = ((matches.length / originalSignals.length) * 100).toFixed(1);
-                console.log(`  ${param} ${operator} ${configValue}: ${matches.length}/${originalSignals.length} signals match (${percentage}%)`);
+                const matchStatus = matches.length === originalSignals.length ? '✅' : '⚠️';
+                console.log(`  ${matchStatus} ${param} ${operator} ${configValue}: ${matches.length}/${originalSignals.length} (${percentage}%)`);
+                
+                // Track parameters that filter out signals
+                if (matches.length < originalSignals.length) {
+                    failedParams.push({ param, configValue, matches: matches.length, total: originalSignals.length });
+                }
             }
         });
         
         const overallMatchRate = totalChecks > 0 ? ((matchCount / totalChecks) * 100).toFixed(1) : 0;
         console.log(`📊 Overall validation: ${overallMatchRate}% of parameter checks passed`);
         
-        return overallMatchRate > 80; // Return true if >80% of checks pass
+        if (failedParams.length > 0) {
+            console.warn(`⚠️ ${failedParams.length} parameters are filtering out signals:`);
+            failedParams.forEach(({ param, configValue, matches, total }) => {
+                console.warn(`   • ${param} = ${configValue} (excludes ${total - matches} signals)`);
+            });
+        }
+        
+        return overallMatchRate > 80;
     }
 
     // Find clusters using distance threshold approach
