@@ -812,7 +812,6 @@
                 return;
             }
             
-            const signalsPerToken = parseInt(document.getElementById('signals-per-token').value) || SIGNAL_CONFIG.DEFAULT_SIGNALS_PER_TOKEN;
             const bufferInput = document.getElementById('config-buffer');
             const bufferPercent = bufferInput && bufferInput.value !== '' ? parseFloat(bufferInput.value) : SIGNAL_CONFIG.DEFAULT_BUFFER_PERCENT;
             const outlierMethod = getSignalOutlierFilterMethod();
@@ -851,7 +850,7 @@
                 return;
             }
             
-            updateSignalStatus(`📝 Processing ${validAddresses.length} valid addresses (${signalsPerToken} signals each)...`);
+            updateSignalStatus(`📝 Processing ${validAddresses.length} valid addresses (ALL signals per token)...`);
             
             // Show rate limiter info
             const burstStats = window.burstRateLimiter.getStats();
@@ -874,14 +873,11 @@
                     console.log(`✅ Token info found: ${tokenInfo.token} (${tokenInfo.symbol})`);
                     
                     const allSwaps = await getAllTokenSwaps(address);
-                    console.log(`✅ Found ${allSwaps.length} total swaps`);
-                    
-                    // Limit swaps per token
-                    const limitedSwaps = allSwaps.slice(0, signalsPerToken);
-                    console.log(`📊 Using ${limitedSwaps.length} signals (limited from ${allSwaps.length})`);
+                    console.log(`✅ Found ${allSwaps.length} total swaps for this token`);
+                    console.log(`📊 Using ALL ${allSwaps.length} signals (no artificial limits)`);
                     
                     // Process token data
-                    const processed = processTokenData(tokenInfo, limitedSwaps);
+                    const processed = processTokenData(tokenInfo, allSwaps);
                     
                     // Validate processed data
                     if (!processed.tokenName || !processed.symbol) {
@@ -897,11 +893,11 @@
                     // Store token data
                     allTokenData.push({
                         processed: processed,
-                        swaps: limitedSwaps,
+                        swaps: allSwaps,
                         tokenInfo: tokenInfo
                     });
                     
-                    updateSignalStatus(`✅ [${i + 1}/${validAddresses.length}] ${processed.symbol} - ${limitedSwaps.length} signals`);
+                    updateSignalStatus(`✅ [${i + 1}/${validAddresses.length}] ${processed.symbol} - ${allSwaps.length} signals`);
                     
                 } catch (error) {
                     console.error(`❌ Token processing failed for ${shortAddr}:`, error);
@@ -1161,31 +1157,17 @@
                     transition: border-color 0.2s;
                     box-sizing: border-box;
                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'"></textarea>
+                <div style="
+                    font-size: 10px;
+                    color: #718096;
+                    margin-top: 6px;
+                    font-style: italic;
+                ">💡 All signals from each token will be analyzed (no limits)</div>
             </div>
 
             <!-- Settings Grid -->
-            <div style="display: grid; grid-template-columns: auto auto 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px;">
-                <div>
-                    <label style="
-                        font-size: 11px;
-                        font-weight: 500;
-                        color: #a0aec0;
-                        display: block;
-                        margin-bottom: 4px;
-                    ">Signals/Token</label>
-                    <input type="number" id="signals-per-token" value="100" min="1" max="999" style="
-                        width: 60px;
-                        padding: 6px 8px;
-                        background: #2d3748;
-                        border: 1px solid #4a5568;
-                        border-radius: 4px;
-                        color: #e2e8f0;
-                        font-size: 11px;
-                        text-align: center;
-                        outline: none;
-                        transition: border-color 0.2s;
-                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                </div>
+            <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: end; margin-bottom: 16px;">
+                <!-- REMOVED: Signals/Token input - now always uses ALL signals -->
                 <div>
                     <label style="
                         font-size: 11px;
