@@ -839,10 +839,10 @@
 
     // Get date range from UI
     function getDateRange() {
-    const fromDateInput = findBacktesterInput('Start Date', 'input[type="date"]');
-    const toDateInput = findBacktesterInput('End Date', 'input[type="date"]');
-    const fromDate = fromDateInput ? fromDateInput.value : null;
-    const toDate = toDateInput ? toDateInput.value : null;
+        const fromDateInput = findBacktesterInput('Start Date', 'input[type="date"]');
+        const toDateInput = findBacktesterInput('End Date', 'input[type="date"]');
+        const fromDate = fromDateInput ? fromDateInput.value : null;
+        const toDate = toDateInput ? toDateInput.value : null;
         
         // Return null for empty strings to avoid adding empty parameters
         return {
@@ -851,7 +851,18 @@
         };
     }
 
-    // Calculate date range duration in days and scaling factor for token thresholds
+    // Get buying amount from UI
+    function getBuyingAmount() {
+        const buyingAmountInput = findBacktesterInput('Buying Amount (SOL)', 'input[type="number"]');
+        if (buyingAmountInput && buyingAmountInput.value) {
+            const value = parseFloat(buyingAmountInput.value);
+            if (!isNaN(value) && value > 0) {
+                return value;
+            }
+        }
+        // Fallback to default if not found or invalid
+        return CONFIG.DEFAULT_BUYING_AMOUNT;
+    }    // Calculate date range duration in days and scaling factor for token thresholds
     function getDateRangeScaling() {
         const dateRange = getDateRange();
         const DEFAULT_DAYS = 7; // Base scaling factor for 7-day period
@@ -1940,9 +1951,16 @@
                 // API expects multiple sources parameters like: sources=1&sources=2&sources=3
                 apiParams.sources = selectedSources;
             }
-            
-            //apiParams.excludeSpoofedTokens = true;            
-            apiParams.buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
+                     
+            // Get buying amount: priority order: config > UI > default
+            let buyingAmount = CONFIG.DEFAULT_BUYING_AMOUNT;
+            if (config?.buyingAmount !== undefined && !isNaN(config.buyingAmount)) {
+                buyingAmount = config.buyingAmount;
+            } else {
+                buyingAmount = getBuyingAmount();
+            }
+            apiParams.buyingAmount = buyingAmount;
+            console.log(`💰 Using buying amount: ${buyingAmount} SOL`);
             
             // Add date range parameters if provided
             const dateRange = getDateRange();
@@ -5810,6 +5828,13 @@
             config.dateRange = {};
             if (dateRange.fromDate) config.dateRange.fromDate = dateRange.fromDate;
             if (dateRange.toDate) config.dateRange.toDate = dateRange.toDate;
+        }
+
+        // Read buying amount from UI
+        const buyingAmount = getBuyingAmount();
+        if (buyingAmount !== CONFIG.DEFAULT_BUYING_AMOUNT) {
+            // Only store if different from default
+            config.buyingAmount = buyingAmount;
         }
 
         const weekdays = getSelectedWeekdays({ forceRefresh: true });
