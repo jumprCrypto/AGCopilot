@@ -17,12 +17,12 @@
         API_BASE_URL: 'https://backtester.alphagardeners.xyz/api',
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
-        REQUEST_DELAY: 9360, // For signal analysis API (60% of BACKTEST_WAIT)
+        REQUEST_DELAY: 2000, // Conservative delay between requests
         
         // Analysis Settings
         DEFAULT_SIGNALS_PER_TOKEN: 3,
         DEFAULT_BUFFER_PERCENT: 10,
-        DEFAULT_OUTLIER_METHOD: 'none',
+        DEFAULT_OUTLIER_METHOD: 'iqr',
         MIN_CLUSTER_SIZE: 3,
         MAX_CLUSTERS: 8,
         
@@ -31,34 +31,54 @@
     };
 
     // ========================================
-    // 🛠️ UTILITIES & VALIDATION
+    // 🛠️ UTILITIES & DEPENDENCY MANAGEMENT
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Check if required AGCopilot functions are available
-    function validateDependencies() {
-        const required = [
-            'burstRateLimiter', 'CONFIG', 'formatTimestamp', 'formatMcap', 
-            'formatPercent', 'deepClone', 'removeOutliers', 'formatConfigForDisplay'
-        ];
+    // Wait for AGCopilot to fully load
+    async function waitForAGCopilot(timeout = 10000) {
+        const startTime = Date.now();
         
-        const missing = required.filter(dep => typeof window[dep] === 'undefined');
-        if (missing.length > 0) {
-            throw new Error(`Missing AGCopilot dependencies: ${missing.join(', ')}. Please run AGCopilot.js first and ensure it has fully loaded.`);
+        console.log('⏳ Waiting for AGCopilot to load...');
+        
+        while (Date.now() - startTime < timeout) {
+            if (window.burstRateLimiter && 
+                window.CONFIG && 
+                typeof window.deepClone === 'function' &&
+                typeof window.burstRateLimiter.throttle === 'function') {
+                console.log('✅ AGCopilot core dependencies detected');
+                return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
-        // Additional validation for required objects
-        if (!window.CONFIG || typeof window.CONFIG !== 'object') {
-            throw new Error('CONFIG object is not properly initialized. Please ensure AGCopilot.js has fully loaded.');
-        }
-        
-        if (!window.burstRateLimiter || typeof window.burstRateLimiter.throttle !== 'function') {
-            throw new Error('burstRateLimiter is not properly initialized. Please ensure AGCopilot.js has fully loaded.');
-        }
-        
-        console.log('✅ All AGCopilot dependencies found and validated');
-        return true;
+        console.error('❌ AGCopilot dependencies not found:');
+        console.error('  • burstRateLimiter:', typeof window.burstRateLimiter);
+        console.error('  • CONFIG:', typeof window.CONFIG);
+        console.error('  • deepClone:', typeof window.deepClone);
+        throw new Error('AGCopilot not loaded within timeout period');
     }
+    
+    // Format utility functions (self-contained, don't depend on AGCopilot)
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return 'N/A';
+        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
+    }
+
+    function formatMcap(mcap) {
+        if (!mcap) return 'N/A';
+        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
+        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
+        return `$${mcap}`;
+    }
+
+    function formatPercent(value) {
+        if (value === null || value === undefined) return 'N/A';
+        return `${value.toFixed(2)}%`;
+    }
+    
+    // deepClone reference (assigned after AGCopilot loads)
+    let deepClone;
 
     // ========================================
     // 🌐 API FUNCTIONS
@@ -416,10 +436,15 @@
                     return;
                 }
                 
-                // Add token reference for clustering
-                swap._tokenAddress = tokenData.processed?.tokenAddress;
-                swap._tokenName = tokenData.processed?.tokenName;
-                allSignals.push(swap);
+                // Flatten criteria fields onto the swap object for easier access
+                const flattenedSwap = {
+                    ...swap,
+                    ...(swap.criteria || {}), // Spread criteria fields to top level
+                    _tokenAddress: tokenData.processed?.tokenAddress,
+                    _tokenName: tokenData.processed?.tokenName
+                };
+                
+                allSignals.push(flattenedSwap);
             });
         });
         
@@ -497,164 +522,6 @@
         const analysis = generateAnalysisFromSignals(allSignals, bufferPercent, outlierMethod);
         analysis.tokenCount = tokenCount; // Add token count to the analysis
         return analysis;
-    }
-    
-    // Generate analysis for a cluster
-    function generateClusterAnalysis(clusterSignals, bufferPercent, outlierMethod) {
-        return generateAnalysisFromSignals(clusterSignals, bufferPercent, outlierMethod);
-    }
-    
-    // Core analysis logic that works with any signal set
-    function generateAnalysisFromSignals(signals, bufferPercent, outlierMethod) {
-        
-        // Helper function to apply buffer to bounds
-        // For INCLUSIVE filtering: min values should be LOWER, max values should be HIGHER
-        const applyBuffer = (value, isMin = true, isPercent = false) => {
-            if (!value || isNaN(value)) return value;
-            
-            const buffer = bufferPercent / 100;
-            let adjustedValue;
-            
-            if (isMin) {
-                adjustedValue = isPercent ? 
-                    Math.max(0, value * (1 - buffer)) : 
-                    Math.max(0, value - (value * buffer));
-            } else {
-                adjustedValue = isPercent ? 
-                    Math.min(100, value * (1 + buffer)) : 
-                    value + (value * buffer);
-            }
-            
-            return Math.round(adjustedValue * 100) / 100;
-        };
-        
-        // Helper function to get valid values with outlier filtering
-        const getValidValues = (field) => {
-            const values = signals.map(s => s[field]).filter(v => v !== null && v !== undefined && !isNaN(v));
-            if (outlierMethod !== 'none' && values.length > 4) {
-                return window.removeOutliers(values, outlierMethod);
-            }
-            return values;
-        };
-        
-        // Analyze each parameter
-        const analysis = {
-            totalSignals: signals.length,
-            bufferPercent: bufferPercent,
-            outlierMethod: outlierMethod,
-            
-            mcap: (() => {
-                const values = getValidValues('signalMcap');
-                if (values.length === 0) return { min: null, max: null, avg: null, count: 0 };
-                
-                const min = Math.min(...values);
-                const max = Math.max(...values);
-                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                
-                return {
-                    min: Math.round(min),
-                    max: Math.round(max),
-                    avg: Math.round(avg),
-                    bufferedMin: applyBuffer(min, true),
-                    bufferedMax: applyBuffer(max, false),
-                    count: values.length,
-                    configSuggestion: {
-                        'Min MCAP (USD)': applyBuffer(min, true),
-                        'Max MCAP (USD)': applyBuffer(max, false)
-                    }
-                };
-            })(),
-            
-            agScore: (() => {
-                const values = getValidValues('agScore');
-                if (values.length === 0) return { min: null, max: null, avg: null, count: 0 };
-                
-                const min = Math.min(...values);
-                const max = Math.max(...values);
-                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                
-                return {
-                    min: min,
-                    max: max,
-                    avg: avg.toFixed(1),
-                    bufferedMin: Math.max(0, Math.floor(applyBuffer(min, true))),
-                    bufferedMax: Math.min(10, Math.ceil(applyBuffer(max, false))),
-                    count: values.length,
-                    configSuggestion: {
-                        'Min AG Score': String(Math.max(0, Math.floor(applyBuffer(min, true))))
-                    }
-                };
-            })(),
-            
-            // ... Continue with other parameters (truncated for brevity)
-            // This would include all the parameter analysis from the original code
-            
-            tokenAge: (() => {
-                const values = getValidValues('tokenAge');
-                if (values.length === 0) return { min: null, max: null, avg: null, count: 0 };
-                
-                const min = Math.min(...values);
-                const max = Math.max(...values);
-                const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
-                
-                return {
-                    min: min,
-                    max: max,
-                    avg: Math.round(avg),
-                    bufferedMin: Math.max(0, Math.round(applyBuffer(min, true))),
-                    bufferedMax: Math.round(applyBuffer(max, false)),
-                    count: values.length,
-                    configSuggestion: {
-                        'Min Token Age (sec)': Math.max(0, Math.round(applyBuffer(min, true))),
-                        'Max Token Age (sec)': Math.round(applyBuffer(max, false))
-                    }
-                };
-            })(),
-            
-            // Add more parameter analyses as needed...
-        };
-        
-        return analysis;
-    }
-
-    // Generate the tightest possible configuration from analysis
-    function generateTightestConfig(analysis) {
-        // Safety check for undefined analysis
-        if (!analysis) {
-            console.warn('⚠️ Analysis is undefined, cannot generate config');
-            return null;
-        }
-
-        const config = {
-            metadata: {
-                generatedAt: new Date().toISOString(),
-                basedOnSignals: analysis.totalSignals || 0,
-                basedOnTokens: analysis.tokenCount || 0,
-                bufferPercent: analysis.bufferPercent || 0,
-                outlierMethod: analysis.outlierMethod || 'none',
-                configType: 'Tightest Generated Config'
-            }
-        };
-        
-        // Add parameter configurations based on analysis
-        if (analysis.mcap && analysis.mcap.configSuggestion) {
-            if (!config.basic) config.basic = {};
-            Object.assign(config.basic, analysis.mcap.configSuggestion);
-        }
-        
-        if (analysis.agScore && analysis.agScore.configSuggestion) {
-            if (!config.tokenDetails) config.tokenDetails = {};
-            Object.assign(config.tokenDetails, analysis.agScore.configSuggestion);
-        }
-        
-        if (analysis.tokenAge && analysis.tokenAge.configSuggestion) {
-            if (!config.tokenDetails) config.tokenDetails = {};
-            Object.assign(config.tokenDetails, analysis.tokenAge.configSuggestion);
-        }
-        
-        // ... Add more parameter configurations as needed
-        
-        return config;
     }
 
     // ========================================
@@ -1017,9 +884,24 @@
                         allTokenData.forEach(tokenData => {
                             tokenData.swaps.forEach(swap => {
                                 if (swap) {
+                                    // Access fields directly from swap object (not swap.criteria)
                                     allSignalsArray.push({
-                                        ...(swap.criteria || {}),
                                         signalMcap: swap.signalMcap,
+                                        agScore: swap.agScore,
+                                        tokenAge: swap.tokenAge,
+                                        deployerAge: swap.deployerAge,
+                                        deployerBalance: swap.deployerBalance,
+                                        uniqueCount: swap.uniqueCount,
+                                        kycCount: swap.kycCount,
+                                        dormantCount: swap.dormantCount,
+                                        liquidity: swap.liquidity,
+                                        liquidityPct: swap.liquidityPct,
+                                        buyVolumePct: swap.buyVolumePct,
+                                        bundledPct: swap.bundledPct,
+                                        drainedPct: swap.drainedPct,
+                                        volMcapPct: swap.volMcapPct,
+                                        winPredPercent: swap.winPredPercent,
+                                        ttc: swap.ttc,
                                         athMultiplier: swap.athMcap && swap.signalMcap ? (swap.athMcap / swap.signalMcap) : 0
                                     });
                                 }
@@ -1441,7 +1323,13 @@
     async function initializeWithRetry(maxRetries = 3, delay = 1000) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                validateDependencies();
+                // Wait for AGCopilot to load before initializing
+                await waitForAGCopilot();
+                
+                // Assign AGCopilot's deepClone function
+                deepClone = window.deepClone;
+                
+                console.log('✅ AGCopilot dependencies loaded successfully');
                 
                 // Check if we're in tab mode or standalone
                 if (isInTab) {
@@ -1482,27 +1370,7 @@
     }
     
     // ========================================
-    // 🔧 FORMAT & UTILITY FUNCTIONS
-    // ========================================
-    function formatTimestamp(timestamp) {
-        if (!timestamp) return 'N/A';
-        return new Date(timestamp * 1000).toISOString().replace('T', ' ').split('.')[0];
-    }
-
-    function formatMcap(mcap) {
-        if (!mcap) return 'N/A';
-        if (mcap >= 1000000) return `$${(mcap / 1000000).toFixed(2)}M`;
-        if (mcap >= 1000) return `$${(mcap / 1000).toFixed(2)}K`;
-        return `$${mcap}`;
-    }
-
-    function formatPercent(value) {
-        if (value === null || value === undefined) return 'N/A';
-        return `${value.toFixed(2)}%`;
-    }
-
-    // ========================================
-    // 📊 SIGNAL PROCESSING & CONFIG GENERATION
+    //  SIGNAL PROCESSING & CONFIG GENERATION
     // ========================================
     function processTokenData(tokenInfo, swaps) {
         const result = {
@@ -1698,9 +1566,6 @@
     
     // Core analysis logic that works with any signal set
     function generateAnalysisFromSignals(signals, bufferPercent, outlierMethod) {
-        
-        // Helper function to apply buffer to bounds
-        // For INCLUSIVE filtering: min values should be LOWER, max values should be HIGHER
         const applyBuffer = (value, isMin = true, isPercent = false) => {            
             if (value === null || value === undefined) return null;
             
@@ -2404,10 +2269,8 @@
         let signalIndex = 0;
         tokenData.forEach(token => {
             token.swaps.forEach(swap => {
-                if (swap.criteria) {
-                    signalToToken.set(signalIndex, token.processed?.tokenAddress || 'Unknown');
-                    signalIndex++;
-                }
+                signalToToken.set(signalIndex, token.processed?.tokenAddress || 'Unknown');
+                signalIndex++;
             });
         });
         
@@ -2524,10 +2387,15 @@
                     return;
                 }
                 
-                // Add token reference for clustering
-                swap._tokenAddress = tokenData.processed?.tokenAddress;
-                swap._tokenName = tokenData.processed?.tokenName;
-                allSignals.push(swap);
+                // Flatten criteria fields onto the swap object for easier access
+                const flattenedSwap = {
+                    ...swap,
+                    ...(swap.criteria || {}), // Spread criteria fields to top level
+                    _tokenAddress: tokenData.processed?.tokenAddress,
+                    _tokenName: tokenData.processed?.tokenName
+                };
+                
+                allSignals.push(flattenedSwap);
             });
         });
         
