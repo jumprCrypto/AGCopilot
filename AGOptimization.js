@@ -1540,164 +1540,194 @@
             return false;
         }
         
-        // Generate preset options HTML
-        let presetOptionsHTML = '<option value="custom">Custom</option>';
-        if (typeof window.PRESETS === 'object' && window.PRESETS !== null) {
-            Object.keys(window.PRESETS).forEach(key => {
-                presetOptionsHTML += `<option value="${key}">${key.replace(/_/g, ' ')}</option>`;
-            });
-        }
-        
         const uiHTML = `
-            <!-- Preset Selection -->
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0;">
-                    📋 Preset Configuration
-                </label>
-                <select id="preset-select" style="
-                    width: 100%;
-                    padding: 8px;
-                    background: #2d3748;
-                    border: 1px solid #4a5568;
-                    border-radius: 4px;
-                    color: #e2e8f0;
-                    cursor: pointer;
-                ">
-                    ${presetOptionsHTML}
-                </select>
-            </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">Target PnL %</label>
+                                <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
+                                    width: 100%;
+                                    padding: 3px 4px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 9px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 2px;
+                                ">Runtime (min)</label>
+                                <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
+                                    width: 100%;
+                                    padding: 3px 4px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 9px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                        </div>
 
-            <!-- Trigger Mode Selection -->
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0;">
-                    🎯 Trigger Mode
-                </label>
-                <select id="trigger-mode-select" style="
-                    width: 100%;
-                    padding: 8px;
-                    background: #2d3748;
-                    border: 1px solid #4a5568;
-                    border-radius: 4px;
-                    color: #e2e8f0;
-                    cursor: pointer;
-                ">
-                    <option value="">All Modes</option>
-                    <option value="bullish_bonding">Bullish Bonding</option>
-                    <option value="god_mode">God Mode</option>
-                    <option value="bearish_full_send">Bearish Full Send</option>
-                </select>
-            </div>
+                        <!-- Optimization Settings Row 3 -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Min Tokens / Day</label>
+                                <input type="number" id="min-tokens" value="10" min="5" max="1000" step="5" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 3px;
+                                ">Chain Runs</label>
+                                <input type="number" id="chain-run-count" value="5" min="1" max="10" step="1" style="
+                                    width: 100%;
+                                    padding: 5px 6px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    text-align: center;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                        </div>
 
-            <!-- Optimization Targets -->
-            <div style="margin-bottom: 16px;">
-                <h4 style="color: #e2e8f0; margin-bottom: 12px; font-size: 14px;">🎯 Optimization Targets</h4>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Target PnL %
-                        </label>
-                        <input type="number" id="target-pnl" value="1800" step="100" style="
-                            width: 100%;
-                            padding: 6px;
+                        <!-- Win Rate Configuration -->
+                        <div style="
+                            margin-bottom: 10px;
+                            padding: 8px;
                             background: #2d3748;
+                            border-radius: 6px;
                             border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
                         ">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Max Runtime (min)
-                        </label>
-                        <input type="number" id="runtime-min" value="30" step="5" min="1" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Min Tokens Target
-                        </label>
-                        <input type="number" id="min-tokens" value="100" step="10" min="1" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Chain Runs
-                        </label>
-                        <input type="number" id="chain-run-count" value="1" step="1" min="1" max="50" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Win Rate Thresholds -->
-            <div style="margin-bottom: 16px;">
-                <h4 style="color: #e2e8f0; margin-bottom: 12px; font-size: 14px;">📊 Win Rate Thresholds</h4>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Small (&lt;100)
-                        </label>
-                        <input type="number" id="min-win-rate-small" value="25" step="1" min="0" max="100" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Medium (100-500)
-                        </label>
-                        <input type="number" id="min-win-rate-medium" value="15" step="1" min="0" max="100" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 4px; font-size: 12px; color: #cbd5e0;">
-                            Large (&gt;500)
-                        </label>
-                        <input type="number" id="min-win-rate-large" value="10" step="1" min="0" max="100" style="
-                            width: 100%;
-                            padding: 6px;
-                            background: #2d3748;
-                            border: 1px solid #4a5568;
-                            border-radius: 4px;
-                            color: #e2e8f0;
-                        ">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Optimization Methods -->
+                            <div style="
+                                font-size: 11px;
+                                font-weight: 600;
+                                margin-bottom: 6px;
+                                color: #63b3ed;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🎯 Win Rate Thresholds
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Small Sample (&lt;500)</label>
+                                    <input type="number" id="min-win-rate-small" value="35" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Medium (500-999)</label>
+                                    <input type="number" id="min-win-rate-medium" value="30" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                                <div>
+                                    <label style="
+                                        font-size: 9px;
+                                        font-weight: 500;
+                                        color: #a0aec0;
+                                        display: block;
+                                        margin-bottom: 2px;
+                                    ">Large (1000+)</label>
+                                    <input type="number" id="min-win-rate-large" value="25" min="0" max="100" step="1" style="
+                                        width: 100%;
+                                        padding: 4px 5px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 9px;
+                                        text-align: center;
+                                        outline: none;
+                                        transition: border-color 0.2s;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                </div>
+                            </div>
+                            <div style="
+                                font-size: 8px;
+                                color: #a0aec0;
+                                margin-top: 4px;
+                                line-height: 1.3;
+                                text-align: center;
+                            ">
+                                Minimum win rates required for configurations based on token count
+                            </div>
+                        </div>
+                        
+                        <!-- Advanced Optimization Features -->
             <div style="margin-bottom: 16px;">
                 <h4 style="color: #e2e8f0; margin-bottom: 12px; font-size: 14px;">🔬 Optimization Methods</h4>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
@@ -1853,8 +1883,10 @@
                 await waitForAGCopilot();
                 
                 // Check if we're in a tab or standalone
-                const tabContainer = document.getElementById('optimization-tab');
+                const tabContainer = document.getElementById('optimization-ui-container');
                 const isInTab = !!tabContainer;
+                
+                console.log(`🔍 Checking for optimization-ui-container: ${isInTab}`);
                 
                 if (isInTab) {
                     console.log('📑 Running in AGCopilot tab mode');
@@ -1879,7 +1911,7 @@
                     console.error('🔧 Please reload AGCopilot and try again');
                     
                     // Show error in tab if available
-                    const tabContainer = document.getElementById('optimization-tab');
+                    const tabContainer = document.getElementById('optimization-ui-container');
                     if (tabContainer) {
                         tabContainer.innerHTML = `
                             <div style="padding: 20px; color: #ff6b6b;">
@@ -1910,7 +1942,7 @@
     // Global retry function for error recovery
     window.retryLoadOptimization = function() {
         console.log('🔄 Retrying Optimization module initialization...');
-        const tabContainer = document.getElementById('optimization-tab');
+        const tabContainer = document.getElementById('optimization-ui-container');
         if (tabContainer) {
             tabContainer.innerHTML = '<div style="padding: 20px; color: #a0aec0;">⏳ Loading Optimization Engine...</div>';
         }
