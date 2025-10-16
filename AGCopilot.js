@@ -64,12 +64,12 @@
             { size: 20, gain: 10000 }
         ],
         
-        // Rate limiting - ULTRA CONSERVATIVE MODE for 0-1 rate limit errors per session
-        RATE_LIMIT_THRESHOLD: 20,    // Very conservative burst size (reduced from 35)
-        RATE_LIMIT_RECOVERY: 10000,  // 10s recovery time (increased from 8.5s)
+         // Rate limiting - ULTRA CONSERVATIVE MODE for 0-1 rate limit errors per session
+        RATE_LIMIT_THRESHOLD: 10,     // 8 calls per burst = 4 config tests per burst
+        RATE_LIMIT_RECOVERY: 12000,  // 12s recovery time (5 bursts/min max)
         RATE_LIMIT_SAFETY_MARGIN: 1.5, // 50% safety margin (increased from 10%)
-        INTRA_BURST_DELAY: 100,      // 100ms delay between requests
-        MAX_REQUESTS_PER_MINUTE: 50, // Conservative hard cap at 40 req/min (reduced from 60)
+        INTRA_BURST_DELAY: 200,      // 200ms delay between requests
+        MAX_REQUESTS_PER_MINUTE: 50, // Conservative hard cap at 50 req/min
         USE_BURST_RATE_LIMITING: true, // Use burst mode for efficiency
         SMART_BURST_SIZE: true,        // Keep smart burst size learning for optimal discovery
         
@@ -78,17 +78,17 @@
         RATE_LIMIT_MODES: {
             normal: {
                 BACKTEST_WAIT: 20000,        // 20s
-                RATE_LIMIT_THRESHOLD: 20,    // 20 calls/burst
-                RATE_LIMIT_RECOVERY: 10000,  // 10s recovery
+                RATE_LIMIT_THRESHOLD: 10,    // 20 calls/burst
+                RATE_LIMIT_RECOVERY: 12000,  // 12s recovery
                 REQUEST_DELAY: 9360,         // 9.36s for signal analysis
-                INTRA_BURST_DELAY: 100       // 100ms
+                INTRA_BURST_DELAY: 200       // 100ms
             },
             slower: {
                 BACKTEST_WAIT: 30000,        // 30s (50% slower)
-                RATE_LIMIT_THRESHOLD: 15,    // 15 calls/burst (25% fewer)
+                RATE_LIMIT_THRESHOLD: 5,    // 15 calls/burst (25% fewer)
                 RATE_LIMIT_RECOVERY: 15000,  // 15s recovery (50% slower)
                 REQUEST_DELAY: 14000,        // 14s for signal analysis (50% slower)
-                INTRA_BURST_DELAY: 150       // 150ms (50% slower)
+                INTRA_BURST_DELAY: 250       // 150ms (50% slower)
             }
         }
     };
@@ -192,59 +192,7 @@
     // Make COMPLETE_CONFIG_TEMPLATE globally available for external scripts
     window.COMPLETE_CONFIG_TEMPLATE = COMPLETE_CONFIG_TEMPLATE;
 
-    // ========================================
-    // 🎯 PRESET CONFIGURATIONS
-    // ========================================
-    // Preset configurations (all original presets restored)
-    const PRESETS = {
-        oldDeployer: { 
-            category: "Custom",
-            description: "Old Deployer",
-            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
-        },
-        oldishDeployer: { 
-            category: "Custom",
-            description: "Old-ish Deployer",
-            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" } 
-        },
-        agScore7: { 
-            category: "Custom",
-            description: "Min AG Score 7",
-            tokenDetails: { "Min AG Score": "7" } 
-        },
-        
-        // Discovery-based presets (from Parameter Impact Analysis)
-        MaxLiqThirty: {
-            priority: 1,
-            category: "Param Discovery",
-            description: "Max Liq % 30",
-            advanced: { "Max Liquidity %": 30 }
-        },
-         minWinPred: { 
-            priority: 2,
-            category: "Param Discovery",
-            description: "Min Win Pred % 55",
-            advanced: { "Min Win Pred %": 55 }
-        },
-        UnqWallet3: {
-            priority: 3,
-            category: "Param Discovery", 
-            description: "3+ Unq",
-            wallets: { "Min Unique Wallets": 3 }
-        },
-        MinMcap20k: {
-            priority: 4,
-            category: "Param Discovery",
-            description: "Min MCAP 20K", 
-            basic: { "Min MCAP (USD)": 20000 }
-        },
-        MinMcap10k: {
-            priority: 5,
-            category: "Param Discovery",
-            description: "Min MCAP 10K", 
-            basic: { "Min MCAP (USD)": 10000 }
-        }
-    };
+   
 
     // ========================================
     // �🛠️ UTILITIES
@@ -1593,44 +1541,47 @@
                 const metrics = this.currentBest.metrics;
                 
                 content += `
-                    <div style="border-top: 1px solid rgba(76, 175, 80, 0.3); padding-top: 8px; margin-bottom: 8px; font-weight: bold;">
-                        <div style="font-size: 11px; font-weight: bold; color: #4CAF50; margin-bottom: 4px;">🏆 Current Best:</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
-                            <div>Score: <span style="color: #4CAF50; font-weight: bold;">${metrics.score?.toFixed(1) || 'N/A'}</span></div>
-                            <div>Tokens: <span style="color: #fff;">${metrics.totalTokens || 0}</span></div>
-                            <div>TP PnL: <span style="color: ${(metrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(metrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
-                            <div>WR (2x): <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
-                            <div>WR (TP): <span style="color: #4CAF50;">${(metrics.realWinRate || 0).toFixed(1)}% (${metrics.tokensHitTp || 0}/${metrics.totalTokens || 0})</span></div>
+                    <div style="border-top: 1px solid rgba(76, 175, 80, 0.3); padding-top: 8px; margin-bottom: 8px;">
+                        <div style="font-size: 12px; font-weight: bold; color: #4CAF50; margin-bottom: 6px;">🏆 Current Best</div>
+                        <div style="font-size: 11px; margin-bottom: 4px;">
+                            <span style="color: #aaa;">Score:</span> <span style="color: #4CAF50; font-weight: bold;">${metrics.score?.toFixed(1) || 'N/A'}</span>
+                            <span style="color: #666; margin: 0 6px;">|</span>
+                            <span style="color: #aaa;">Method:</span> <span style="color: #63b3ed;">${this.currentBest.method}</span>
                         </div>
-                        <div style="font-size: 9px; color: #aaa; margin-top: 4px;">Method: ${this.currentBest.method}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; margin-bottom: 8px;">
+                            <div><span style="color: #aaa;">Tokens:</span> <span style="color: #fff; font-weight: bold;">${metrics.totalTokens || 0}</span></div>
+                            <div><span style="color: #aaa;">TP PnL:</span> <span style="color: ${(metrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'}; font-weight: bold;">${(metrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
+                            <div><span style="color: #aaa;">Win Rate (2x):</span> <span style="color: #fff;">${(metrics.winRate || 0).toFixed(1)}%</span></div>
+                            <div><span style="color: #aaa;">Real WR (TP):</span> <span style="color: #4CAF50; font-weight: bold;">${(metrics.realWinRate || 0).toFixed(1)}%</span></div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                             <button onclick="applyBestConfigToUI()" style="
-                                padding: 8px;
+                                padding: 10px;
                                 background: rgba(59, 130, 246, 0.2);
                                 border: 1px solid rgba(59, 130, 246, 0.4);
-                                border-radius: 4px;
+                                border-radius: 6px;
                                 color: #63b3ed;
                                 font-size: 11px;
                                 cursor: pointer;
-                                font-weight: 500;
+                                font-weight: 600;
                                 transition: all 0.2s;
                             " onmouseover="this.style.background='rgba(59, 130, 246, 0.3)'" 
                                onmouseout="this.style.background='rgba(59, 130, 246, 0.2)'">
-                                ⚙️ Apply Best Config
+                                ⚙️ Apply to UI
                             </button>
                             <button onclick="copyBestConfigToClipboard()" style="
-                                padding: 8px;
+                                padding: 10px;
                                 background: rgba(139, 92, 246, 0.2);
                                 border: 1px solid rgba(139, 92, 246, 0.4);
-                                border-radius: 4px;
+                                border-radius: 6px;
                                 color: #a78bfa;
                                 font-size: 11px;
                                 cursor: pointer;
-                                font-weight: 500;
+                                font-weight: 600;
                                 transition: all 0.2s;
                             " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
                                onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
-                                📋 Copy Best Config
+                                📋 Copy JSON
                             </button>
                         </div>
                     </div>
@@ -1638,7 +1589,7 @@
 
                 // Update global tracker for the apply buttons
                 if (this.currentBest.metrics && this.currentBest.config && window.bestConfigTracker) {
-                    window.bestConfigTracker.update(this.currentBest.config, this.currentBest.metrics, this.currentBest.metrics.score || 0, 'Tracker Update');
+                    window.bestConfigTracker.update(this.currentBest.config, this.currentBest.metrics, this.currentBest.metrics.score || 0, this.currentBest.method || 'Unknown');
                 }
                 window.currentBestConfig = this.currentBest.config;
             } else if (this.isRunning) {
@@ -1816,6 +1767,177 @@
     class BacktesterAPI {
         constructor() {
             this.baseUrl = 'https://backtester.alphagardeners.xyz/api/stats';
+            this.prepareUrl = 'https://backtester.alphagardeners.xyz/api/stats/prepare';
+        }
+        
+        /**
+         * Step 1: Call /prepare endpoint to get a temporary token
+         * @param {Object} apiParams - API parameters
+         * @returns {Promise<{success: boolean, token?: string, expiresIn?: number, error?: string}>}
+         */
+        async prepareToken(apiParams) {
+            try {
+                // 🚨 CRITICAL: Apply rate limiting BEFORE /prepare call
+                // Both /prepare and /stats count against the same rate limit
+                await burstRateLimiter.throttle();
+                
+                // Convert apiParams to body format (with TP settings included)
+                // CRITICAL: The API requires a SPECIFIC FIXED ORDER for all fields
+                const body = {};
+                
+                // THIS IS THE EXACT ORDER from the backtester's working API calls
+                // Every field must appear in this order, whether set or not
+                const orderedKeys = [
+                    'maxTtc',
+                    'minMcap',
+                    'minAgScore',
+                    'maxBuyRatio',
+                    'maxTokenAge',
+                    'minBuyRatio',
+                    'minTokenAge',
+                    'triggerMode',
+                    'maxKycWallets',
+                    'minDeployerAge',
+                    'maxLiquidityPct',
+                    'minHoldersCount',
+                    'maxUniqueWallets',
+                    'maxBundledPercent',
+                    'maxDormantWallets',
+                    'maxVolMcapPercent',
+                    'minBundledPercent',
+                    'minWinPredPercent',
+                    'minDeployerBalance',
+                    'maxHoldersSinceMinutes',
+                    'fromDate',
+                    'toDate',
+                    'maxMcap',
+                    'minLiquidity',
+                    'maxLiquidity',
+                    'maxHoldersCount',
+                    'minHoldersDiffPct',
+                    'minTopHoldersPct',
+                    'maxTopHoldersPct',
+                    'minKycWallets',
+                    'minUniqueWallets',
+                    'minSmWallets',
+                    'minDormantWallets',
+                    'maxDrainedPercent',
+                    'maxDrainedCount',
+                    'needsDescription',
+                    'skipIfNoKycCexFunding',
+                    'needsFreshDeployer',
+                    'minVolMcapPercent',
+                    'weekdays',
+                    'minTtc',
+                    'buyingAmount'
+                ];
+                
+                // Add parameters in EXACT order
+                orderedKeys.forEach(key => {
+                    const value = apiParams[key];
+                    
+                    // Skip internal parameters
+                    if (key.startsWith('__')) return;
+                    
+                    // Skip if not in apiParams at all
+                    if (!(key in apiParams)) return;
+                    
+                    // Handle weekdays array
+                    if (key === 'weekdays') {
+                        if (Array.isArray(value) && value.length > 0) {
+                            body.weekdays = value;
+                        }
+                        return;
+                    }
+                    
+                    // Handle triggerMode (numeric)
+                    if (key === 'triggerMode') {
+                        if (value !== undefined && value !== null) {
+                            body[key] = Number(value);
+                        }
+                        return;
+                    }
+                    
+                    // Handle boolean fields
+                    if (key === 'needsDescription' || key === 'skipIfNoKycCexFunding' || key === 'needsFreshDeployer') {
+                        if (value === true || value === false) {
+                            body[key] = value;
+                        }
+                        return;
+                    }
+                    
+                    // Handle the three required empty-string fields
+                    const alwaysIncludeFields = ['maxHoldersSinceMinutes', 'fromDate', 'toDate'];
+                    if (alwaysIncludeFields.includes(key)) {
+                        body[key] = (value !== undefined && value !== null && value !== '') ? String(value) : '';
+                        return;
+                    }
+                    
+                    // All other fields: only include if non-empty
+                    if (value !== undefined && value !== null && value !== '') {
+                        body[key] = String(value);
+                    }
+                });
+                
+                // 🎯 CRITICAL: Include tpSettings LAST (NOT in /stats URL)
+                // Format: [{"sizePct":20,"targetGainPct":307}, ...] - with NUMERIC values
+                if (Array.isArray(apiParams.__takeProfits) && apiParams.__takeProfits.length > 0) {
+                    body.tpSettings = apiParams.__takeProfits.map(tp => ({
+                        sizePct: Number(tp.size),
+                        targetGainPct: Number(tp.gain)
+                    }));
+                } else {
+                    // Fallback to CONFIG.TP_CONFIGURATIONS if no TP settings provided
+                    body.tpSettings = (CONFIG.TP_CONFIGURATIONS || []).map(tp => ({
+                        sizePct: Number(tp.size),
+                        targetGainPct: Number(tp.gain)
+                    }));
+                }
+                
+                // Stringify the body for the API call
+                const bodyString = JSON.stringify(body);
+                const response = await fetch(this.prepareUrl, {
+                    method: 'POST',
+                    mode: 'cors',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': '*/*',  // Match backtester's accept header
+                        'Content-Type': 'application/json'
+                    },
+                    body: bodyString
+                });
+                
+                if (!response.ok) {
+                    // Handle 429 rate limit on /prepare endpoint
+                    if (response.status === 429) {
+                        const error = new Error(`Rate limit (429) on /prepare endpoint`);
+                        error.isRateLimit = true;
+                        error.statusCode = 429;
+                        throw error;
+                    }
+                    
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (!data.token) {
+                    throw new Error('No token received from /prepare endpoint');
+                }
+                
+                return {
+                    success: true,
+                    token: data.token,
+                    expiresIn: data.expiresIn || 300
+                };
+                
+            } catch (error) {
+                console.error(`❌ /prepare call failed: ${error.message}`);
+                return {
+                    success: false,
+                    error: error.message
+                };
+            }
         }
 
         // Map AGCopilot parameter names to API parameter names
@@ -1859,7 +1981,7 @@
                 // Wallets
                 'Min Holders': 'minHoldersCount',
                 'Max Holders': 'maxHoldersCount',
-                // Holder Growth Filter
+                // Holder Growth Filter (optional parameters - use empty string if not set)
                 'Holders Growth %': 'minHoldersDiffPct',
                 'Holders Growth Minutes': 'maxHoldersSinceMinutes',
                 'Min Unique Wallets': 'minUniqueWallets',
@@ -1868,6 +1990,11 @@
                 'Max KYC Wallets': 'maxKycWallets',
                 'Min Dormant Wallets': 'minDormantWallets',
                 'Max Dormant Wallets': 'maxDormantWallets',
+                // Top Holders (from backtester UI - may not be in AGCopilot UI yet)
+                'Min Top Holders %': 'minTopHoldersPct',
+                'Max Top Holders %': 'maxTopHoldersPct',
+                // Smart Money Wallets (from backtester UI - may not be in AGCopilot UI yet)
+                'Min SM Wallets': 'minSmWallets',
                 
                 // Risk
                 'Min Bundled %': 'minBundledPercent',
@@ -1897,43 +2024,45 @@
                 'Has Buy Signal': 'needsSignal'
             };
             
-            // Map parameters
+            // Map parameters - INCLUDE ALL, use empty string for unset values
+            // CRITICAL: API expects STRING values for all parameters (except triggerMode and tpSettings which are handled separately)
             Object.entries(parameterMap).forEach(([agCopilotName, apiName]) => {
                 const value = flatConfig[agCopilotName];
-                if (value !== undefined && value !== null && value !== '') {
-                    // Handle boolean conversions
-                    if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer' || apiName === 'skipIfNoKycCexFunding' || apiName === 'needsSignal') {
-                        if (value === true || value === 'Yes') {
-                            apiParams[apiName] = true;
-                        } else if (value === false || value === 'No') {
-                            apiParams[apiName] = false;
-                        }
-                        // "Don't care" or undefined -> don't include parameter
-                    } else {
-                        // Handle numeric parameters - validate and convert
-                        const numericValue = parseFloat(value);
-                        
-                        // Skip if value is NaN, Infinity, or not a valid number
-                        if (isNaN(numericValue) || !isFinite(numericValue)) {
-                            console.log(`⚠️ Skipping invalid ${apiName}: ${value} (NaN or invalid)`);
-                            return; // Skip this parameter
-                        }
-                        
-                        // Special handling for AG Score (must be integer 0-10)
-                        if (apiName === 'minAgScore') {
-                            const agScore = Math.round(numericValue);
-                            if (agScore < 0 || agScore > 10) {
-                                console.log(`⚠️ AG Score out of range: ${agScore}, clamping to 0-10`);
-                                apiParams[apiName] = Math.max(0, Math.min(10, agScore));
-                            } else {
-                                apiParams[apiName] = agScore;
-                            }
+                
+                // Handle boolean conversions (these can be omitted if not set)
+                if (apiName === 'needsDescription' || apiName === 'needsFreshDeployer' || apiName === 'skipIfNoKycCexFunding' || apiName === 'needsSignal') {
+                    if (value === true || value === 'Yes') {
+                        apiParams[apiName] = true;
+                    } else if (value === false || value === 'No') {
+                        apiParams[apiName] = false;
+                    }
+                    // "Don't care" or undefined -> don't include parameter
+                } else if (value !== undefined && value !== null && value !== '') {
+                    // Validate numeric parameters but STORE AS STRING (API requirement)
+                    const numericValue = parseFloat(value);
+                    
+                    // Skip if value is NaN, Infinity, or not a valid number
+                    if (isNaN(numericValue) || !isFinite(numericValue)) {
+                        console.log(`⚠️ Skipping invalid ${apiName}: ${value} (NaN or invalid)`);
+                        return; // Skip this parameter
+                    }
+                    
+                    // Special handling for AG Score (must be integer 0-10)
+                    if (apiName === 'minAgScore') {
+                        const agScore = Math.round(numericValue);
+                        if (agScore < 0 || agScore > 10) {
+                            console.log(`⚠️ AG Score out of range: ${agScore}, clamping to 0-10`);
+                            apiParams[apiName] = String(Math.max(0, Math.min(10, agScore)));
                         } else {
-                            // For other numeric parameters, use the validated number
-                            apiParams[apiName] = numericValue;
+                            apiParams[apiName] = String(agScore);
                         }
+                    } else {
+                        // CRITICAL: Store as STRING (API expects string values in /prepare body)
+                        apiParams[apiName] = String(numericValue);
                     }
                 }
+                // Note: Empty values are NOT added here - only fromDate, toDate, maxHoldersSinceMinutes
+                // are added as empty strings in prepareToken if needed
             });
             
             // Add default parameters that are usually present
@@ -1959,18 +2088,26 @@
             } else {
                 buyingAmount = getBuyingAmount();
             }
-            apiParams.buyingAmount = buyingAmount;
+            // CRITICAL: Store as string for API compatibility
+            apiParams.buyingAmount = String(buyingAmount);
             console.log(`💰 Using buying amount: ${buyingAmount} SOL`);
             
-            // Add date range parameters if provided
+            // CRITICAL: Always include these three required fields (empty string if not set)
+            // The API requires these fields to be present in the /prepare body
             const dateRange = getDateRange();
+            apiParams.fromDate = dateRange.fromDate || '';
+            apiParams.toDate = dateRange.toDate || '';
+            
             if (dateRange.fromDate) {
-                apiParams.fromDate = dateRange.fromDate;
                 console.log(`📅 Including fromDate parameter: ${dateRange.fromDate}`);
             }
             if (dateRange.toDate) {
-                apiParams.toDate = dateRange.toDate;
                 console.log(`📅 Including toDate parameter: ${dateRange.toDate}`);
+            }
+            
+            // maxHoldersSinceMinutes is always required (empty string if not set)
+            if (!apiParams.maxHoldersSinceMinutes) {
+                apiParams.maxHoldersSinceMinutes = '';
             }
 
             const configWeekdays = Array.isArray(config?.weekdays) ? config.weekdays : null;
@@ -2052,8 +2189,15 @@
             };
         }
         
-        // Build API URL from parameters
-    buildApiUrl(apiParams) {
+        // Build API URL from parameters or token
+        buildApiUrl(apiParams, token = null) {
+            // If token provided, use simple token-based URL
+            // TP settings are already in the token from /prepare, don't add them to /stats URL
+            if (token) {
+                return `${this.baseUrl}?token=${token}`;
+            }
+            
+            // Legacy URL building for backward compatibility (if ever needed)
             const params = new URLSearchParams();
             
             Object.entries(apiParams).forEach(([key, value]) => {
@@ -2137,7 +2281,7 @@
             return tpParams ? `${base}&${tpParams}` : base;
         }
         
-        // Fetch results from API
+        // Fetch results from API using new two-step process
         async fetchResults(config, retries = 3) {
             try {
                 // Map AGCopilot config to API parameters FIRST for cache key generation
@@ -2161,31 +2305,44 @@
                     return cached;
                 }
                 
-                // Only apply rate limiting for actual API calls
-                await burstRateLimiter.throttle();
-                
-                const url = this.buildApiUrl(apiParams);
+                // NOTE: Rate limiting is now handled inside prepareToken() method
+                // This ensures /prepare and /stats calls are both rate-limited properly
                 
                 // Log date range information if present
                 if (apiParams.fromDate || apiParams.toDate) {
                     console.log(`📅 Date range: ${apiParams.fromDate || 'No start'} to ${apiParams.toDate || 'No end'}`);
                 }
                 
-                // Additional validation for AG Score in URL
-                if (url.includes('minAgScore=NaN') || url.includes('minAgScore=undefined')) {
-                    console.error(`❌ CRITICAL: NaN/undefined AG Score detected in URL! This will cause 500 error.`);
+                // Additional validation for AG Score
+                if (apiParams.minAgScore !== undefined && (apiParams.minAgScore === 'NaN' || apiParams.minAgScore === 'undefined')) {
+                    console.error(`❌ CRITICAL: NaN/undefined AG Score detected! This will cause 500 error.`);
                     return { 
                         success: false, 
-                        error: 'Invalid AG Score parameter (NaN/undefined) detected in API URL',
-                        source: 'URL_VALIDATION'
+                        error: 'Invalid AG Score parameter (NaN/undefined)',
+                        source: 'VALIDATION'
                     };
                 }
                 
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
+                        // Step 1: Get token from /prepare endpoint (rate-limited inside prepareToken)
+                        const tokenResult = await this.prepareToken(apiParams);
+                        
+                        if (!tokenResult.success || !tokenResult.token) {
+                            console.error(`❌ Failed to get token from /prepare: ${tokenResult.error}`);
+                            throw new Error(`Token preparation failed: ${tokenResult.error}`);
+                        }
+                        
+                        // Step 2: Use token to fetch stats (apply rate limiting for the second API call)
+                        await burstRateLimiter.throttle();
+                        
+                        const url = this.buildApiUrl(apiParams, tokenResult.token);
+                        
+                        console.log(`📊 Fetching stats with token: ${url.substring(0, 80)}...`);
+                        
                         const response = await fetch(url, {
                             method: 'GET',
-                            mode: 'cors', // Explicit CORS mode
+                            mode: 'cors',
                             credentials: 'include',
                             headers: {
                                 'Accept': 'application/json',
@@ -2204,7 +2361,7 @@
                                 
                                 // Exponential backoff with much longer delays
                                 if (attempt > 1) {
-                                    waitTime *= Math.pow(2, attempt - 1); // True exponential backoff
+                                    waitTime *= Math.pow(2, attempt - 1);
                                 }
                                 
                                 // Cap at 2 minutes but ensure it's substantial
@@ -2218,60 +2375,42 @@
                                     await sleep(waitTime);
                                     continue;
                                 } else {
-                                    // On final retry failure, return a special result to continue optimization
                                     return {
                                         success: false,
-                                        error: 'Rate limit exceeded after all retries - throttling insufficient',
+                                        error: 'Rate limit exceeded after all retries',
                                         isRateLimit: true,
                                         retryable: true
                                     };
                                 }
                             }
                             
-                            // Handle 502 errors specifically (Bad Gateway - server temporarily unavailable)
+                            // Handle 502 errors
                             if (response.status === 502) {
-                                console.warn(`⚠️ Server Error (502) - Bad Gateway - Backtester temporarily unavailable`);
-                                console.warn(`🔍 Full API URL: ${url}`);
+                                console.warn(`⚠️ Server Error (502) - Bad Gateway`);
+                                console.warn(`🔍 Stats URL: ${url}`);
                                 
-                                const waitTime = 5 * 60 * 1000; // 5 minutes in milliseconds
-                                console.warn(`⏳ Waiting 5 minutes (${waitTime/1000}s) before retry due to 502 Bad Gateway...`);
-                                console.warn(`🕐 Current time: ${new Date().toLocaleTimeString()}`);
-                                console.warn(`🕐 Will retry at: ${new Date(Date.now() + waitTime).toLocaleTimeString()}`);
+                                const waitTime = 5 * 60 * 1000; // 5 minutes
+                                console.warn(`⏳ Waiting 5 minutes before retry due to 502 Bad Gateway...`);
                                 
                                 if (attempt < retries) {
                                     await sleep(waitTime);
                                     console.warn(`🔄 Retrying after 5-minute wait (attempt ${attempt + 1}/${retries})`);
                                     continue;
                                 } else {
-                                    // On final retry failure, return a special result to continue optimization
                                     return {
                                         success: false,
-                                        error: 'Server temporarily unavailable (502 Bad Gateway) after all retries with 5-minute waits',
+                                        error: 'Server temporarily unavailable (502) after all retries',
                                         isServerError: true,
                                         retryable: true
                                     };
                                 }
                             }
                             
-                            // Handle 500 errors specifically (often caused by invalid parameters)
+                            // Handle 500 errors
                             if (response.status === 500) {
                                 console.error(`❌ Server Error (500) - likely invalid parameters`);
-                                console.error(`🔍 Full API URL: ${url}`);
-                                
-                                // Extract and show potentially problematic parameters
-                                const urlParams = new URLSearchParams(url.split('?')[1]);
-                                const suspiciousParams = [];
-                                for (const [key, value] of urlParams.entries()) {
-                                    if (value === 'NaN' || value === 'undefined' || value === 'null' || value === '') {
-                                        suspiciousParams.push(`${key}=${value}`);
-                                    }
-                                }
-                                
-                                if (suspiciousParams.length > 0) {
-                                    console.error(`🐛 Suspicious parameters found: ${suspiciousParams.join(', ')}`);
-                                }
-                                
-                                throw new Error(`Server Error (500) - Invalid parameters detected: ${suspiciousParams.join(', ') || 'Unknown cause'}`);
+                                console.error(`🔍 Stats URL: ${url}`);
+                                throw new Error(`Server Error (500) - Invalid parameters or server issue`);
                             }
                             
                             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -2288,16 +2427,16 @@
                             athPnlSOL: data.pnlSolAth || 0,
                             totalSpent: data.totalSolSpent || 0,
                             winRate: data.winRate || 0, // Legacy win rate from API
-                            tokensHitTp: data.tokensHitTp || 0, // Tokens that hit at least 1 TP
-                            realWinRate: data.tokensHitTp && data.totalTokens ? (data.tokensHitTp / data.totalTokens * 100) : 0, // Real win rate
+                            tokensHitTp: data.tokensHitTp || 0,
+                            realWinRate: data.tokensHitTp && data.totalTokens ? (data.tokensHitTp / data.totalTokens * 100) : 0,
                             cleanPnL: data.cleanPnL || 0,
                             totalSignals: data.totalAvailableSignals || 0
                         };
                         
-                        // Ensure we have valid numbers for required fields
+                        // Ensure valid numbers
                         if (isNaN(transformedMetrics.tpPnlPercent) || isNaN(transformedMetrics.totalTokens)) {
                             console.error('❌ Invalid metrics - contains NaN values:', transformedMetrics);
-                            throw new Error(`Invalid metrics returned: tpPnlPercent=${transformedMetrics.tpPnlPercent}, totalTokens=${transformedMetrics.totalTokens}`);
+                            throw new Error(`Invalid metrics: tpPnlPercent=${transformedMetrics.tpPnlPercent}, totalTokens=${transformedMetrics.totalTokens}`);
                         }
                         
                         const result = {
@@ -2307,8 +2446,7 @@
                             source: 'API'
                         };
                         
-                        // 🚀 OPTIMIZATION: Cache the result after successful API call
-                        const cache = window.globalConfigCache;
+                        // 🚀 Cache the result
                         if (CONFIG.USE_CONFIG_CACHING && cache) {
                             cache.set(config, result);
                             console.log(`    🎯 API call completed & cached | ${cache.getPerformanceSummary()}`);
@@ -2317,20 +2455,51 @@
                         return result;
                         
                     } catch (error) {
-                        // 🌐 BROWSER: Enhanced CORS and network error handling
+                        // Handle 429 errors from /prepare endpoint
+                        if (error.isRateLimit || error.message.includes('429')) {
+                            console.warn(`⚠️ Rate limit hit on /prepare endpoint (attempt ${attempt}/${retries})`);
+                            burstRateLimiter.adaptToBurstLimit();
+                            
+                            let waitTime = Math.max(20000, CONFIG.RATE_LIMIT_RECOVERY * 2);
+                            
+                            // Exponential backoff
+                            if (attempt > 1) {
+                                waitTime *= Math.pow(2, attempt - 1);
+                            }
+                            
+                            // Cap at 2 minutes
+                            waitTime = Math.min(120000, Math.max(20000, waitTime));
+                            
+                            console.warn(`⏳ EXTENDED BACKOFF: Waiting ${(waitTime/1000).toFixed(1)}s before retry...`);
+                            console.warn(`📊 Burst limiter adapted: ${burstRateLimiter.burstLimit} calls/burst, ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s recovery`);
+                            
+                            if (attempt < retries) {
+                                await sleep(waitTime);
+                                continue;
+                            } else {
+                                return {
+                                    success: false,
+                                    error: 'Rate limit exceeded after all retries (on /prepare)',
+                                    isRateLimit: true,
+                                    retryable: true
+                                };
+                            }
+                        }
+                        
+                        // Enhanced CORS and network error handling
                         if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                            console.error('❌ Network or CORS error detected:', error.message);
-                            console.error('📋 Troubleshooting steps:');
-                            console.error('   1. Ensure you\'re on backtester.alphagardeners.xyz');
-                            console.error('   2. Check that you\'re logged in to the backtester');
-                            console.error('   3. Verify browser allows cookies from this site');
-                            console.error('   4. Disable browser extensions (uBlock, Privacy Badger, etc.)');
-                            console.error('   5. Try refreshing the page and reloading AGCopilot');
+                            console.error('❌ Network or CORS error:', error.message);
+                            console.error('📋 Troubleshooting:');
+                            console.error('   1. Ensure on backtester.alphagardeners.xyz');
+                            console.error('   2. Check logged in to backtester');
+                            console.error('   3. Verify cookies allowed');
+                            console.error('   4. Disable browser extensions');
+                            console.error('   5. Try refreshing and reloading');
                             
                             if (attempt === retries) {
                                 return {
                                     success: false,
-                                    error: `Network/CORS error: ${error.message}. Please check console for troubleshooting steps.`,
+                                    error: `Network/CORS error: ${error.message}`,
                                     isCorsError: true,
                                     source: 'API'
                                 };
@@ -2347,7 +2516,7 @@
                             };
                         }
                         
-                        // For 429 errors, we already slept above; for other errors, use shorter backoff
+                        // Backoff for non-429 errors
                         if (!error.message.includes('429')) {
                             await sleep(1000 * attempt);
                         }
@@ -4397,1244 +4566,12 @@
             return neighbor;
         }
     }
-
+   
+    
     // ========================================
-    // 🧬 ENHANCED OPTIMIZER CLASS
+    // 📊 UI FIELD READING FUNCTIONS
     // ========================================
-    class EnhancedOptimizer {
-        constructor(initialConfig = null) {
-            this.configCache = new ConfigCache(1000);
-            this.bestConfig = null;
-            this.bestScore = -Infinity;
-            this.bestMetrics = { totalTokens: 0, tpPnlPercent: 0, winRate: 0 }; // Safe defaults instead of null
-            this.testCount = 0;
-            this.startTime = Date.now();
-            this.history = [];
-            
-            // Store initial configuration to start from
-            this.initialConfig = initialConfig;
-            
-            // Parameter tracking
-            this.parameterTests = [];
-            
-            // Advanced optimization components
-            this.latinSampler = new LatinHypercubeSampler();
-            this.simulatedAnnealing = new SimulatedAnnealing(this);
-            
-            // Global stop flag
-            window.STOPPED = false;
-        }
-
-        getRemainingTime() {
-            const elapsed = (Date.now() - this.startTime) / (CONFIG.MAX_RUNTIME_MIN * 60 * 1000);
-            return Math.max(0, 1 - elapsed);
-        }
-
-        getProgress() {
-            return Math.min(100, ((Date.now() - this.startTime) / (CONFIG.MAX_RUNTIME_MIN * 60 * 1000)) * 100);
-        }
-
-        getCurrentBestScore() {
-            return this.bestScore;
-        }
-
-        getSection(param) {
-            const sectionMap = {
-                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
-                'Min AG Score': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails', 'Max Token Age (sec)': 'tokenDetails', 'Min Deployer Age (min)': 'tokenDetails',
-                'Min Buy Ratio %': 'risk', 'Max Buy Ratio %': 'risk', 'Min Vol MCAP %': 'risk',
-                'Max Vol MCAP %': 'risk', 'Min Bundled %': 'risk', 'Max Bundled %': 'risk', 'Min Deployer Balance (SOL)': 'risk',
-                'Max Drained %': 'risk', 'Max Drained Count': 'risk',
-                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets', 'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
-                'Min Dormant Wallets': 'wallets', 'Max Dormant Wallets': 'wallets',
-                'Min Holders': 'wallets', 'Max Holders': 'wallets',
-                // Holder Growth Filter
-                'Holders Growth %': 'wallets', 'Holders Growth Minutes': 'wallets',
-                'Min TTC (sec)': 'advanced', 'Max TTC (sec)': 'advanced', 'Min Win Pred %': 'advanced', 'Max Liquidity %': 'advanced'
-            };
-            return sectionMap[param] || 'basic';
-        }
-
-        // Update the best configuration display in the UI
-        updateBestConfigDisplay() {
-            const display = document.getElementById('best-config-display');
-            const stats = document.getElementById('best-config-stats');
-            const tracker = window.bestConfigTracker;
-            
-            if (display && stats && tracker && tracker.metrics) {
-                display.style.display = 'block';
-                
-                let scoreDisplay = tracker.score.toFixed(1);
-                let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
-                
-                // Show scoring details if available
-                if (tracker.metrics.robustScoring) {
-                    const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
-                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
-                }
-                
-                stats.innerHTML = `
-                    <div><strong>Score:</strong> ${scoreDisplay} ${sourceInfo}</div>
-                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
-                    ${methodDisplay}
-                    <div><strong>Tests:</strong> ${this.testCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.startTime) / 1000)}s</div>
-                `;
-            }
-        }
-
-        // Main test function
-        async testConfig(config, testName) {
-            if (window.STOPPED) return { success: false };
-
-            try {
-                this.testCount++;
-                let totalFailures = this.history.filter(h => !h.success).length;
-                let rateLimitFailures = this.history.filter(h => !h.success && (
-                    h.error?.includes('429') || 
-                    h.error?.includes('Rate limit') || 
-                    h.error?.includes('rate limit') ||
-                    h.reason === 'api_error'
-                )).length;
-                
-                // Update optimization tracker with separate failure counts
-                window.optimizationTracker.updateProgress(this.testCount, totalFailures, rateLimitFailures);
-                
-                // Ensure config is complete before testing
-                let completeConfig = ensureCompleteConfig(config);
-                
-                // 📌 Apply pinned settings constraint
-                if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                    completeConfig = applyPinnedSettingsConstraint(completeConfig, window.pinnedSettings.settings);
-                }
-                
-                // Check cache first (if enabled)
-                if (CONFIG.USE_CONFIG_CACHING && this.configCache.has(completeConfig)) {
-                    const cachedResult = this.configCache.get(completeConfig);
-                    console.log(`💾 Cache hit for: ${testName}`);
-                    return cachedResult;
-                }
-                
-                // Test via API call (New: much faster and more reliable)
-                const result = await testConfigurationAPI(completeConfig, testName);
-                
-                if (!result.success) {
-                    // Determine failure type - distinguish between API errors and threshold rejections
-                    const isRateLimitError = result.error?.includes('429') || 
-                                           result.error?.includes('Rate limit') || 
-                                           result.error?.includes('rate limit') ||
-                                           result.source === 'API';
-                    
-                    // Track failed test with categorization
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        success: false,
-                        error: result.error,
-                        reason: isRateLimitError ? 'api_error' : 'validation_error',
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    if (CONFIG.USE_CONFIG_CACHING) {
-                        this.configCache.set(completeConfig, result);
-                    }
-                    return result;
-                }
-
-                const metrics = result.metrics;
-                
-                // Get scaled minimum tokens threshold based on date range
-                const scaledThresholds = getScaledTokenThresholds();
-                
-                // Validate metrics using scaled threshold
-                if (metrics.tpPnlPercent === undefined || (metrics.totalTokens || 0) < scaledThresholds.MIN_TOKENS) {
-                    console.log(`❌ Config ${testName} rejected: ${metrics.totalTokens || 0} tokens < ${scaledThresholds.MIN_TOKENS} required`);
-                    const failResult = { success: false, reason: 'insufficient_tokens' };
-                    
-                    // Track failed test
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        success: false,
-                        reason: 'insufficient_tokens',
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    if (CONFIG.USE_CONFIG_CACHING) {
-                        this.configCache.set(completeConfig, failResult);
-                    }
-                    return failResult;
-                }
-
-                // Calculate score using robust scoring system (outlier-resistant)
-                const robustScoring = calculateRobustScore(metrics);
-                if (!robustScoring) {
-                    const failResult = { success: false, reason: 'scoring_failed' };
-                    
-                    // Track failed test
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        success: false,
-                        reason: 'scoring_failed',
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    if (CONFIG.USE_CONFIG_CACHING) {
-                        this.configCache.set(completeConfig, failResult);
-                    }
-                    return failResult;
-                }
-
-                // Handle rejected configurations (win rate too low)
-                if (robustScoring.rejected) {
-                    const failResult = { 
-                        success: false, 
-                        reason: 'win_rate_rejection',
-                        rejectionReason: robustScoring.rejectionReason
-                    };
-                    
-                    // Track rejected test
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        success: false,
-                        reason: 'win_rate_rejection',
-                        rejectionReason: robustScoring.rejectionReason,
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                    
-                    if (CONFIG.USE_CONFIG_CACHING) {
-                        this.configCache.set(completeConfig, failResult);
-                    }
-                    return failResult;
-                }
-
-                let improvement = 0;
-                let currentScore = robustScoring.score;
-                
-                // Store scoring details in metrics for analysis
-                metrics.robustScoring = robustScoring;
-                const modeForMetric = getScoringMode();
-                metrics.optimizedMetric = modeForMetric === 'tp_only' ? 'tpPnlPercent' : (modeForMetric === 'winrate_only' ? 'winRate' : (modeForMetric === 'real_winrate_only' ? 'realWinRate' : 'robustScore'));
-                metrics.optimizedValue = currentScore;
-                
-                // PnL optimization mode (default)
-                improvement = currentScore - this.bestScore;
-                
-                // Log successful config validation
-                console.log(`✅ Config ${testName} passed: ${metrics.totalTokens} tokens, score: ${currentScore.toFixed(2)}, improvement: ${improvement > 0 ? '+' : ''}${improvement.toFixed(2)}`);
-
-                // Update best configuration if improved
-                if (improvement > 0) {
-                    // Double-check: Ensure this config still meets current minimum tokens requirement
-                    const currentScaledThresholds = getScaledTokenThresholds();
-                    if (metrics.totalTokens < currentScaledThresholds.MIN_TOKENS) {
-                        console.warn(`⚠️ Config would be best but has insufficient tokens: ${metrics.totalTokens} < ${currentScaledThresholds.MIN_TOKENS} (UI setting changed?)`);
-                        // Don't update best config, but still record as successful test
-                        return { success: true, metrics, config: completeConfig, reason: 'insufficient_tokens_for_best' };
-                    }
-                    
-                    this.bestConfig = completeConfig;
-                    this.bestScore = currentScore;
-                    // Ensure metrics has required properties
-                    this.bestMetrics = {
-                        totalTokens: metrics.totalTokens || 0,
-                        tpPnlPercent: metrics.tpPnlPercent || 0,
-                        winRate: metrics.winRate || 0,
-                        ...metrics // Include all other properties
-                    };                    
-                    
-                    if (window.bestConfigTracker) {
-                        window.bestConfigTracker.update(completeConfig, metrics, currentScore, testName || 'Optimization');
-                    }
-                    window.currentBestConfig = completeConfig;
-                    
-                    // Update optimization tracker with current best
-                    window.optimizationTracker.setCurrentBest({
-                        metrics: { ...metrics, score: currentScore },
-                        config: completeConfig
-                    }, testName);
-                    
-                    // Enhanced logging with robust scoring details and pinned settings info
-                    if (getScoringMode() !== 'tp_only' && metrics.robustScoring) {
-                        const rs = metrics.robustScoring;
-                        console.log(`🎉 New best! ${testName}:`);
-                        console.log(`   📊 Score: ${currentScore.toFixed(1)} (${rs.scoringMethod})`);
-                        console.log(`   📈 Raw TP PnL: ${rs.components.rawPnL.toFixed(1)}%`);
-                        console.log(`   🎯 Win Rate: ${rs.components.winRate.toFixed(1)}% | Tokens: ${metrics?.totalTokens || 0} | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%`);
-                        if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                            const pinnedCount = Object.keys(window.pinnedSettings.settings).length;
-                            console.log(`   📌 Pinned Settings: ${pinnedCount} settings kept constant`);
-                        }
-                    } else {
-                        console.log(`🎉 New best! ${testName}: ${currentScore.toFixed(1)}% (${metrics?.totalTokens || 0} tokens)`);
-                        if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                            const pinnedCount = Object.keys(window.pinnedSettings.settings).length;
-                            console.log(`   📌 Pinned Settings: ${pinnedCount} settings kept constant`);
-                        }
-                    }
-                    
-                    // Update global tracker for UI
-                    if (window.bestConfigTracker) {
-                        window.bestConfigTracker.update(completeConfig, this.bestMetrics, this.bestScore, testName || 'Optimization');
-                    }
-                    window.currentBestConfig = completeConfig;
-
-                    // Update best config display in UI
-                    this.updateBestConfigDisplay();
-                    
-                    // Add to history
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        metrics,
-                        success: true,
-                        improvement: improvement.toFixed(1),
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                } else {
-                    // Track successful test (even if not improvement)
-                    this.history.push({
-                        testName,
-                        config: completeConfig,
-                        metrics,
-                        success: true,
-                        improvement: 0,
-                        testNumber: this.testCount,
-                        timestamp: new Date().toISOString()
-                    });
-                }
-
-                // Cache result
-                if (CONFIG.USE_CONFIG_CACHING) {
-                    this.configCache.set(completeConfig, result);
-                }
-
-                return result;
-
-            } catch (error) {
-                console.error(`Error testing config: ${error.message}`);
-                return { success: false, error: error.message };
-            }
-        }
-
-        // Establish baseline from current state
-        async establishBaseline() {
-            console.log('📊 Establishing baseline configuration...');
-            
-            let baselineConfig;
-            
-            // Check if we have an initial configuration from a previous run
-            if (this.initialConfig) {
-                console.log('🔄 Using previous run\'s best configuration as baseline');
-                console.log('🏆 Starting from inherited best config - building on previous progress!');
-                baselineConfig = this.initialConfig;
-            } else {
-                // Check if a preset was selected
-                const presetDropdown = document.getElementById('preset-dropdown');
-                const hasPresetSelected = presetDropdown && presetDropdown.value && presetDropdown.value !== '';
-                
-                    console.log('📖 Reading current page settings as baseline');
-                    // Read current configuration from the UI
-                    baselineConfig = await getCurrentConfigFromUI();
-                    
-                    // If no meaningful config is found on the page, use default
-                    const hasAnyValues = Object.values(baselineConfig).some(section => 
-                        Object.values(section).some(value => value !== undefined)
-                    );
-                    
-                    if (!hasAnyValues) {
-                        console.log('⚠️ No configuration found on page, using default baseline');
-                        baselineConfig = {
-                            basic: { "Min MCAP (USD)": 5000, "Max MCAP (USD)": 25000 },
-                            tokenDetails: { "Min AG Score": 3, "Max Token Age (sec)": 18000 },
-                            wallets: { "Min Unique Wallets": 1, "Max Unique Wallets": 5, "Min KYC Wallets": 1, "Max KYC Wallets": 5 },
-                            risk: { "Min Bundled %": 0, "Max Bundled %": 50, "Min Buy Ratio %": 50, "Max Buy Ratio %": 95 },
-                            advanced: { "Min TTC (sec)": 10, "Max TTC (sec)": 300, "Max Liquidity %": 80 }
-                        };
-                        
-                        // Apply bundled constraints if enabled
-                        if (this.isLowBundledConstraintEnabled()) {
-                            console.log('🛡️ Applying low bundled % constraints to fallback baseline');
-                            baselineConfig.risk["Max Bundled %"] = 30; // Override only the Max Bundled %
-                        }
-                    } else {
-                        console.log('✅ Using current page settings as baseline configuration');
-                    }
-            }
-            
-            const result = await this.testConfig(baselineConfig, 'Baseline');
-            
-            if (result.success) {
-                console.log(`✅ Baseline established: ${this.bestScore.toFixed(1)}% PnL with ${this.bestMetrics?.totalTokens || 0} tokens`);
-                // Save the baseline config as the current best config
-                if (window.bestConfigTracker) {
-                    window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Baseline');
-                }
-                window.currentBestConfig = this.bestConfig; // Keep for backward compatibility
-                
-                // Ensure optimization tracker shows the baseline as current best
-                if (window.optimizationTracker) {
-                    window.optimizationTracker.setCurrentBest({
-                        metrics: { ...this.bestMetrics, score: this.bestScore },
-                        config: this.bestConfig
-                    }, this.initialConfig ? 'Inherited Baseline' : 'Baseline');
-                }
-            } else {
-                console.log('❌ Failed to establish baseline - using fallback configuration');
-                // Set a fallback baseline if testing failed
-                this.bestConfig = baselineConfig;
-                this.bestScore = -999; // Very low score to ensure any real result is better
-                this.bestMetrics = { totalTokens: 0, tpPnlPercent: -999, winRate: 0 };
-                if (window.bestConfigTracker) {
-                    window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Fallback Baseline');
-                }
-                window.currentBestConfig = this.bestConfig; // Keep for backward compatibility
-                
-                // Set fallback in optimization tracker too
-                if (window.optimizationTracker) {
-                    window.optimizationTracker.setCurrentBest({
-                        metrics: { ...this.bestMetrics, score: this.bestScore },
-                        config: this.bestConfig
-                    }, this.initialConfig ? 'Inherited Baseline (Fallback)' : 'Baseline (Fallback)');
-                }
-            }
-            
-            updateProgress('✅ Baseline Established', this.getProgress(), this.getCurrentBestScore().toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-        }
-
-        // Helper function to check if low bundled constraint is enabled
-        isLowBundledConstraintEnabled() {
-            const checkbox = document.getElementById('low-bundled-constraint');
-            return checkbox && checkbox.checked;
-        }
-
-        // Apply bundled % constraints if enabled
-        applyBundledConstraints(param, rules) {
-            if (!this.isLowBundledConstraintEnabled()) {
-                return rules; // Return original rules if constraint is disabled
-            }
-
-            // Apply constraints for bundled % parameters
-            if (param === 'Min Bundled %') {
-                return {
-                    ...rules,
-                    min: 0,
-                    max: Math.min(5, rules.max), // Force max to be 5% or original max, whichever is lower
-                    step: rules.step
-                };
-            } else if (param === 'Max Bundled %') {
-                return {
-                    ...rules,
-                    min: rules.min,
-                    max: Math.min(35, rules.max), // Force max to be 35% or original max, whichever is lower
-                    step: rules.step
-                };
-            }
-            
-            return rules; // Return original rules for other parameters
-        }
-
-        // Validate configuration for min/max conflicts (New: prevents invalid configs)
-        validateConfigMinMax(config) {
-            const errors = [];
-            
-            // Define min/max parameter pairs to validate
-            const minMaxPairs = [
-                ['Min MCAP (USD)', 'Max MCAP (USD)'],
-                ['Min Token Age (sec)', 'Max Token Age (sec)'],
-                ['Min TTC (sec)', 'Max TTC (sec)'],
-                ['Min Unique Wallets', 'Max Unique Wallets'],
-                ['Min KYC Wallets', 'Max KYC Wallets'],
-                ['Min Holders', 'Max Holders'],
-                ['Min Bundled %', 'Max Bundled %'],
-                ['Min Buy Ratio %', 'Max Buy Ratio %'],
-                ['Min Vol MCAP %', 'Max Vol MCAP %'],
-                ['Min Drained %', 'Max Drained %']
-            ];
-            
-            minMaxPairs.forEach(([minParam, maxParam]) => {
-                const minVal = this.getParamValue(config, minParam);
-                const maxVal = this.getParamValue(config, maxParam);
-                
-                if (minVal !== undefined && maxVal !== undefined && 
-                    !isNaN(minVal) && !isNaN(maxVal) && 
-                    parseFloat(minVal) > parseFloat(maxVal)) {
-                    errors.push(`${minParam}(${minVal}) > ${maxParam}(${maxVal})`);
-                }
-            });
-            
-            return {
-                isValid: errors.length === 0,
-                errors
-            };
-        }
-        
-        // Helper function to get parameter value from nested config
-        getParamValue(config, paramName) {
-            for (const section of Object.values(config)) {
-                if (section && typeof section === 'object' && section[paramName] !== undefined) {
-                    return section[paramName];
-                }
-            }
-            return undefined;
-        }
-
-        // Generate parameter variations (Enhanced: with validation)
-        generateParameterVariations(config, param, section) {
-            const originalRules = PARAM_RULES[param];
-            if (!originalRules) return [];
-
-            // Apply bundled constraints if enabled
-            const rules = this.applyBundledConstraints(param, originalRules);
-
-            // Check if config is valid
-            if (!config || !config[section]) {
-                console.warn(`⚠️ Invalid config for ${param} in section ${section}`);
-                return [];
-            }
-
-            // Special handling for Holders Growth fields - they must be set as a pair
-            if (param === 'Holders Growth %' || param === 'Holders Growth Minutes') {
-                return this.generateHoldersGrowthPairVariations(config, param);
-            }
-
-            const currentValue = config[section]?.[param];
-            const variations = [];
-
-            if (rules.type === 'integer') {
-                const current = currentValue || Math.floor((rules.min + rules.max) / 2);
-                for (let i = rules.min; i <= rules.max; i += rules.step) {
-                    if (i !== current) {
-                        variations.push(i);
-                    }
-                }
-            } else {
-                const current = currentValue || (rules.min + rules.max) / 2;
-                const range = rules.max - rules.min;
-                const step = rules.step || range * 0.1;
-
-                [
-                    Math.max(rules.min, current - step * 2),
-                    Math.max(rules.min, current - step),
-                    Math.min(rules.max, current + step),
-                    Math.min(rules.max, current + step * 2),
-                    rules.min,
-                    rules.max,
-                    Math.floor(rules.min + range * 0.25),
-                    Math.floor(rules.min + range * 0.75)
-                ].forEach(val => {
-                    if (val !== current && !variations.includes(val)) {
-                        variations.push(val);
-                    }
-                });
-            }
-
-            return variations.slice(0, 4).map(val => {
-                const newConfig = deepClone(config);
-                if (param.includes('Wallets') || param.includes('Count') || param.includes('Age') || param.includes('Score')) {
-                    val = Math.round(val);
-                }
-                newConfig[section][param] = val;
-                
-                // Validate the new configuration for min/max conflicts
-                const validation = this.validateConfigMinMax(newConfig);
-                if (!validation.isValid) {
-                    console.warn(`⚠️ Skipping invalid variation ${param}: ${val} - ${validation.errors.join(', ')}`);
-                    return null; // Mark as invalid
-                }
-                
-                return { config: newConfig, name: `${param}: ${val}` };
-            }).filter(variation => variation !== null); // Remove invalid variations
-        }
-        
-        generateHoldersGrowthCombinations(config) {
-            const currentGrowthPct = config.wallets?.['Holders Growth %'];
-            const currentMinutes = config.wallets?.['Holders Growth Minutes'];
-            
-            let combinations = [];
-            
-            const growthSteps = [0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 90, 100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500];
-            const minuteSteps = [0, 1, 2, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120, 180, 240, 360, 480, 720, 960, 1440];
-            
-            for (const growth of growthSteps) {
-                for (const minutes of minuteSteps) {
-                    combinations.push({
-                        growthPct: growth,
-                        minutes: minutes,
-                        efficiency: growth / Math.max(minutes, 1)
-                    });
-                }
-            }
-            
-            combinations.sort((a, b) => b.efficiency - a.efficiency);
-            
-            const filteredCombinations = combinations.filter(combo => {
-                if (combo.growthPct === currentGrowthPct && combo.minutes === currentMinutes) {
-                    return false;
-                }
-                
-                if (combo.growthPct === 0 && combo.minutes === 0) {
-                    return false;
-                }
-                    
-                return true;
-            });
-            
-            return filteredCombinations;
-        }
-
-        // Generate paired variations for Holders Growth fields (now uses unified generator)
-        generateHoldersGrowthPairVariations(config, triggerParam) {
-            const combinations = this.generateHoldersGrowthCombinations(config);
-            const variations = [];
-            
-            // Create variations (limit to top 6 for performance in regular optimization)
-            for (const combo of combinations.slice(0, 6)) {
-                const newConfig = deepClone(config);
-                newConfig.wallets["Holders Growth %"] = combo.growthPct;
-                newConfig.wallets["Holders Growth Minutes"] = combo.minutes;
-                
-                variations.push({
-                    config: newConfig,
-                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min, eff: ${combo.efficiency.toFixed(1)})`
-                });
-            }
-            
-            console.log(`🔗 Generated ${variations.length} paired Holders Growth variations from unified generator`);
-            return variations;
-        }
-
-        // Main parameter testing phase
-        async runParameterPhase() {
-            updateProgress('🔄 Phase 1: Parameter Testing', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-
-            // Check if we have a valid baseline configuration
-            if (!this.bestConfig) {
-                console.error('❌ Cannot run parameter testing: No baseline configuration established');
-                throw new Error('No baseline configuration established');
-            }
-
-            const allParameters = Object.keys(PARAM_RULES);
-            
-            // 📌 Filter out pinned parameters from optimization
-            let parameters = allParameters;
-            if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                const pinnedParams = Object.keys(window.pinnedSettings.settings);
-                parameters = allParameters.filter(param => !pinnedParams.includes(param));
-                
-                if (pinnedParams.length > 0) {
-                    console.log(`📌 Skipping ${pinnedParams.length} pinned parameters: ${pinnedParams.join(', ')}`);
-                    console.log(`🔍 Testing ${parameters.length} unpinned parameters out of ${allParameters.length} total`);
-                }
-            }
-            
-            // 🔗 Handle Holders Growth fields as a pair - only test once, not individually
-            const hasHoldersGrowthPct = parameters.includes('Holders Growth %');
-            const hasHoldersGrowthMin = parameters.includes('Holders Growth Minutes');
-            
-            if (hasHoldersGrowthPct && hasHoldersGrowthMin) {
-                // Remove the Minutes field and keep only the % field to trigger pair testing
-                parameters = parameters.filter(param => param !== 'Holders Growth Minutes');
-                console.log('🔗 Holders Growth fields detected - will test as paired combinations');
-            } else if (hasHoldersGrowthMin && !hasHoldersGrowthPct) {
-                // If only Minutes is unpinned, remove it since it needs both fields
-                parameters = parameters.filter(param => param !== 'Holders Growth Minutes');
-                console.log('⚠️ Holders Growth Minutes cannot be optimized without Holders Growth % - skipping');
-            }
-            
-            if (parameters.length === 0) {
-                console.log('⚠️ All parameters are pinned - skipping parameter phase');
-                return;
-            }
-            
-            console.log(`🔍 Testing ${parameters.length} parameters:`, parameters.slice(0, 5));
-            
-            for (const param of parameters) {
-                if (window.STOPPED || this.getRemainingTime() <= 0.2) break;
-
-                const section = this.getSection(param);
-                const variations = this.generateParameterVariations(this.bestConfig, param, section);
-                
-                if (!variations || variations.length === 0) {
-                    console.log(`⚠️ No variations generated for ${param}`);
-                    continue;
-                }
-
-                console.log(`🧪 Testing ${variations.length} variations for ${param}`);
-                let bestImprovement = 0;
-                let testedCount = 0;
-                
-                for (const variation of variations) {
-                    if (window.STOPPED || this.getRemainingTime() <= 0.2) break;
-
-                    const result = await this.testConfig(variation.config, variation.name);
-                    testedCount++;
-                    
-                    if (result.success && result.metrics) {
-                        const currentMetric = result.metrics.optimizedValue || result.metrics.tpPnlPercent || result.metrics.athPnlPercent;
-                        const improvement = currentMetric - this.bestScore;
-                        
-                        if (improvement > bestImprovement) {
-                            bestImprovement = improvement;
-                        }
-                        
-                        console.log(`  📊 ${variation.name}: ${currentMetric?.toFixed(1)}% (improvement: ${improvement?.toFixed(1)}%)`);
-                    } else {
-                        console.log(`  ❌ ${variation.name}: Failed`);
-                    }
-                }
-
-                console.log(`✅ Completed ${param}: tested ${testedCount} variations, best improvement: ${bestImprovement.toFixed(1)}%`);
-
-                // Track parameter effectiveness
-                this.parameterTests.push({ param, section, improvement: bestImprovement });
-
-                // Early termination if target achieved
-                if (this.bestScore >= CONFIG.TARGET_PNL) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-                    return;
-                }
-            }
-
-            // Sort parameters by effectiveness
-            this.parameterTests.sort((a, b) => b.improvement - a.improvement);
-            console.log('📊 Parameter effectiveness ranking:', this.parameterTests.slice(0, 5));
-        }
-
-        // Run full optimization
-        async runOptimization() {
-            this.startTime = Date.now();
-            window.STOPPED = false;
-
-            // Only initialize tracker if not already running (avoid resetting chained runs)
-            if (!window.optimizationTracker.isRunning) {
-                window.optimizationTracker.startOptimization(1); // Single optimization run
-            }
-
-            try {
-                // Clear cache at start and force fresh start
-                this.configCache.clear();
-                console.log('💾 Cache cleared at start of optimization');
-                
-                // Also clear any global cache that might exist
-                if (window.globalConfigCache) {
-                    window.globalConfigCache.clear();
-                    console.log('💾 Global cache also cleared');
-                }
-
-                // Get optimization settings from UI
-                const useSimulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
-                const useLatinHypercube = document.getElementById('latin-hypercube')?.checked || false;
-                const useCorrelatedParams = document.getElementById('correlated-params')?.checked || false;
-                const useDeepDive = document.getElementById('deep-dive')?.checked || false;
-                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-
-                console.log('🚀 Optimization settings:', {
-                    useSimulatedAnnealing,
-                    useLatinHypercube,
-                    useCorrelatedParams,
-                    useDeepDive,
-                    targetPnl
-                });
-                
-                // 1. Establish baseline
-                await this.establishBaseline();
-
-                // 2. Parameter testing phase
-                if (this.getRemainingTime() > 0.6 && !window.STOPPED) {
-                    await this.runParameterPhase();
-                }
-
-                // 3. Latin Hypercube Sampling (if enabled and we have time and good parameters)
-                if (useLatinHypercube && this.getRemainingTime() > 0.4 && !window.STOPPED && this.parameterTests.length > 0) {
-                    await this.runLatinHypercubePhase();
-                }
-
-                // 4. Correlated Parameter testing (if enabled and we have time)
-                if (useCorrelatedParams && this.getRemainingTime() > 0.3 && !window.STOPPED) {
-                    await this.runCorrelatedParameterPhase();
-                }
-
-                // 5. Simulated Annealing (if enabled and we have time)
-                if (useSimulatedAnnealing && this.getRemainingTime() > 0.15 && !window.STOPPED) {
-                    await this.simulatedAnnealing.runSimulatedAnnealing();
-                }
-
-                // 6. Deep dive on best parameters (if enabled and final optimization)
-                if (useDeepDive && this.getRemainingTime() > 0.05 && !window.STOPPED && this.parameterTests.length > 0) {
-                    await this.runDeepDive();
-                }
-
-                const runtime = Math.floor((Date.now() - this.startTime) / 1000);
-
-                return {
-                    bestConfig: this.bestConfig,
-                    bestScore: this.bestScore,
-                    bestMetrics: this.bestMetrics,
-                    testCount: this.testCount,
-                    runtime: runtime,
-                    targetAchieved: this.bestScore >= targetPnl,
-                    history: this.history,
-                    cacheSize: this.configCache.size(),
-                    parameterEffectiveness: this.parameterTests.slice(0, 10)
-                };
-
-            } catch (error) {
-                console.error('Optimization error:', error);
-                throw error;
-            }
-        }
-
-        // Advanced optimization phases
-        async runLatinHypercubePhase() {
-            updateProgress('🎲 Latin Hypercube Sampling', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-
-            // Focus on top parameters for LHS
-            let topParams = this.parameterTests.slice(0, 6).map(p => p.param);
-            
-            // 📌 Filter out pinned parameters from Latin Hypercube sampling
-            if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                const pinnedParams = Object.keys(window.pinnedSettings.settings);
-                topParams = topParams.filter(param => !pinnedParams.includes(param));
-                
-                if (topParams.length === 0) {
-                    console.log('⚠️ All top parameters are pinned - skipping Latin Hypercube phase');
-                    return;
-                }
-            }
-            
-            const variations = this.generateLatinHypercubeVariations(this.bestConfig, topParams, 8);
-
-            for (const variation of variations) {
-                if (window.STOPPED || this.getRemainingTime() <= 0.3) break;
-
-                const result = await this.testConfig(variation.config, variation.name);
-                if (!result.success) continue;
-
-                // Early termination if target achieved
-                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-                if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-                    return;
-                }
-            }
-        }
-
-        async runCorrelatedParameterPhase() {
-            updateProgress('🔗 Correlated Parameters', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-
-            const correlatedVariations = this.generateCorrelatedVariations(this.bestConfig);
-
-            for (const variation of correlatedVariations) {
-                if (window.STOPPED || this.getRemainingTime() <= 0.1) break;
-
-                const result = await this.testConfig(variation.config, variation.name);
-                if (!result.success) continue;
-
-                // Early termination if target achieved
-                const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-                if (this.bestScore >= targetPnl) {
-                    updateProgress('🎯 Target achieved early!', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-                    return;
-                }
-            }
-        }
-
-        async runDeepDive() {
-            updateProgress('🔬 Deep Dive Analysis', this.getProgress(), this.bestScore.toFixed(1), this.testCount, this.bestMetrics?.totalTokens || '--', this.startTime);
-
-            // Deep dive on top 3 most effective parameters
-            let topParams = this.parameterTests.slice(0, 3);
-            
-            // 📌 Filter out pinned parameters from Deep Dive
-            if (window.pinnedSettings && window.pinnedSettings.enabled) {
-                const pinnedParams = Object.keys(window.pinnedSettings.settings);
-                topParams = topParams.filter(paramTest => !pinnedParams.includes(paramTest.param));
-                
-                if (topParams.length === 0) {
-                    console.log('⚠️ All top parameters are pinned - skipping Deep Dive phase');
-                    return;
-                }
-            }
-            
-            for (const paramTest of topParams) {
-                if (window.STOPPED || this.getRemainingTime() <= 0.02) break;
-
-                // Generate more fine-grained variations
-                const variations = this.generateParameterVariations(this.bestConfig, paramTest.param, paramTest.section, true);
-                
-                for (const variation of variations) {
-                    if (window.STOPPED) break;
-                    await this.testConfig(variation.config, `Deep dive: ${variation.name}`);
-                }
-            }
-        }
-
-        // Enhanced variation generation using Latin Hypercube Sampling
-        generateLatinHypercubeVariations(baseConfig, parameters, numSamples = 6) {
-            // Handle Holders Growth fields specially - treat as paired parameter
-            let processedParams = [...parameters];
-            const hasHoldersGrowthPct = parameters.includes('Holders Growth %');
-            const hasHoldersGrowthMin = parameters.includes('Holders Growth Minutes');
-            
-            // If both Holders Growth fields are in the parameter list, treat as one paired parameter
-            if (hasHoldersGrowthPct && hasHoldersGrowthMin) {
-                processedParams = processedParams.filter(p => p !== 'Holders Growth Minutes');
-                console.log('🔗 Latin Hypercube: Treating Holders Growth as paired parameter');
-            }
-            
-            const samples = this.latinSampler.generateSamples(processedParams, numSamples);
-            const variations = [];
-            
-            for (const sample of samples) {
-                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
-                let name = 'LHS: ';
-                
-                for (const [param, value] of Object.entries(sample)) {
-                    const section = this.getSection(param);
-                    if (config[section]) {
-                        // Special handling for Holders Growth %
-                        if (param === 'Holders Growth %') {
-                            config[section][param] = value;
-                            
-                            // Generate a correlated Minutes value based on the Growth %
-                            let minutesValue;
-                            if (value <= 25) {
-                                minutesValue = 5 + Math.floor(Math.random() * 10); // 5-15 minutes
-                            } else if (value <= 75) {
-                                minutesValue = 10 + Math.floor(Math.random() * 20); // 10-30 minutes  
-                            } else if (value <= 150) {
-                                minutesValue = 15 + Math.floor(Math.random() * 45); // 15-60 minutes
-                            } else {
-                                minutesValue = 30 + Math.floor(Math.random() * 210); // 30-240 minutes
-                            }
-                            
-                            config[section]['Holders Growth Minutes'] = minutesValue;
-                            name += `${param}=${value}% (${minutesValue}min) `;
-                        } else {
-                            config[section][param] = value;
-                            name += `${param}=${value} `;
-                        }
-                    }
-                }
-                
-                variations.push({ config, name: name.trim() });
-            }
-            
-            return variations;
-        }
-
-        // Generate correlated parameter variations (e.g., Min/Max MCAP together)
-        generateCorrelatedVariations(baseConfig) {
-            const variations = [];
-            
-            // MCAP correlation
-            const mcapRanges = [
-                { min: 1000, max: 15000 },
-                { min: 5000, max: 25000 },
-                { min: 10000, max: 40000 },
-                { min: 3000, max: 20000 }
-            ];
-            
-            for (const range of mcapRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
-                config.basic["Min MCAP (USD)"] = range.min;
-                config.basic["Max MCAP (USD)"] = range.max;
-                variations.push({ 
-                    config, 
-                    name: `MCAP Range: ${range.min}-${range.max}` 
-                });
-            }
-            
-            // Wallet correlation
-            const walletRanges = [
-                { minUnique: 1, maxUnique: 3, minKyc: 1, maxKyc: 3 },
-                { minUnique: 0, maxUnique: 2, minKyc: 0, maxKyc: 2 },
-                { minUnique: 2, maxUnique: 5, minKyc: 2, maxKyc: 5 },
-                { minUnique: 1, maxUnique: 4, minKyc: 1, maxKyc: 4 }
-            ];
-            
-            for (const range of walletRanges) {
-                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
-                config.wallets["Min KYC Wallets"] = range.minKyc;
-                config.wallets["Max KYC Wallets"] = range.maxKyc;
-                config.wallets["Min Unique Wallets"] = range.minUnique;
-                config.wallets["Max Unique Wallets"] = range.maxUnique;
-                config.wallets["Min Holders"] = range.minHolders;
-                config.wallets["Max Holders"] = range.maxHolders;
-                variations.push({ 
-                    config, 
-                    name: `Wallets: U${range.minUnique}-${range.maxUnique} K${range.minKyc}-${range.maxKyc}` 
-                });
-            }
-            
-            const holdersGrowthCombinations = this.generateHoldersGrowthCombinations(baseConfig);
-            
-            for (const combo of holdersGrowthCombinations.slice(0, 12)) { // Take more for correlated phase
-                const config = JSON.parse(JSON.stringify(baseConfig)); // Deep clone
-                config.wallets["Holders Growth %"] = combo.growthPct;
-                config.wallets["Holders Growth Minutes"] = combo.minutes;
-                variations.push({ 
-                    config, 
-                    name: `Holders Growth: ${combo.growthPct}% in ${combo.minutes}min (${combo.strategy})` 
-                });
-            }
-            
-            return variations;
-        }
-    }
-
-    // ========================================
-    // 🔗 CHAINED OPTIMIZER CLASS
-    // ========================================
-    class ChainedOptimizer {
-        constructor() {
-            this.chainResults = [];
-            this.globalBestConfig = null;
-            this.globalBestScore = -Infinity;
-            this.globalBestMetrics = null;
-            this.totalTestCount = 0;
-            this.chainStartTime = Date.now();
-            this.currentRun = 0;
-            this.totalRuns = 3;
-            this.timePerRun = 15;
-        }
-
-        async runChainedOptimization(runCount = 3, timePerRunMin = 15) {
-            this.totalRuns = runCount;
-            this.timePerRun = timePerRunMin;
-            this.chainStartTime = Date.now();
-            
-            // Start optimization tracking with total run count
-            window.optimizationTracker.startOptimization(runCount);
-            
-            console.log(`🔗 Starting chained optimization: ${runCount} runs × ${timePerRunMin} minutes each`);
-            updateProgress(`🔗 Chained Optimization: Run 0/${runCount}`, 0, 0, 0, '--', this.chainStartTime);
-            
-            for (let run = 1; run <= runCount; run++) {
-                if (window.STOPPED) {
-                    console.log(`⏹️ Chained optimization stopped at run ${run}/${runCount}`);
-                    break;
-                }
-
-                this.currentRun = run;
-                const runStartTime = Date.now();
-                
-                // Update optimization tracker with current run number
-                window.optimizationTracker.setCurrentRun(run, runCount);
-                
-                console.log(`\n🔗 === CHAIN RUN ${run}/${runCount} ===`);
-                updateProgress(`🔗 Chain Run ${run}/${runCount} Starting`, 
-                    ((run - 1) / runCount) * 100, 
-                    this.globalBestScore === -Infinity ? 0 : this.globalBestScore.toFixed(1), 
-                    this.totalTestCount, 
-                    this.globalBestMetrics?.totalTokens || '--', 
-                    this.chainStartTime
-                );
-
-                try {
-                    // Create new optimizer for this run
-                    // For run 1, start fresh (no initial config)
-                    // For run 2+, start from the best config found so far
-                    const initialConfig = run === 1 ? null : this.globalBestConfig;
-                    const optimizer = new EnhancedOptimizer(initialConfig);
-                    
-                    if (initialConfig) {
-                        console.log(`🔄 Run ${run} starting from previous best config (Score: ${this.globalBestScore.toFixed(1)}%)`);
-                        console.log(`🚀 Building on accumulated knowledge from ${run-1} previous run${run > 2 ? 's' : ''}!`);
-                    } else {
-                        console.log(`🆕 Run ${run} starting fresh with baseline discovery`);
-                    }
-                    
-                    // Override the runtime for this individual run
-                    const originalRuntime = CONFIG.MAX_RUNTIME_MIN;
-                    CONFIG.MAX_RUNTIME_MIN = timePerRunMin;
-                    
-                    // Run optimization
-                    const runResults = await optimizer.runOptimization();
-                    
-                    // Restore original runtime setting
-                    CONFIG.MAX_RUNTIME_MIN = originalRuntime;
-                    
-                    // Track this run's results
-                    const runDuration = Math.floor((Date.now() - runStartTime) / 1000);
-                    const runResult = {
-                        runNumber: run,
-                        config: runResults.bestConfig,
-                        score: runResults.bestScore,
-                        metrics: runResults.bestMetrics,
-                        testCount: runResults.testCount,
-                        runtime: runDuration,
-                        targetAchieved: runResults.targetAchieved,
-                        parameterEffectiveness: runResults.parameterEffectiveness?.slice(0, 3) || []
-                    };
-                    
-                    this.chainResults.push(runResult);
-                    this.totalTestCount += runResults.testCount;
-                    
-                    // Update global best if this run found something better
-                    if (runResults.bestScore > this.globalBestScore) {
-                        this.globalBestConfig = runResults.bestConfig;
-                        this.globalBestScore = runResults.bestScore;
-                        this.globalBestMetrics = runResults.bestMetrics;
-                        
-                        // Update the global tracker
-                        if (window.bestConfigTracker) {
-                            window.bestConfigTracker.update(this.globalBestConfig, this.globalBestMetrics, this.globalBestScore, `Chained Run ${run}`);
-                        }
-                        window.currentBestConfig = this.globalBestConfig; // Keep for backward compatibility
-                        
-                        console.log(`🎉 New global best from Run ${run}! Score: ${this.globalBestScore.toFixed(1)}%`);
-                    }
-                    
-                    const chainProgress = (run / runCount) * 100;
-                    console.log(`✅ Run ${run} completed: ${runResults.bestScore.toFixed(1)}% (${runResults.testCount} tests in ${runDuration}s)`);
-                    updateProgress(`🔗 Run ${run}/${runCount} Complete`, 
-                        chainProgress, 
-                        this.globalBestScore.toFixed(1), 
-                        this.totalTestCount, 
-                        this.globalBestMetrics?.totalTokens || '--', 
-                        this.chainStartTime
-                    );
-                    
-                    // Early termination if target achieved
-                    const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-                    if (this.globalBestScore >= targetPnl) {
-                        console.log(`🎯 Target ${targetPnl}% achieved in run ${run}! Stopping chain early.`);
-                        break;
-                    }
-                    
-                    // Brief pause between runs (let UI update)
-                    if (run < runCount && !window.STOPPED) {
-                        await sleep(1000);
-                    }
-                    
-                } catch (error) {
-                    console.error(`❌ Run ${run} failed:`, error);
-                    this.chainResults.push({
-                        runNumber: run,
-                        error: error.message,
-                        runtime: Math.floor((Date.now() - runStartTime) / 1000)
-                    });
-                }
-            }
-            
-            const totalDuration = Math.floor((Date.now() - this.chainStartTime) / 1000);
-            return this.generateChainSummary(totalDuration);
-        }
-
-        generateChainSummary(totalDuration) {
-            console.log(`\n🔗 === CHAINED OPTIMIZATION SUMMARY ===`);
-            console.log(`📊 Completed ${this.chainResults.length} runs in ${totalDuration}s (${this.totalTestCount} total tests)`);
-            
-            // Sort runs by score for analysis
-            const successfulRuns = this.chainResults.filter(r => !r.error);
-            const sortedRuns = [...successfulRuns].sort((a, b) => b.score - a.score);
-            
-            if (successfulRuns.length > 1) {
-                // Show knowledge accumulation benefits
-                const firstRunScore = successfulRuns[0].score;
-                const finalScore = this.globalBestScore;
-                const improvement = finalScore - firstRunScore;
-                
-                if (improvement > 0) {
-                    console.log(`🚀 Knowledge Accumulation: Started at ${firstRunScore.toFixed(1)}%, ended at ${finalScore.toFixed(1)}% (+${improvement.toFixed(1)}% improvement through chaining)`);
-                } else {
-                    console.log(`📊 Knowledge Accumulation: Each run started from best known config (${finalScore.toFixed(1)}% maintained)`);
-                }
-            }
-            
-            if (sortedRuns.length > 0) {
-                console.log(`\n🏆 TOP RESULTS:`);
-                sortedRuns.slice(0, 3).forEach((run, index) => {
-                    const rank = index + 1;
-                    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
-                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${run.metrics.totalTokens} tokens, ${run.testCount} tests)`);
-                });
-                
-                // Show score progression across runs
-                const scoreProgression = successfulRuns.map(r => r.score.toFixed(1));
-                console.log(`\n📈 Score progression: [${scoreProgression.join('% → ')}%]`);
-                console.log(`🔄 Runs 2+ started from previous best configuration instead of baseline discovery`);
-                
-                // Parameter effectiveness analysis
-                const allParams = new Map();
-                successfulRuns.forEach(run => {
-                    run.parameterEffectiveness?.forEach(param => {
-                        const existing = allParams.get(param.param) || { totalImprovement: 0, occurrences: 0 };
-                        allParams.set(param.param, {
-                            totalImprovement: existing.totalImprovement + param.improvement,
-                            occurrences: existing.occurrences + 1
-                        });
-                    });
-                });
-                
-                const avgParamEffectiveness = Array.from(allParams.entries())
-                    .map(([param, data]) => ({
-                        param,
-                        avgImprovement: data.totalImprovement / data.occurrences,
-                        frequency: data.occurrences
-                    }))
-                    .sort((a, b) => b.avgImprovement - a.avgImprovement)
-                    .slice(0, 5);
-                    
-                if (avgParamEffectiveness.length > 0) {
-                    console.log(`\n🎯 Most effective parameters across all runs:`);
-                    avgParamEffectiveness.forEach((param, index) => {
-                        console.log(`${index + 1}. ${param.param}: +${param.avgImprovement.toFixed(1)}% avg (appeared in ${param.frequency}/${successfulRuns.length} runs)`);
-                    });
-                }
-            }
-            
-            return {
-                chainResults: this.chainResults,
-                globalBestConfig: this.globalBestConfig,
-                globalBestScore: this.globalBestScore,
-                globalBestMetrics: this.globalBestMetrics,
-                totalTestCount: this.totalTestCount,
-                totalRuntime: totalDuration,
-                successfulRuns: successfulRuns.length,
-                failedRuns: this.chainResults.length - successfulRuns.length,
-                targetAchieved: this.globalBestScore >= (parseFloat(document.getElementById('target-pnl')?.value) || 100)
-            };
-        }
-
-        updateBestConfigDisplay() {
-            const display = document.getElementById('best-config-display');
-            const stats = document.getElementById('best-config-stats');
-            const tracker = window.bestConfigTracker;
-            
-            if (display && stats && tracker && tracker.metrics) {
-                display.style.display = 'block';
-                
-                let scoreDisplay = tracker.score.toFixed(1);
-                let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
-                
-                // Show scoring details if available
-                if (tracker.metrics.robustScoring) {
-                    const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
-                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
-                }
-                
-                stats.innerHTML = `
-                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} ${sourceInfo}</div>
-                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
-                    ${methodDisplay}
-                    <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.chainStartTime) / 1000)}s</div>
-                `;
-            }
-        }
-    }
+    
     // Function to read current field value from the UI
     function getFieldValue(labelText) {
         try {
@@ -6396,53 +5333,7 @@
     // 🎨 UI FUNCTIONS & LAYOUT MANAGEMENT 
     // ========================================
     
-    // Generate preset dropdown options dynamically from PRESETS object with priority sorting
-    function generatePresetOptions() {
-        let options = '<option value="">-- Select a Preset --</option>';
-        
-        // Convert PRESETS object to array with keys and sort by priority
-        const sortedPresets = Object.entries(PRESETS).sort(([keyA, configA], [keyB, configB]) => {
-            const priorityA = configA.priority || 999; // Default high priority if not set
-            const priorityB = configB.priority || 999;
-            return priorityA - priorityB;
-        });
-        
-        let currentCategory = null;
-        
-        // Add sorted presets with category headers
-        sortedPresets.forEach(([presetKey, presetConfig]) => {
-            // Add category separator if category changed
-            if (presetConfig.category && presetConfig.category !== currentCategory) {
-                currentCategory = presetConfig.category;
-                options += `<optgroup label="── ${currentCategory} ──">`;
-            }
-            
-            const displayName = getPresetDisplayName(presetKey, presetConfig);
-            options += `<option value="${presetKey}">${displayName}</option>`;
-        });
-        
-        return options;
-    }
     
-    function getPresetDisplayName(presetKey, presetConfig) {        
-        // Use description if available, otherwise generate from key
-        if (presetConfig && presetConfig.description) {
-            // Add priority indicator for high priority items
-            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
-                                 (presetConfig.priority <= 5) ? '🔥 ' : 
-                                (presetConfig.priority <= 10) ? '⭐ ' : '';
-            return `${priorityIcon}${presetConfig.description}`;
-        }
-        
-        // Fallback to original naming logic
-        let displayName = presetKey
-            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
-            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
-            .trim();
-            
-        return displayName;
-    }
     
     // Clean up split-screen when UI is removed
     function cleanupSplitScreen() {
@@ -6607,405 +5498,22 @@
 
                 <!-- Configuration Tab -->
                 <div id="config-tab" class="tab-content active">
-                    
-                        <!-- Presets and Trigger Mode Row -->
-                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px;">
-                            <div>
-                                <label style="
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 4px;
-                                ">Quick Presets</label>
-                                <select id="preset-dropdown" style="
-                                    width: 100%;
-                                    padding: 5px 8px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                    ${generatePresetOptions()}
-                                </select>
-                            </div>
-                            <div>
-                                <label style="
-                                    font-size: 11px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 4px;
-                                ">Trigger Mode</label>
-                                <select id="trigger-mode-select" style="
-                                    width: 100%;
-                                    padding: 5px 8px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                    <option value="0">Bullish Bonding</option>
-                                    <option value="1">God Mode</option>
-                                    <option value="2">Moon Finder</option>
-                                    <option value="3">Fomo</option>
-                                    <option value="4" selected>Launchpads</option>
-                                    <option value="5">Smart Tracker</option>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <!-- Optimization Targets Row -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 2px;
-                                ">Target PnL %</label>
-                                <input type="number" id="target-pnl" value="100" min="5" max="500" step="5" style="
-                                    width: 100%;
-                                    padding: 3px 4px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 9px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 2px;
-                                ">Runtime (min)</label>
-                                <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
-                                    width: 100%;
-                                    padding: 3px 4px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 9px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                        </div>
-
-                        <!-- Optimization Settings Row 3 -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 3px;
-                                ">Min Tokens / Day</label>
-                                <input type="number" id="min-tokens" value="10" min="5" max="1000" step="5" style="
-                                    width: 100%;
-                                    padding: 5px 6px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                            <div>
-                                <label style="
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #a0aec0;
-                                    display: block;
-                                    margin-bottom: 3px;
-                                ">Chain Runs</label>
-                                <input type="number" id="chain-run-count" value="5" min="1" max="10" step="1" style="
-                                    width: 100%;
-                                    padding: 5px 6px;
-                                    background: #2d3748;
-                                    border: 1px solid #4a5568;
-                                    border-radius: 4px;
-                                    color: #e2e8f0;
-                                    font-size: 10px;
-                                    text-align: center;
-                                    outline: none;
-                                    transition: border-color 0.2s;
-                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                            </div>
-                        </div>
-
-                        <!-- Win Rate Configuration -->
+                    <!-- Optimization UI will be injected here by AGOptimization.js -->
+                    <div id="optimization-ui-container" style="padding: 16px;">
                         <div style="
-                            margin-bottom: 10px;
-                            padding: 8px;
-                            background: #2d3748;
-                            border-radius: 6px;
-                            border: 1px solid #4a5568;
+                            text-align: center; 
+                            padding: 40px 20px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 200px;
                         ">
-                            <div style="
-                                font-size: 11px;
-                                font-weight: 600;
-                                margin-bottom: 6px;
-                                color: #63b3ed;
-                                display: flex;
-                                align-items: center;
-                                gap: 6px;
-                            ">
-                                🎯 Win Rate Thresholds
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
-                                <div>
-                                    <label style="
-                                        font-size: 9px;
-                                        font-weight: 500;
-                                        color: #a0aec0;
-                                        display: block;
-                                        margin-bottom: 2px;
-                                    ">Small Sample (&lt;500)</label>
-                                    <input type="number" id="min-win-rate-small" value="35" min="0" max="100" step="1" style="
-                                        width: 100%;
-                                        padding: 4px 5px;
-                                        background: #2d3748;
-                                        border: 1px solid #4a5568;
-                                        border-radius: 4px;
-                                        color: #e2e8f0;
-                                        font-size: 9px;
-                                        text-align: center;
-                                        outline: none;
-                                        transition: border-color 0.2s;
-                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                </div>
-                                <div>
-                                    <label style="
-                                        font-size: 9px;
-                                        font-weight: 500;
-                                        color: #a0aec0;
-                                        display: block;
-                                        margin-bottom: 2px;
-                                    ">Medium (500-999)</label>
-                                    <input type="number" id="min-win-rate-medium" value="30" min="0" max="100" step="1" style="
-                                        width: 100%;
-                                        padding: 4px 5px;
-                                        background: #2d3748;
-                                        border: 1px solid #4a5568;
-                                        border-radius: 4px;
-                                        color: #e2e8f0;
-                                        font-size: 9px;
-                                        text-align: center;
-                                        outline: none;
-                                        transition: border-color 0.2s;
-                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                </div>
-                                <div>
-                                    <label style="
-                                        font-size: 9px;
-                                        font-weight: 500;
-                                        color: #a0aec0;
-                                        display: block;
-                                        margin-bottom: 2px;
-                                    ">Large (1000+)</label>
-                                    <input type="number" id="min-win-rate-large" value="25" min="0" max="100" step="1" style="
-                                        width: 100%;
-                                        padding: 4px 5px;
-                                        background: #2d3748;
-                                        border: 1px solid #4a5568;
-                                        border-radius: 4px;
-                                        color: #e2e8f0;
-                                        font-size: 9px;
-                                        text-align: center;
-                                        outline: none;
-                                        transition: border-color 0.2s;
-                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                </div>
-                            </div>
-                            <div style="
-                                font-size: 8px;
-                                color: #a0aec0;
-                                margin-top: 4px;
-                                line-height: 1.3;
-                                text-align: center;
-                            ">
-                                Minimum win rates required for configurations based on token count
-                            </div>
+                            <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                            <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Optimization Controls...</div>
+                            <div style="color: #718096; font-size: 11px;">AGOptimization.js module</div>
                         </div>
-                        
-                        <!-- Advanced Optimization Features -->
-                        <div style="
-                            margin-bottom: 4px;
-                            padding: 4px;
-                            background: #2d3748;
-                            border-radius: 6px;
-                            border: 1px solid #4a5568;
-                        ">
-                            <div style="
-                                font-size: 10px;
-                                font-weight: 600;
-                                margin-bottom: 4px;
-                                color: #63b3ed;
-                                display: flex;
-                                align-items: center;
-                                gap: 6px;
-                            ">
-                                🚀 Optimization Methods
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px 6px;">
-                                
-                                
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
-                                    <input type="checkbox" id="simulated-annealing" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">🔥 Simulated Annealing</span>
-                                </label>
-                                
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Statistical sampling method that ensures even distribution across parameter space">
-                                    <input type="checkbox" id="latin-hypercube" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">📐 Latin Hypercube</span>
-                                </label>
-                                
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
-                                    <input type="checkbox" id="correlated-params" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">🔗 Correlated Params</span>
-                                </label>
-                                
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #e2e8f0;
-                                    padding: 2px;
-                                    border-radius: 3px;
-                                    transition: background 0.2s;
-                                " onmouseover="this.style.background='#4a5568'" 
-                                  onmouseout="this.style.background='transparent'"
-                                  title="Fine-grained testing of the most effective parameters with smaller increments">
-                                    <input type="checkbox" id="deep-dive" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #63b3ed;
-                                    ">
-                                    <span style="font-weight: 500;">🔬 Deep Dive</span>
-                                </label>
-                                
-                                <!-- Scoring Mode Selector -->
-                                <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <label style="font-size: 10px; color: #a0aec0; font-weight: 500;">Scoring Mode</label>
-                                    <select id="scoring-mode-select" style="
-                                        width: 100%;
-                                        padding: 4px 6px;
-                                        background: #2d3748;
-                                        border: 1px solid #4a5568;
-                                        border-radius: 4px;
-                                        color: #e2e8f0;
-                                        font-size: 10px;
-                                        outline: none;
-                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
-                                        <option value="robust_real" selected>Robust Scoring (PnL + Real Win Rate)</option>
-                                        <option value="legacy_resistant">Legacy Resistant (PnL + API Win Rate)</option>
-                                        <option value="tp_only">TP PnL % Only</option>
-                                        <option value="winrate_only">Win Rate Only</option>
-                                        <option value="real_winrate_only">Real Win Rate Only</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
-                            <!-- Low Bundled % Constraint -->
-                            <div style="
-                                margin-top: 4px;
-                                padding: 4px;
-                                background: rgba(255, 193, 7, 0.1);
-                                border: 1px solid rgba(255, 193, 7, 0.3);
-                                border-radius: 4px;
-                            ">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    cursor: pointer;
-                                    font-size: 10px;
-                                    color: #ffc107;
-                                    font-weight: 500;
-                                " title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
-                                    <input type="checkbox" id="low-bundled-constraint" checked style="
-                                        margin-right: 4px;
-                                        transform: scale(0.8);
-                                        accent-color: #ffc107;
-                                    ">
-                                    <span>🛡️ Low Bundled % Constraint</span>
-                                </label>
-                                <div style="
-                                    font-size: 8px;
-                                    color: #a0aec0;
-                                    margin-top: 1px;
-                                    margin-left: 16px;
-                                    line-height: 1.2;
-                                ">
-                                    Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
-                                </div>
-                            </div>
-                        </div>
+                    </div>
                 </div>
 
                 <!-- Base Config Builder Tab -->
@@ -7211,6 +5719,8 @@
                 loadBaseConfigBuilderInTab();
             } else if (activeTabId === 'signal-analysis-tab') {
                 loadSignalAnalysisInTab();
+            } else if (activeTabId === 'config-tab') {
+                loadOptimizationInTab();
             }
         };
         
@@ -7279,37 +5789,53 @@
         // Make functions globally available for onclick handlers
         window.applyBestConfigToUI = async function() {
             const tracker = window.bestConfigTracker;
-            if (tracker && tracker.config) {
-                console.log(`⚙️ Applying best configuration (ID: ${String(tracker.id).substring(0, 8)}) to UI...`);
-                const success = await applyConfigToUI(tracker.config, true); // Skip stop check for manual best config application
+            const config = tracker?.config || window.currentBestConfig || window.optimizationTracker?.currentBest?.config;
+            
+            if (config) {
+                const id = tracker?.id ? String(tracker.id).substring(0, 8) : 'current';
+                console.log(`⚙️ Applying best configuration (ID: ${id}) to UI...`);
+                const success = await applyConfigToUI(config, true); // Skip stop check for manual best config application
                 if (success) {
-                    console.log(`✅ Best configuration (ID: ${String(tracker.id).substring(0, 8)}) applied to UI successfully!`);
+                    console.log(`✅ Best configuration (ID: ${id}) applied to UI successfully!`);
+                    updateStatus('✅ Best configuration applied to UI');
                 } else {
                     console.log('❌ Failed to apply best configuration to UI');
+                    updateStatus('❌ Failed to apply configuration');
                 }
             } else {
                 console.log('❌ No best configuration available to apply');
+                updateStatus('❌ No configuration available');
             }
         };
         
         window.copyBestConfigToClipboard = function() {
             const tracker = window.bestConfigTracker;
-            if (tracker && tracker.config) {
-                const configText = JSON.stringify(tracker.config, null, 2);
+            const config = tracker?.config || window.currentBestConfig || window.optimizationTracker?.currentBest?.config;
+            const metrics = tracker?.metrics || window.optimizationTracker?.currentBest?.metrics;
+            
+            if (config) {
+                const configText = JSON.stringify(config, null, 2);
+                const id = tracker?.id ? String(tracker.id).substring(0, 8) : 'current';
+                const score = tracker?.score || metrics?.score || 'N/A';
+                const source = tracker?.source || window.optimizationTracker?.currentBest?.method || 'Unknown';
+                const timestamp = tracker?.id ? new Date(tracker.id).toLocaleString() : new Date().toLocaleString();
                 
                 // Add metadata comment at the top
                 const metadataComment = 
-                    `// Best configuration (ID: ${String(tracker.id).substring(0, 8)})\n` + 
-                    `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
-                    `// Generated: ${new Date(tracker.id).toLocaleString()}\n\n`;
+                    `// Best configuration (ID: ${id})\n` + 
+                    `// Score: ${typeof score === 'number' ? score.toFixed(1) : score} | Source: ${source}\n` + 
+                    `// Generated: ${timestamp}\n\n`;
                 
                 navigator.clipboard.writeText(metadataComment + configText).then(() => {
-                    console.log(`📋 Best configuration (ID: ${String(tracker.id).substring(0, 8)}) copied to clipboard!`);
+                    console.log(`📋 Best configuration (ID: ${id}) copied to clipboard!`);
+                    updateStatus('📋 Configuration copied to clipboard');
                 }).catch(err => {
-                    console.log('❌ Failed to copy configuration to clipboard');
+                    console.log('❌ Failed to copy configuration to clipboard:', err);
+                    updateStatus('❌ Failed to copy configuration');
                 });
             } else {
                 console.log('❌ No best configuration available to copy');
+                updateStatus('❌ No configuration available');
             }
         };
         
@@ -7320,6 +5846,10 @@
         window.toggleSplitScreen = toggleSplitScreen;
         window.enableSplitScreen = enableSplitScreen;
         window.disableSplitScreen = disableSplitScreen;
+        
+        // Make UI update functions globally available
+        window.updateUIBackground = updateUIBackground;
+        window.updateBestConfigHeader = updateBestConfigHeader;
         
         // Make CONFIG globally accessible for debugging/testing
         window.CONFIG = CONFIG;
@@ -7502,6 +6032,7 @@
     // Load Base Config Builder in the tab (with loading state management)
     let baseConfigBuilderLoaded = false;
     let signalAnalysisLoaded = false;
+    let optimizationLoaded = false;
     
     async function loadSignalAnalysisInTab() {
         // Don't reload if already loaded
@@ -7566,6 +6097,96 @@
                         <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Signal Analysis</div>
                         <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
                         <button onclick="window.retryLoadSignalAnalysis()" style="
+                            padding: 8px 16px;
+                            background: rgba(139, 92, 246, 0.2);
+                            border: 1px solid rgba(139, 92, 246, 0.4);
+                            border-radius: 6px;
+                            color: #a78bfa;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 600;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
+                           onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
+                            🔄 Retry Loading
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async function loadOptimizationInTab() {
+        console.log('🔄 loadOptimizationInTab called...');
+        
+        // Don't reload if already loaded
+        if (optimizationLoaded) {
+            console.log('⏭️ Optimization already loaded, skipping');
+            return;
+        }
+        
+        const tabContent = document.getElementById('optimization-ui-container');
+        console.log('📦 Found optimization-ui-container:', !!tabContent);
+        
+        try {
+            // Show loading state if not already shown
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Optimization Engine...</div>
+                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                    </div>
+                `;
+            }
+            
+            console.log('🌐 Fetching AGOptimization.js from GitHub...');
+            
+            // Load Optimization script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGOptimization.js';
+            const response = await fetch(scriptUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load Optimization Engine: HTTP ${response.status}`);
+            }
+            
+            const scriptContent = await response.text();
+            console.log(`📜 Loaded ${scriptContent.length} characters from GitHub`);
+            
+            // Execute the script - it will automatically detect tab integration
+            console.log('⚙️ Executing AGOptimization.js...');
+            eval(scriptContent);
+            
+            optimizationLoaded = true;
+            console.log('✅ Optimization Engine loaded successfully in tab!');
+            
+        } catch (error) {
+            console.error('❌ Optimization Engine loading error:', error);
+            
+            // Show error state in tab
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Optimization Engine</div>
+                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
+                        <button onclick="window.retryLoadOptimization()" style="
                             padding: 8px 16px;
                             background: rgba(139, 92, 246, 0.2);
                             border: 1px solid rgba(139, 92, 246, 0.4);
@@ -7706,6 +6327,30 @@
         loadSignalAnalysisInTab();
     };
 
+    // Global retry function for Optimization Engine error recovery
+    window.retryLoadOptimization = function() {
+        optimizationLoaded = false;
+        const tabContent = document.getElementById('optimization-tab');
+        if (tabContent) {
+            tabContent.innerHTML = `
+                <div style="
+                    text-align: center; 
+                    padding: 40px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 200px;
+                ">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Optimization Engine...</div>
+                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                </div>
+            `;
+        }
+        loadOptimizationInTab();
+    };
+
     // ========================================
     // �🎮 EVENT HANDLERS
     // ========================================
@@ -7763,278 +6408,9 @@
             toggleRateLimitingMode();
         });
 
-        // Start optimization button
-        safeAddEventListener('start-optimization', 'click', async () => {
-            const targetPnl = parseFloat(document.getElementById('target-pnl')?.value) || 100;
-            const minTokens = parseInt(document.getElementById('min-tokens')?.value) || 50;
-            const runtimeMin = parseInt(document.getElementById('runtime-min')?.value) || 30;
-            const chainRunCount = parseInt(document.getElementById('chain-run-count')?.value) || 1;
-            const simulatedAnnealing = document.getElementById('simulated-annealing')?.checked || false;
-            const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
-            const correlatedParams = document.getElementById('correlated-params')?.checked || false;
-            const deepDive = document.getElementById('deep-dive')?.checked || false;
-            
-            // Read win rate configuration from UI
-            const minWinRateSmall = parseFloat(document.getElementById('min-win-rate-small')?.value) || 35;
-            const minWinRateMedium = parseFloat(document.getElementById('min-win-rate-medium')?.value) || 33;
-            const minWinRateLarge = parseFloat(document.getElementById('min-win-rate-large')?.value) || 30;
-            
-            // Reset UI background to original color when starting
-            updateUIBackground(false);
-            
-            // Update config with UI values
-            CONFIG.TARGET_PNL = targetPnl;
-            CONFIG.MIN_WIN_RATE = minWinRateSmall;
-            CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE = minWinRateMedium;
-            CONFIG.MIN_WIN_RATE_LARGE_SAMPLE = minWinRateLarge;
-            
-            // Apply date-range based token threshold scaling
-            const scaledThresholds = getScaledTokenThresholds();
-            CONFIG.MIN_TOKENS = Math.max(minTokens, scaledThresholds.MIN_TOKENS); // Use higher of UI value or scaled value
-            CONFIG.MAX_RUNTIME_MIN = runtimeMin;
-            
-            // Log scaling information if date filtering is active
-            if (scaledThresholds.scalingInfo.isDateFiltered) {
-                console.log(`📅 Date range scaling applied (${scaledThresholds.scalingInfo.days} days, ${scaledThresholds.scalingInfo.scalingFactor.toFixed(2)}x):`);
-                console.log(`   📊 Token thresholds: Large=${scaledThresholds.LARGE_SAMPLE_THRESHOLD}, Medium=${scaledThresholds.MEDIUM_SAMPLE_THRESHOLD}, Min=${scaledThresholds.MIN_TOKENS}`);
-                console.log(`   🎯 Using minimum tokens: ${CONFIG.MIN_TOKENS} (UI: ${minTokens}, Scaled: ${scaledThresholds.MIN_TOKENS})`);
-            }
-            CONFIG.SCORING_MODE = getScoringMode();
-            CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
-            CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
-            CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
-            CONFIG.USE_DEEP_DIVE = deepDive;
-            CONFIG.CHAIN_RUN_COUNT = chainRunCount;
-            
-            const features = [];
-            const mode = CONFIG.SCORING_MODE;
-            if (mode === 'robust_real') features.push('robust scoring with real win rate');
-            if (mode === 'legacy_resistant') features.push('legacy outlier-resistant scoring');
-            if (mode === 'tp_only') features.push('TP PnL scoring');
-            if (mode === 'winrate_only') features.push('Win Rate scoring');
-            if (mode === 'real_winrate_only') features.push('Real Win Rate scoring');
-            if (simulatedAnnealing) features.push('simulated annealing');
-            if (latinHypercube) features.push('Latin hypercube sampling');
-            if (correlatedParams) features.push('correlated parameters');
-            if (deepDive) features.push('deep dive analysis');
-            
-            const featuresStr = features.length > 0 ? ` with ${features.join(', ')}` : '';
-            
-            // Determine if we should use chained runs (when runs > 1)
-            const useChainedRuns = chainRunCount > 1;
-            
-            if (useChainedRuns) {
-                console.log(`🔗 Starting chained optimization: ${chainRunCount} runs of ${runtimeMin} min each, Target ${targetPnl}% PnL, Min ${minTokens} tokens${featuresStr}`);
-            } else {
-                console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
-            }
-            
-            // 📌 PIN SETTINGS FEATURE: Get current configuration and show pin dialog
-            try {
-                console.log('📌 Reading current backtester configuration for pin settings...');
-                const currentConfig = await getCurrentConfigFromUI();
-                    
-                    // Show pin settings dialog with 10 second timeout
-                const pinResult = await new Promise((resolve) => {
-                        showPinSettingsDialog(currentConfig, resolve);
-                    });
-                    
-                    // Check if user cancelled
-                    if (pinResult.cancelled) {
-                        console.log('❌ Optimization cancelled by user via Pin Settings dialog');
-                        return; // Exit the function, stopping optimization
-                    }
-                
-                // Store pin settings globally
-                window.pinnedSettings.enabled = pinResult.pinned;
-                window.pinnedSettings.settings = pinResult.settings;
-                
-                if (pinResult.pinned && Object.keys(pinResult.settings).length > 0) {
-                    console.log(`📌 ${Object.keys(pinResult.settings).length} settings pinned:`, pinResult.settings);
-                    console.log('🔒 These settings will remain constant during optimization');
-                } else {
-                    console.log('📌 No settings pinned - proceeding with standard optimization');
-                }
-                
-            } catch (error) {
-                console.warn('❌ Pin settings dialog error:', error);
-                // Proceed with no pinned settings
-                window.pinnedSettings.enabled = false;
-                window.pinnedSettings.settings = {};
-            }
-            
-            // UI state changes
-            const startBtn = document.getElementById('start-optimization');
-            const stopBtn = document.getElementById('stop-optimization');
-            if (startBtn) startBtn.style.display = 'none';
-            if (stopBtn) stopBtn.style.display = 'block';
-            
-            // Auto-collapse both sections when starting
-            console.log('📱 Auto-collapsing sections for cleaner optimization view...');
-            
-            // Collapse Configuration section if it's open
-            const configContent = document.getElementById('config-section-content');
-            const configArrow = document.getElementById('config-section-arrow');
-            if (configContent && configContent.style.display !== 'none') {
-                configContent.style.display = 'none';
-                if (configArrow) {
-                    configArrow.style.transform = 'rotate(-90deg)';
-                    configArrow.textContent = '▶';
-                }
-            }
-            
-            // Collapse Signal Analysis section if it's open
-            const signalContent = document.getElementById('signal-section-content');
-            const signalArrow = document.getElementById('signal-section-arrow');
-            if (signalContent && signalContent.style.display !== 'none') {
-                signalContent.style.display = 'none';
-                if (signalArrow) {
-                    signalArrow.style.transform = 'rotate(-90deg)';
-                    signalArrow.textContent = '▶';
-                }
-            }
-            
-            // Reset stopped flag
-            STOPPED = false;
-            
-            // Start optimization
-            try {
-                let results;
-                
-                if (useChainedRuns) {
-                    // Use ChainedOptimizer for multiple runs
-                    const chainedOptimizer = new ChainedOptimizer();
-                    results = await chainedOptimizer.runChainedOptimization(chainRunCount, runtimeMin);
-                } else {
-                    // Use single EnhancedOptimizer run
-                    const optimizer = new EnhancedOptimizer();
-                    results = await optimizer.runOptimization();
-                }
-                
-                if (results && results.bestConfig) {
-                    if (useChainedRuns) {
-                        console.log(`🎉 Chained optimization completed! Best score: ${results.bestScore.toFixed(1)}% across ${chainRunCount} runs (${results.totalTestCount} total tests)`);
-                    } else {
-                        console.log(`🎉 Optimization completed! Best score: ${results.bestScore.toFixed(1)}% after ${results.testCount} tests`);
-                    }
-                    
-                    // Update tracker with final results
-                    const source = useChainedRuns ? `Chained Optimization (${chainRunCount} runs)` : 'Single Optimization';
-                    if (window.bestConfigTracker) {
-                        window.bestConfigTracker.update(results.bestConfig, results.bestMetrics, results.bestScore, source);
-                    }
-                    window.currentBestConfig = results.bestConfig; // Keep for backward compatibility
-                    
-                    // Update results display to show pinned settings
-                    updateResultsWithPinnedSettings(window.pinnedSettings.settings);
-                    
-                    // Change background to green for successful completion
-                    updateUIBackground(true);
-                } else {
-                    console.log('❌ Optimization completed but no best configuration found');
-                    // Change background to green even if no improvement (completed)
-                    updateUIBackground(true);
-                }
-            } catch (error) {
-                console.log(`❌ Optimization failed: ${error.message}`);
-                // Keep original background color for failed optimization
-            } finally {
-                // Stop optimization tracking when complete
-                if (window.optimizationTracker) {
-                    window.optimizationTracker.stopOptimization();
-                }
-                
-                // Reset UI state safely
-                const startBtn = document.getElementById('start-optimization');
-                const stopBtn = document.getElementById('stop-optimization');
-                if (startBtn) startBtn.style.display = 'block';
-                if (stopBtn) stopBtn.style.display = 'none';
-            }
-        });
-        
-        // Stop optimization button
-        safeAddEventListener('stop-optimization', 'click', () => {
-            window.STOPPED = true;
-            console.log('⏹️ Optimization stopped by user - STOPPED flag set to:', window.STOPPED);
-            
-            // Stop optimization tracking immediately when stopped
-            if (window.optimizationTracker) {
-                window.optimizationTracker.stopOptimization();
-            }
-            
-            // Keep original background when manually stopped
-            const startBtn = document.getElementById('start-optimization');
-            const stopBtn = document.getElementById('stop-optimization');
-            if (startBtn) startBtn.style.display = 'block';
-            if (stopBtn) stopBtn.style.display = 'none';
-            // Update status to confirm stop action
-            updateStatus('⏹️ Optimization stopped by user', false);
-        });
-        
-        // Parameter Impact Discovery button
-        safeAddEventListener('parameter-discovery', 'click', async () => {
-            const discoveryBtn = document.getElementById('parameter-discovery');
-            const startBtn = document.getElementById('start-optimization');
-            
-            try {
-                // Reset stop flag and hide other buttons
-                window.STOPPED = false;
-                if (discoveryBtn) {
-                    discoveryBtn.style.display = 'none';
-                    discoveryBtn.disabled = true;
-                }
-                if (startBtn) {
-                    startBtn.style.display = 'none';
-                    startBtn.disabled = true;
-                }
-                
-                // Auto-collapse both sections for cleaner discovery view
-                console.log('📱 Auto-collapsing sections for parameter discovery...');
-                
-                // Collapse Configuration section if it's open
-                const configContent = document.getElementById('config-section-content');
-                const configArrow = document.getElementById('config-section-arrow');
-                if (configContent && configContent.style.display !== 'none') {
-                    configContent.style.display = 'none';
-                    if (configArrow) {
-                        configArrow.style.transform = 'rotate(-90deg)';
-                        configArrow.textContent = '▶';
-                    }
-                }
-                
-                // Collapse Signal Analysis section if it's open
-                const signalContent = document.getElementById('signal-section-content');
-                const signalArrow = document.getElementById('signal-section-arrow');
-                if (signalContent && signalContent.style.display !== 'none') {
-                    signalContent.style.display = 'none';
-                    if (signalArrow) {
-                        signalArrow.style.transform = 'rotate(-90deg)';
-                        signalArrow.textContent = '▶';
-                    }
-                }
-                
-                updateStatus('🔬 Starting Parameter Impact Discovery...', true);
-                
-                // Run parameter discovery
-                const results = await runParameterImpactDiscovery();
-                
-                updateStatus(`✅ Parameter Discovery Complete! Found ${results.length} parameter insights. Check console for detailed results.`, false);
-                
-            } catch (error) {
-                console.error('❌ Parameter Discovery Error:', error);
-                updateStatus(`❌ Parameter Discovery failed: ${error.message}`, false);
-            } finally {
-                // Re-enable buttons
-                if (discoveryBtn) {
-                    discoveryBtn.style.display = 'block';
-                    discoveryBtn.disabled = false;
-                }
-                if (startBtn) {
-                    startBtn.style.display = 'block';
-                    startBtn.disabled = false;
-                }
-            }
-        });
+        // NOTE: Start optimization, Stop optimization, and Parameter Discovery button handlers
+        // are now registered by AGOptimization.js module via setupOptimizationEventHandlers()
+        // Removed from here to prevent duplicate event handler registration
         
         // Base Config Builder tab loads automatically when clicked (handled in switchTab function)
         
@@ -8282,6 +6658,11 @@
     window.generateTestValuesFromRules = generateTestValuesFromRules;
     window.applyConfigToUI = applyConfigToUI;
     window.applyConfigToBacktester = applyConfigToBacktester;
+    window.showPinSettingsDialog = showPinSettingsDialog;
+    window.updateResultsWithPinnedSettings = updateResultsWithPinnedSettings;
+    window.getTriggerMode = getTriggerMode;
+    window.getSelectedSources = getSelectedSources;
+    window.updateStatus = updateStatus;
     
     console.log('✅ Global functions exported for external scripts');
 
@@ -8298,6 +6679,11 @@
         
         setupEventHandlers();
         console.log('✅ Event handlers setup completed');
+        
+        // Load optimization module immediately since config-tab is the default active tab
+        setTimeout(() => {
+            loadOptimizationInTab();
+        }, 100);
         
         // Make functions globally available for onclick handlers
         window.applyBestConfigToUI = async function() {
@@ -8388,6 +6774,3 @@
         throw error;
     }  
 })();
-
-
-

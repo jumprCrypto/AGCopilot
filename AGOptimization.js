@@ -35,6 +35,59 @@
     };
 
     // ========================================
+    // 🎯 PRESET CONFIGURATIONS
+    // ========================================
+    const PRESETS = {
+        oldDeployer: { 
+            category: "Custom",
+            description: "Old Deployer",
+            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
+        },
+        oldishDeployer: { 
+            category: "Custom",
+            description: "Old-ish Deployer",
+            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" } 
+        },
+        agScore7: { 
+            category: "Custom",
+            description: "Min AG Score 7",
+            tokenDetails: { "Min AG Score": "7" } 
+        },
+        
+        // Discovery-based presets (from Parameter Impact Analysis)
+        MaxLiqThirty: {
+            priority: 1,
+            category: "Param Discovery",
+            description: "Max Liq % 30",
+            advanced: { "Max Liquidity %": 30 }
+        },
+         minWinPred: { 
+            priority: 2,
+            category: "Param Discovery",
+            description: "Min Win Pred % 55",
+            advanced: { "Min Win Pred %": 55 }
+        },
+        UnqWallet3: {
+            priority: 3,
+            category: "Param Discovery", 
+            description: "3+ Unq",
+            wallets: { "Min Unique Wallets": 3 }
+        },
+        MinMcap20k: {
+            priority: 4,
+            category: "Param Discovery",
+            description: "Min MCAP 20K", 
+            basic: { "Min MCAP (USD)": 20000 }
+        },
+        MinMcap10k: {
+            priority: 5,
+            category: "Param Discovery",
+            description: "Min MCAP 10K", 
+            basic: { "Min MCAP (USD)": 10000 }
+        }
+    };
+
+    // ========================================
     // 🛠️ UTILITIES & DEPENDENCY MANAGEMENT
     // ========================================
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -465,28 +518,75 @@
         updateBestConfigDisplay() {
             const display = document.getElementById('best-config-display');
             const stats = document.getElementById('best-config-stats');
-            const tracker = window.bestConfigTracker;
             
-            if (display && stats && tracker && tracker.metrics) {
-                display.style.display = 'block';
-                
-                let scoreDisplay = tracker.score.toFixed(1);
-                let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
-                
-                if (tracker.metrics.robustScoring) {
-                    const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
-                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
-                }
-                
+            if (!display || !stats) {
+                console.warn('⚠️ Best config display elements not found in DOM');
+                return;
+            }
+            
+            // Use this instance's data instead of global tracker
+            if (!this.bestMetrics) {
+                console.warn('⚠️ No best metrics available yet');
+                return;
+            }
+            
+            display.style.display = 'block';
+            
+            let scoreDisplay = this.bestScore.toFixed(1);
+            let methodDisplay = '';
+            
+            // Check if we have robust scoring information
+            if (this.bestMetrics.robustScoring) {
+                const rs = this.bestMetrics.robustScoring;
+                scoreDisplay = `${this.bestScore.toFixed(1)} (${rs.scoringMethod})`;
+                methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+            }
+            
+            // Get source from global tracker if available, otherwise use generic label
+            const tracker = window.bestConfigTracker;
+            const source = tracker?.source || 'Unknown';
+            
+            const runtime = Math.floor((Date.now() - this.startTime) / 1000);
+            const runtimeMin = Math.floor(runtime / 60);
+            const runtimeSec = runtime % 60;
+            
+            // Use the global optimization tracker's display instead of duplicating
+            if (window.optimizationTracker) {
+                window.optimizationTracker.updateProgress(
+                    this.testCount, 
+                    this.failedTestCount, 
+                    0, // rate limit failures tracked separately
+                    {
+                        metrics: this.bestMetrics,
+                        config: this.bestConfig,
+                        method: source
+                    }
+                );
+            } else {
+                // Fallback to inline display if tracker not available
                 stats.innerHTML = `
-                    <div><strong>Best Score:</strong> ${scoreDisplay} ${sourceInfo}</div>
-                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
-                    ${methodDisplay}
-                    <div><strong>Tests:</strong> ${this.testCount} (${this.cacheHits} cached, ${this.failedTestCount} failed) | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.startTime) / 1000)}s</div>
+                    <div style="margin-bottom: 8px;">
+                        <div style="font-size: 12px; font-weight: bold; color: #4CAF50; margin-bottom: 4px;">🏆 Current Best</div>
+                        <div style="font-size: 11px; margin-bottom: 4px;">
+                            <span style="color: #aaa;">Score:</span> <span style="color: #4CAF50; font-weight: bold;">${scoreDisplay}</span>
+                            <span style="color: #666; margin: 0 6px;">|</span>
+                            <span style="color: #aaa;">Method:</span> <span style="color: #63b3ed;">${source}</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; margin-bottom: 6px;">
+                            <div><span style="color: #aaa;">Tokens:</span> <span style="color: #fff; font-weight: bold;">${this.bestMetrics.totalTokens || 0}</span></div>
+                            <div><span style="color: #aaa;">Win Rate (2x):</span> <span style="color: #fff;">${this.bestMetrics.winRate?.toFixed(1) || 0}%</span></div>
+                            <div><span style="color: #aaa;">Real WR (TP):</span> <span style="color: #4CAF50; font-weight: bold;">${this.bestMetrics.realWinRate?.toFixed(1) || 0}%</span></div>
+                            <div><span style="color: #aaa;">TP PnL:</span> <span style="color: ${(this.bestMetrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(this.bestMetrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
+                        </div>
+                        ${methodDisplay}
+                        <div style="font-size: 10px; color: #aaa; margin-top: 4px;">
+                            Tests: ${this.testCount} (${this.cacheHits} cached, ${this.failedTestCount} failed) | Runtime: ${runtimeMin}m ${runtimeSec}s
+                        </div>
+                    </div>
                 `;
             }
+            
+            console.log(`📊 Display updated: Score ${this.bestScore.toFixed(1)}%, ${this.testCount} tests, ${runtime}s`);
         }
 
         async testConfig(config, label = 'Test') {
@@ -531,6 +631,11 @@
             const robust = window.calculateRobustScore(result.metrics);
             const score = robust && !robust.rejected ? robust.score : result.metrics.tpPnlPercent;
             
+            // Add robust scoring to metrics (like legacy version)
+            if (robust) {
+                result.metrics.robustScoring = robust;
+            }
+            
             this.bestConfig = currentConfig;
             this.bestScore = score;
             this.bestMetrics = result.metrics;
@@ -561,11 +666,30 @@
                     
                     const testConfig = window.deepClone(this.bestConfig);
                     const section = this.getSection(param);
+                    
+                    // Ensure section exists in config before setting parameter
+                    if (!testConfig[section]) {
+                        testConfig[section] = {};
+                    }
+                    
                     testConfig[section][param] = value;
                     
                     const result = await this.testConfig(testConfig, `${param}=${value}`);
                     
+                    // Update display every 5 tests to show progress
+                    if (this.testCount % 5 === 0) {
+                        this.updateBestConfigDisplay();
+                    }
+                    
                     if (result.success && result.metrics) {
+                        const scaledThresholds = window.getScaledTokenThresholds();
+                        
+                        // Validate minimum token count
+                        if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) {
+                            console.log(`⚠️ Rejecting ${param}=${value}: insufficient tokens (${result.metrics.totalTokens} < ${scaledThresholds.MIN_TOKENS})`);
+                            continue;
+                        }
+                        
                         const robust = window.calculateRobustScore(result.metrics);
                         if (robust && robust.rejected) continue;
                         
@@ -573,7 +697,12 @@
                         
                         if (score > this.bestScore) {
                             const improvement = score - this.bestScore;
-                            console.log(`✅ New best via ${param}=${value}: ${score.toFixed(1)}% (+${improvement.toFixed(1)}%)`);
+                            console.log(`✅ New best via ${param}=${value}: ${score.toFixed(1)}% (+${improvement.toFixed(1)}%) [${result.metrics.totalTokens} tokens]`);
+                            
+                            // Add robust scoring to metrics (like legacy version)
+                            if (robust) {
+                                result.metrics.robustScoring = robust;
+                            }
                             
                             this.bestConfig = testConfig;
                             this.bestScore = score;
@@ -622,25 +751,73 @@
                 
                 // Phase 4: Simulated Annealing
                 if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_SIMULATED_ANNEALING) {
-                    const annealing = new SimulatedAnnealing(
-                        this.bestConfig,
-                        this.testConfig.bind(this),
-                        this.getRemainingTime.bind(this)
-                    );
-                    const annealingResult = await annealing.optimize();
+                    console.log('🔥 Phase 4: Simulated Annealing...');
                     
-                    if (annealingResult.score > this.bestScore) {
-                        console.log(`✅ Simulated annealing improved score: ${annealingResult.score.toFixed(1)}%`);
-                        this.bestConfig = annealingResult.config;
-                        this.bestScore = annealingResult.score;
-                        this.bestMetrics = annealingResult.metrics;
+                    const annealing = new SimulatedAnnealing(1000, 0.95, 1);
+                    let currentConfig = window.deepClone(this.bestConfig);
+                    let currentScore = this.bestScore;
+                    let iterations = 0;
+                    const maxIterations = 50;
+                    
+                    while (!window.STOPPED && this.getRemainingTime() > 0 && annealing.cool() && iterations < maxIterations) {
+                        iterations++;
                         
-                        if (window.bestConfigTracker) {
-                            window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Simulated Annealing');
+                        // Generate neighbor by modifying random parameter
+                        const neighborConfig = window.deepClone(currentConfig);
+                        const params = window.PARAM_RULES ? Object.keys(window.PARAM_RULES) : [];
+                        const param = params[Math.floor(Math.random() * params.length)];
+                        const section = this.getSection(param);
+                        
+                        if (!neighborConfig[section]) neighborConfig[section] = {};
+                        
+                        const testValues = window.generateTestValuesFromRules(param);
+                        if (testValues && testValues.length > 0) {
+                            neighborConfig[section][param] = testValues[Math.floor(Math.random() * testValues.length)];
+                            
+                            const result = await this.testConfig(neighborConfig, `Annealing-${iterations}`);
+                            
+                            if (result.success && result.metrics) {
+                                const scaledThresholds = window.getScaledTokenThresholds();
+                                
+                                // Validate minimum token count
+                                if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) {
+                                    continue;
+                                }
+                                
+                                const robust = window.calculateRobustScore(result.metrics);
+                                if (robust && robust.rejected) continue;
+                                
+                                const score = robust ? robust.score : result.metrics.tpPnlPercent;
+                                
+                                // Accept or reject based on simulated annealing probability
+                                if (annealing.shouldAccept(currentScore, score)) {
+                                    currentConfig = neighborConfig;
+                                    currentScore = score;
+                                    
+                                    if (score > this.bestScore) {
+                                        console.log(`✅ Simulated annealing improved score: ${score.toFixed(1)}% (temp: ${annealing.currentTemp.toFixed(0)})`);
+                                        
+                                        // Add robust scoring to metrics
+                                        if (robust) {
+                                            result.metrics.robustScoring = robust;
+                                        }
+                                        
+                                        this.bestConfig = neighborConfig;
+                                        this.bestScore = score;
+                                        this.bestMetrics = result.metrics;
+                                        
+                                        if (window.bestConfigTracker) {
+                                            window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Simulated Annealing');
+                                        }
+                                        
+                                        this.updateBestConfigDisplay();
+                                    }
+                                }
+                            }
                         }
-                        
-                        this.updateBestConfigDisplay();
                     }
+                    
+                    console.log(`🔥 Simulated annealing completed ${iterations} iterations`);
                 }
                 
                 // Phase 5: Deep Dive (if enabled)
@@ -674,13 +851,40 @@
 
         async runLatinHypercubePhase() {
             console.log('🔬 Phase 3: Latin Hypercube Sampling...');
-            const sampler = new LatinHypercubeSampler();
-            const samples = sampler.generateSamples(10);
+            
+            // Get PARAM_RULES from window
+            const paramRules = window.PARAM_RULES;
+            if (!paramRules) {
+                console.warn('⚠️ PARAM_RULES not available, skipping Latin Hypercube phase');
+                return;
+            }
+            
+            const sampler = new LatinHypercubeSampler(paramRules);
+            const samples = sampler.sample(10);
             
             for (const sample of samples) {
                 if (window.STOPPED || this.getRemainingTime() <= 0) break;
                 
-                const result = await this.testConfig(sample, 'LHS');
+                // Convert flat sample to nested config structure
+                const testConfig = window.deepClone(this.bestConfig);
+                
+                Object.entries(sample).forEach(([param, value]) => {
+                    const section = this.getSection(param);
+                    
+                    // Ensure section exists
+                    if (!testConfig[section]) {
+                        testConfig[section] = {};
+                    }
+                    
+                    testConfig[section][param] = value;
+                });
+                
+                const result = await this.testConfig(testConfig, 'LHS');
+                
+                // Update display every 5 tests to show progress
+                if (this.testCount % 5 === 0) {
+                    this.updateBestConfigDisplay();
+                }
                 
                 if (result.success && result.metrics) {
                     const robust = window.calculateRobustScore(result.metrics);
@@ -690,6 +894,12 @@
                     
                     if (score > this.bestScore) {
                         console.log(`✅ LHS improved score: ${score.toFixed(1)}%`);
+                        
+                        // Add robust scoring to metrics (like legacy version)
+                        if (robust) {
+                            result.metrics.robustScoring = robust;
+                        }
+                        
                         this.bestConfig = sample;
                         this.bestScore = score;
                         this.bestMetrics = result.metrics;
@@ -718,7 +928,15 @@
             for (const param of params) {
                 if (window.STOPPED || this.getRemainingTime() <= 0) break;
                 
-                const currentValue = this.bestConfig[this.getSection(param)][param];
+                const section = this.getSection(param);
+                
+                // Ensure section exists before accessing
+                if (!this.bestConfig[section]) {
+                    console.warn(`⚠️ Section ${section} not found in bestConfig for param ${param}`);
+                    continue;
+                }
+                
+                const currentValue = this.bestConfig[section][param];
                 const testValues = window.generateTestValuesFromRules(param);
                 
                 // Test values near the current best
@@ -730,7 +948,13 @@
                     if (window.STOPPED || this.getRemainingTime() <= 0) break;
                     
                     const testConfig = window.deepClone(this.bestConfig);
-                    testConfig[this.getSection(param)][param] = value;
+                    
+                    // Ensure section exists in cloned config
+                    if (!testConfig[section]) {
+                        testConfig[section] = {};
+                    }
+                    
+                    testConfig[section][param] = value;
                     
                     const result = await this.testConfig(testConfig, `DeepDive-${param}=${value}`);
                     
@@ -742,6 +966,12 @@
                         
                         if (score > this.bestScore) {
                             console.log(`✅ Deep dive improved: ${score.toFixed(1)}%`);
+                            
+                            // Add robust scoring to metrics (like legacy version)
+                            if (robust) {
+                                result.metrics.robustScoring = robust;
+                            }
+                            
                             this.bestConfig = testConfig;
                             this.bestScore = score;
                             this.bestMetrics = result.metrics;
@@ -762,10 +992,10 @@
     // 🔗 CHAINED OPTIMIZER CLASS
     // ========================================
     class ChainedOptimizer {
-        constructor() {
+        constructor(initialConfig = null) {
             this.chainResults = [];
-            this.globalBestConfig = null;
-            this.globalBestScore = -Infinity;
+            this.globalBestConfig = initialConfig || null;
+            this.globalBestScore = initialConfig ? -Infinity : -Infinity;
             this.globalBestMetrics = null;
             this.totalTestCount = 0;
             this.chainStartTime = Date.now();
@@ -805,12 +1035,18 @@
                 );
 
                 try {
-                    const initialConfig = run === 1 ? null : this.globalBestConfig;
+                    // For run 1: Use base config from constructor if available
+                    // For subsequent runs: Use the best config from previous runs
+                    const initialConfig = run === 1 ? this.globalBestConfig : this.globalBestConfig;
                     const optimizer = new EnhancedOptimizer(initialConfig);
                     
                     if (initialConfig) {
-                        console.log(`🔄 Run ${run} starting from previous best config (Score: ${this.globalBestScore.toFixed(1)}%)`);
-                        console.log(`🚀 Building on accumulated knowledge from ${run-1} previous run${run > 2 ? 's' : ''}!`);
+                        if (run === 1) {
+                            console.log(`🎯 Run ${run} starting from base configuration`);
+                        } else {
+                            console.log(`🔄 Run ${run} starting from previous best config (Score: ${this.globalBestScore.toFixed(1)}%)`);
+                            console.log(`🚀 Building on accumulated knowledge from ${run-1} previous run${run > 2 ? 's' : ''}!`);
+                        }
                     } else {
                         console.log(`🆕 Run ${run} starting fresh with baseline discovery`);
                     }
@@ -959,28 +1195,40 @@
         updateBestConfigDisplay() {
             const display = document.getElementById('best-config-display');
             const stats = document.getElementById('best-config-stats');
-            const tracker = window.bestConfigTracker;
             
-            if (display && stats && tracker && tracker.metrics) {
-                display.style.display = 'block';
-                
-                let scoreDisplay = tracker.score.toFixed(1);
-                let methodDisplay = '';
-                let sourceInfo = `<span style="opacity: 0.7; font-size: 9px;">(ID: ${String(tracker.id).substring(0, 8)} | ${tracker.source})</span>`;
-                
-                if (tracker.metrics.robustScoring) {
-                    const rs = tracker.metrics.robustScoring;
-                    scoreDisplay = `${tracker.score.toFixed(1)} (${rs.scoringMethod})`;
-                    methodDisplay = `<div style=\"font-size: 10px; opacity: 0.8;\">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
-                }
-                
-                stats.innerHTML = `
-                    <div><strong>🔗 Chain Best:</strong> ${scoreDisplay} ${sourceInfo}</div>
-                    <div><strong>Tokens:</strong> ${tracker.metrics?.totalTokens || 0} | <strong>Win Rate:</strong> ${tracker.metrics?.winRate?.toFixed(1) || 0}%</div>
-                    ${methodDisplay}
-                    <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${Math.floor((Date.now() - this.chainStartTime) / 1000)}s</div>
-                `;
+            if (!display || !stats) {
+                console.warn('⚠️ Best config display elements not found in DOM');
+                return;
             }
+            
+            // Use this instance's data instead of global tracker
+            if (!this.globalBestMetrics) {
+                console.warn('⚠️ No global best metrics available yet');
+                return;
+            }
+            
+            display.style.display = 'block';
+            
+            let scoreDisplay = this.globalBestScore.toFixed(1);
+            let methodDisplay = '';
+            
+            // Check if we have robust scoring information
+            if (this.globalBestMetrics.robustScoring) {
+                const rs = this.globalBestMetrics.robustScoring;
+                scoreDisplay = `${this.globalBestScore.toFixed(1)} (${rs.scoringMethod})`;
+                methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+            }
+            
+            const runtime = Math.floor((Date.now() - this.chainStartTime) / 1000);
+            
+            stats.innerHTML = `
+                <div><strong>🔗 Chain Best:</strong> ${scoreDisplay}</div>
+                <div><strong>Tokens:</strong> ${this.globalBestMetrics.totalTokens || 0} | <strong>Win Rate:</strong> ${this.globalBestMetrics.winRate?.toFixed(1) || 0}% | <strong>Real Win Rate:</strong> ${this.globalBestMetrics.realWinRate?.toFixed(1) || 0}%</div>
+                ${methodDisplay}
+                <div><strong>Runs:</strong> ${this.currentRun}/${this.totalRuns} | <strong>Total Tests:</strong> ${this.totalTestCount} | <strong>Runtime:</strong> ${runtime}s</div>
+            `;
+            
+            console.log(`📊 Chain display updated: Score ${this.globalBestScore.toFixed(1)}%, Run ${this.currentRun}/${this.totalRuns}, ${this.totalTestCount} tests, ${runtime}s`);
         }
     }
 
@@ -1276,7 +1524,9 @@
                 console.log(`   🎯 Using minimum tokens: ${window.CONFIG.MIN_TOKENS} (UI: ${minTokens}, Scaled: ${scaledThresholds.MIN_TOKENS})`);
             }
             
-            window.CONFIG.SCORING_MODE = window.getScoringMode();
+            // Read scoring mode directly from dropdown
+            const scoringModeSelect = document.getElementById('scoring-mode-select');
+            window.CONFIG.SCORING_MODE = scoringModeSelect ? scoringModeSelect.value : 'robust_real';
             window.CONFIG.USE_SIMULATED_ANNEALING = simulatedAnnealing;
             window.CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
             window.CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
@@ -1304,10 +1554,13 @@
                 console.log(`🚀 Starting optimization: Target ${targetPnl}% PnL, Min ${minTokens} tokens, ${runtimeMin} min runtime${featuresStr}`);
             }
             
+            // Read current configuration for use as base config
+            let currentConfig = null;
+            
             // Pin settings dialog
             try {
                 console.log('📌 Reading current backtester configuration for pin settings...');
-                const currentConfig = await window.getCurrentConfigFromUI();
+                currentConfig = await window.getCurrentConfigFromUI();
                 
                 const pinResult = await new Promise((resolve) => {
                     window.showPinSettingsDialog(currentConfig, resolve);
@@ -1371,10 +1624,10 @@
                 let results;
                 
                 if (useChainedRuns) {
-                    const chainedOptimizer = new ChainedOptimizer();
+                    const chainedOptimizer = new ChainedOptimizer(currentConfig);
                     results = await chainedOptimizer.runChainedOptimization(chainRunCount, runtimeMin);
                 } else {
-                    const optimizer = new EnhancedOptimizer();
+                    const optimizer = new EnhancedOptimizer(currentConfig);
                     results = await optimizer.runOptimization();
                 }
                 
@@ -1541,6 +1794,62 @@
         }
         
         const uiHTML = `
+            <!-- Optimization UI Content -->
+            <div style="height: 100%; overflow-y: auto;">
+                <!-- Presets and Trigger Mode Row -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 8px;">
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Quick Presets</label>
+                                <select id="preset-dropdown" style="
+                                    width: 100%;
+                                    padding: 5px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                    ${generatePresetOptions()}
+                                </select>
+                            </div>
+                            <div>
+                                <label style="
+                                    font-size: 11px;
+                                    font-weight: 500;
+                                    color: #a0aec0;
+                                    display: block;
+                                    margin-bottom: 4px;
+                                ">Trigger Mode</label>
+                                <select id="trigger-mode-select" style="
+                                    width: 100%;
+                                    padding: 5px 8px;
+                                    background: #2d3748;
+                                    border: 1px solid #4a5568;
+                                    border-radius: 4px;
+                                    color: #e2e8f0;
+                                    font-size: 10px;
+                                    outline: none;
+                                    transition: border-color 0.2s;
+                                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                    <option value="0">Bullish Bonding</option>
+                                    <option value="1">God Mode</option>
+                                    <option value="2">Moon Finder</option>
+                                    <option value="3">Fomo</option>
+                                    <option value="4" selected>Launchpads</option>
+                                    <option value="5">Smart Tracker</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Optimization Targets Row -->
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                             <div>
                                 <label style="
@@ -1728,143 +2037,219 @@
                         </div>
                         
                         <!-- Advanced Optimization Features -->
-            <div style="margin-bottom: 16px;">
-                <h4 style="color: #e2e8f0; margin-bottom: 12px; font-size: 14px;">🔬 Optimization Methods</h4>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                    <label style="display: flex; align-items: center; gap: 8px; color: #cbd5e0; cursor: pointer;">
-                        <input type="checkbox" id="simulated-annealing" checked style="
-                            width: 16px;
-                            height: 16px;
-                            cursor: pointer;
+                        <div style="
+                            margin-bottom: 4px;
+                            padding: 4px;
+                            background: #2d3748;
+                            border-radius: 6px;
+                            border: 1px solid #4a5568;
                         ">
-                        <span>🌡️ Simulated Annealing</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; color: #cbd5e0; cursor: pointer;">
-                        <input type="checkbox" id="latin-hypercube" checked style="
-                            width: 16px;
-                            height: 16px;
-                            cursor: pointer;
-                        ">
-                        <span>📐 Latin Hypercube</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; color: #cbd5e0; cursor: pointer;">
-                        <input type="checkbox" id="correlated-params" style="
-                            width: 16px;
-                            height: 16px;
-                            cursor: pointer;
-                        ">
-                        <span>� Correlated Parameters</span>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 8px; color: #cbd5e0; cursor: pointer;">
-                        <input type="checkbox" id="deep-dive" style="
-                            width: 16px;
-                            height: 16px;
-                            cursor: pointer;
-                        ">
-                        <span>� Deep Dive Analysis</span>
-                    </label>
+                            <div style="
+                                font-size: 10px;
+                                font-weight: 600;
+                                margin-bottom: 4px;
+                                color: #63b3ed;
+                                display: flex;
+                                align-items: center;
+                                gap: 6px;
+                            ">
+                                🚀 Optimization Methods
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px 6px;">
+                                
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Advanced optimization technique that accepts worse solutions occasionally to escape local optima">
+                                    <input type="checkbox" id="simulated-annealing" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔥 Simulated Annealing</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Statistical sampling method that ensures even distribution across parameter space">
+                                    <input type="checkbox" id="latin-hypercube" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">📐 Latin Hypercube</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Tests related parameters together (e.g., min/max MCAP, wallet counts) for better combinations">
+                                    <input type="checkbox" id="correlated-params" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔗 Correlated Params</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Fine-grained testing of the most effective parameters with smaller increments">
+                                    <input type="checkbox" id="deep-dive" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🔬 Deep Dive</span>
+                                </label>
+                                
+                                <!-- Scoring Mode Selector -->
+                                <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 2fr; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <label style="font-size: 10px; color: #a0aec0; font-weight: 500;">Scoring Mode</label>
+                                    <select id="scoring-mode-select" style="
+                                        width: 100%;
+                                        padding: 4px 6px;
+                                        background: #2d3748;
+                                        border: 1px solid #4a5568;
+                                        border-radius: 4px;
+                                        color: #e2e8f0;
+                                        font-size: 10px;
+                                        outline: none;
+                                    " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                                        <option value="robust_real" selected>Robust Scoring (PnL + Real Win Rate)</option>
+                                        <option value="legacy_resistant">Legacy Resistant (PnL + API Win Rate)</option>
+                                        <option value="tp_only">TP PnL % Only</option>
+                                        <option value="winrate_only">Win Rate Only</option>
+                                        <option value="real_winrate_only">Real Win Rate Only</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <!-- Low Bundled % Constraint -->
+                            <div style="
+                                margin-top: 4px;
+                                padding: 4px;
+                                background: rgba(255, 193, 7, 0.1);
+                                border: 1px solid rgba(255, 193, 7, 0.3);
+                                border-radius: 4px;
+                            ">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #ffc107;
+                                    font-weight: 500;
+                                " title="Forces Min Bundled % < 5% and Max Bundled % < 35% during optimization">
+                                    <input type="checkbox" id="low-bundled-constraint" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #ffc107;
+                                    ">
+                                    <span>🛡️ Low Bundled % Constraint</span>
+                                </label>
+                                <div style="
+                                    font-size: 8px;
+                                    color: #a0aec0;
+                                    margin-top: 1px;
+                                    margin-left: 16px;
+                                    line-height: 1.2;
+                                ">
+                                    Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                                </div>
+                            </div>
+                        </div>
                 </div>
             </div>
-
-            <!-- Scoring Mode -->
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #e2e8f0;">
-                    🎯 Scoring Mode
-                </label>
-                <select id="scoring-mode" style="
-                    width: 100%;
-                    padding: 8px;
-                    background: #2d3748;
-                    border: 1px solid #4a5568;
-                    border-radius: 4px;
-                    color: #e2e8f0;
-                    cursor: pointer;
-                ">
-                    <option value="balanced">Balanced (60% PnL + 40% Win Rate)</option>
-                    <option value="pnl-focused">PnL Focused (80% PnL + 20% Win Rate)</option>
-                    <option value="winrate-focused">Win Rate Focused (40% PnL + 60% Win Rate)</option>
-                    <option value="pnl-only">PnL Only (100% PnL)</option>
-                </select>
-            </div>
-
-            <!-- Low Bundled Constraint -->
-            <div style="margin-bottom: 16px;">
-                <label style="display: flex; align-items: center; gap: 8px; color: #cbd5e0; cursor: pointer;">
-                    <input type="checkbox" id="require-low-bundled" style="
-                        width: 16px;
-                        height: 16px;
-                        cursor: pointer;
-                    ">
-                    <span>🔒 Require Low Bundled</span>
-                </label>
-            </div>
-
-            <!-- Action Buttons -->
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button id="start-optimization" style="
-                    flex: 1;
-                    min-width: 120px;
-                    padding: 12px;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    border: none;
-                    border-radius: 4px;
-                    color: white;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)';" onmouseout="this.style.transform=''; this.style.boxShadow='';">
-                    🚀 Start Optimization
-                </button>
-                
-                <button id="stop-optimization" style="
-                    flex: 1;
-                    min-width: 120px;
-                    padding: 12px;
-                    background: #e53e3e;
-                    border: none;
-                    border-radius: 4px;
-                    color: white;
-                    font-weight: 600;
-                    cursor: pointer;
-                    display: none;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(229, 62, 62, 0.4)';" onmouseout="this.style.transform=''; this.style.boxShadow='';">
-                    ⏹️ Stop
-                </button>
-                
-                <button id="parameter-discovery" style="
-                    flex: 1;
-                    min-width: 140px;
-                    padding: 12px;
-                    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                    border: none;
-                    border-radius: 4px;
-                    color: white;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(240, 147, 251, 0.4)';" onmouseout="this.style.transform=''; this.style.boxShadow='';">
-                    🔬 Parameter Discovery
-                </button>
-                
-                <button id="toggle-rate-limit-mode" style="
-                    padding: 12px;
-                    background: #4a5568;
-                    border: none;
-                    border-radius: 4px;
-                    color: white;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: transform 0.2s, box-shadow 0.2s;
-                " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(74, 85, 104, 0.4)';" onmouseout="this.style.transform=''; this.style.boxShadow='';" title="Toggle between Normal and Slower rate limiting modes">
-                    ⚡ Normal Mode
-                </button>
-            </div>
+        </div>
         `;
         
         container.innerHTML = uiHTML;
         console.log('✅ Optimization UI injected successfully');
         return true;
+    }
+
+    // Generate preset dropdown options dynamically from PRESETS object with priority sorting
+    function generatePresetOptions() {
+        let options = '<option value="">-- Select a Preset --</option>';
+        
+        // Convert PRESETS object to array with keys and sort by priority
+        const sortedPresets = Object.entries(PRESETS).sort(([keyA, configA], [keyB, configB]) => {
+            const priorityA = configA.priority || 999; // Default high priority if not set
+            const priorityB = configB.priority || 999;
+            return priorityA - priorityB;
+        });
+        
+        let currentCategory = null;
+        
+        // Add sorted presets with category headers
+        sortedPresets.forEach(([presetKey, presetConfig]) => {
+            // Add category separator if category changed
+            if (presetConfig.category && presetConfig.category !== currentCategory) {
+                currentCategory = presetConfig.category;
+                options += `<optgroup label="── ${currentCategory} ──">`;
+            }
+            
+            const displayName = getPresetDisplayName(presetKey, presetConfig);
+            options += `<option value="${presetKey}">${displayName}</option>`;
+        });
+        
+        return options;
+    }
+    
+    function getPresetDisplayName(presetKey, presetConfig) {        
+        // Use description if available, otherwise generate from key
+        if (presetConfig && presetConfig.description) {
+            // Add priority indicator for high priority items
+            const priorityIcon = (presetConfig.priority <= 3) ? '🏆 ' : 
+                                 (presetConfig.priority <= 5) ? '🔥 ' : 
+                                (presetConfig.priority <= 10) ? '⭐ ' : '';
+            return `${priorityIcon}${presetConfig.description}`;
+        }
+        
+        // Fallback to original naming logic
+        let displayName = presetKey
+            .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+            .replace(/([0-9]+)/g, ' $1') // Add space before numbers
+            .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+            .trim();
+            
+        return displayName;
     }
 
     // ========================================
