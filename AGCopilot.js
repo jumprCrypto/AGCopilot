@@ -68,8 +68,8 @@
         RATE_LIMIT_THRESHOLD: 10,     // 8 calls per burst = 4 config tests per burst
         RATE_LIMIT_RECOVERY: 12000,  // 12s recovery time (5 bursts/min max)
         RATE_LIMIT_SAFETY_MARGIN: 1.5, // 50% safety margin (increased from 10%)
-        INTRA_BURST_DELAY: 200,      // 200ms delay between requests
-        MAX_REQUESTS_PER_MINUTE: 50, // Conservative hard cap at 50 req/min
+        INTRA_BURST_DELAY: 250,      // 200ms delay between requests
+        MAX_REQUESTS_PER_MINUTE: 49, // Conservative hard cap at 50 req/min
         USE_BURST_RATE_LIMITING: true, // Use burst mode for efficiency
         SMART_BURST_SIZE: true,        // Keep smart burst size learning for optimal discovery
         
@@ -81,14 +81,14 @@
                 RATE_LIMIT_THRESHOLD: 10,    // 20 calls/burst
                 RATE_LIMIT_RECOVERY: 12000,  // 12s recovery
                 REQUEST_DELAY: 9360,         // 9.36s for signal analysis
-                INTRA_BURST_DELAY: 200       // 100ms
+                INTRA_BURST_DELAY: 250       // 100ms
             },
             slower: {
                 BACKTEST_WAIT: 30000,        // 30s (50% slower)
                 RATE_LIMIT_THRESHOLD: 5,    // 15 calls/burst (25% fewer)
                 RATE_LIMIT_RECOVERY: 15000,  // 15s recovery (50% slower)
                 REQUEST_DELAY: 14000,        // 14s for signal analysis (50% slower)
-                INTRA_BURST_DELAY: 250       // 150ms (50% slower)
+                INTRA_BURST_DELAY: 350       // 150ms (50% slower)
             }
         }
     };
@@ -2301,8 +2301,14 @@
                 const cache = window.globalConfigCache;
                 if (CONFIG.USE_CONFIG_CACHING && cache && cache.has(config)) {
                     const cached = cache.get(config);
+                    cache.recordHit(); // Record the cache hit for metrics
                     console.log(`    💾 Cache hit (bypassed rate limiting): API call saved | ${cache.getPerformanceSummary()}`);
                     return cached;
+                }
+                
+                // Cache miss - record it
+                if (CONFIG.USE_CONFIG_CACHING && cache) {
+                    cache.recordMiss();
                 }
                 
                 // NOTE: Rate limiting is now handled inside prepareToken() method
@@ -4317,13 +4323,8 @@
 
         get(config) {
             const key = this.generateKey(config);
-            this.metrics.totalRequests++;
             
             if (this.cache.has(key)) {
-                // 🚀 OPTIMIZATION: Track cache hits
-                this.metrics.hits++;
-                this.metrics.apiCallsSaved++;
-                
                 // Update access order for LRU
                 const index = this.accessOrder.indexOf(key);
                 if (index > -1) {
@@ -4331,11 +4332,21 @@
                 }
                 this.accessOrder.push(key);
                 return this.cache.get(key);
-            } else {
-                // Track cache misses
-                this.metrics.misses++;
             }
             return null;
+        }
+        
+        // 🚀 OPTIMIZATION: Record a cache hit (called externally when cache is used)
+        recordHit() {
+            this.metrics.hits++;
+            this.metrics.apiCallsSaved++;
+            this.metrics.totalRequests++;
+        }
+        
+        // 🚀 OPTIMIZATION: Record a cache miss (called externally when cache is checked but not found)
+        recordMiss() {
+            this.metrics.misses++;
+            this.metrics.totalRequests++;
         }
 
         set(config, result) {

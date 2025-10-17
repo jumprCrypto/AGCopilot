@@ -143,9 +143,6 @@
             const key = this.generateKey(config);
             
             if (this.cache.has(key)) {
-                this.hits++;
-                this.apiCallsSaved++;
-                
                 // Move to end (LRU)
                 const value = this.cache.get(key);
                 this.cache.delete(key);
@@ -154,7 +151,6 @@
                 return value;
             }
             
-            this.misses++;
             return null;
         }
         
@@ -173,6 +169,17 @@
             if (this.cache.size % 10 === 0) {
                 this.saveToStorage();
             }
+        }
+        
+        // Record a cache hit - must be called explicitly after get() returns a value
+        recordHit() {
+            this.hits++;
+            this.apiCallsSaved++;
+        }
+        
+        // Record a cache miss - must be called explicitly when cache check fails
+        recordMiss() {
+            this.misses++;
         }
         
         clear() {
@@ -575,7 +582,13 @@
             if (window.CONFIG.USE_CONFIG_CACHING && this.cache?.has(completeConfig)) {
                 this.cacheHits++;
                 const cached = this.cache.get(completeConfig);
+                this.cache.recordHit(); // Record the cache hit for metrics
                 return { success: true, metrics: cached.metrics, fromCache: true };
+            }
+            
+            // Cache miss - will make API call
+            if (window.CONFIG.USE_CONFIG_CACHING && this.cache) {
+                this.cache.recordMiss();
             }
             
             // API call with validation
