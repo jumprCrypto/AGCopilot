@@ -8,31 +8,7 @@
         console.log('%c✨ Can be integrated into the main AGCopilot interface!', 'color: green; font-size: 12px;');
         console.log('💡 Use the "⚙️ Optimization" tab in AGCopilot for integrated experience');
     }
-
-    // ========================================
-    // 🎯 OPTIMIZATION CONFIGURATION
-    // ========================================
-    const OPTIMIZATION_CONFIG = {
-        // Optimization runtime settings
-        DEFAULT_MAX_RUNTIME_MIN: 30,
-        DEFAULT_CHAIN_RUN_COUNT: 3,
-        
-        // Algorithm settings
-        USE_SIMULATED_ANNEALING: true,
-        USE_LATIN_HYPERCUBE_SAMPLING: true,
-        
-        // Scoring thresholds
-        MIN_WIN_RATE: 25.0,
-        MIN_WIN_RATE_MEDIUM_SAMPLE: 15.0,
-        MIN_WIN_RATE_LARGE_SAMPLE: 10.0,
-        MEDIUM_SAMPLE_THRESHOLD: 500,
-        LARGE_SAMPLE_THRESHOLD: 1000,
-        
-        // Scoring weights
-        RELIABILITY_WEIGHT: 0.3,
-        CONSISTENCY_WEIGHT: 0.4,
-        RETURN_WEIGHT: 0.6,
-    };
+   
 
     // ========================================
     // 🎯 PRESET CONFIGURATIONS
@@ -524,25 +500,9 @@
                 return;
             }
             
-            // Use this instance's data instead of global tracker
-            if (!this.bestMetrics) {
-                console.warn('⚠️ No best metrics available yet');
-                return;
-            }
-            
             display.style.display = 'block';
             
-            let scoreDisplay = this.bestScore.toFixed(1);
-            let methodDisplay = '';
-            
-            // Check if we have robust scoring information
-            if (this.bestMetrics.robustScoring) {
-                const rs = this.bestMetrics.robustScoring;
-                scoreDisplay = `${this.bestScore.toFixed(1)} (${rs.scoringMethod})`;
-                methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
-            }
-            
-            // Get source from global tracker if available, otherwise use generic label
+            // Always update progress stats, even if no best config yet
             const tracker = window.bestConfigTracker;
             const source = tracker?.source || 'Unknown';
             
@@ -550,19 +510,35 @@
             const runtimeMin = Math.floor(runtime / 60);
             const runtimeSec = runtime % 60;
             
-            // Use the global optimization tracker's display instead of duplicating
+            // Use the global optimization tracker's display
             if (window.optimizationTracker) {
+                // Build currentBest object only if we have metrics
+                const currentBest = this.bestMetrics ? {
+                    metrics: {
+                        ...this.bestMetrics,
+                        score: this.bestScore
+                    },
+                    config: this.bestConfig,
+                    method: source
+                } : null;
+                
                 window.optimizationTracker.updateProgress(
                     this.testCount, 
                     this.failedTestCount, 
                     0, // rate limit failures tracked separately
-                    {
-                        metrics: this.bestMetrics,
-                        config: this.bestConfig,
-                        method: source
-                    }
+                    currentBest
                 );
-            } else {
+            } else if (this.bestMetrics) {
+                // Fallback to inline display if tracker not available AND we have metrics
+                let scoreDisplay = this.bestScore.toFixed(1);
+                let methodDisplay = '';
+                
+                // Check if we have robust scoring information
+                if (this.bestMetrics.robustScoring) {
+                    const rs = this.bestMetrics.robustScoring;
+                    scoreDisplay = `${this.bestScore.toFixed(1)} (${rs.scoringMethod})`;
+                    methodDisplay = `<div style="font-size: 10px; opacity: 0.8;">Raw: ${rs.components.rawPnL.toFixed(1)}% | Win Rate: ${rs.components.winRate.toFixed(1)}% | Reliability: ${(rs.components.reliabilityFactor * 100).toFixed(0)}%</div>`;
+                }
                 // Fallback to inline display if tracker not available
                 stats.innerHTML = `
                     <div style="margin-bottom: 8px;">
@@ -730,7 +706,10 @@
         async runOptimization() {
             try {
                 console.log('🚀 Starting Enhanced Optimization...');
-                window.optimizationTracker.startOptimization(1);
+                
+                if (!window.optimizationTracker.isRunning) {
+                    window.optimizationTracker.startOptimization(1);
+                }
                 
                 // Phase 1: Establish Baseline (or use provided initial config)
                 if (!this.bestConfig) {
