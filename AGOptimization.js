@@ -529,6 +529,10 @@
                     method: source
                 } : null;
                 
+                console.log('📊 EnhancedOpt: Calling tracker.updateProgress with currentBest=', 
+                           currentBest ? `Score: ${currentBest.metrics.score.toFixed(1)}` : 'null',
+                           'bestMetrics=', this.bestMetrics ? 'exists' : 'null');
+                
                 window.optimizationTracker.updateProgress(
                     this.testCount, 
                     this.failedTestCount, 

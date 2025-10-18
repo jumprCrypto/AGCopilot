@@ -1444,7 +1444,10 @@
             this.totalTests = testCount;
             this.failedTests = failedCount;
             this.rateLimitFailures = rateLimitFailures;
-            if (currentBest) this.currentBest = currentBest;
+            if (currentBest) {
+                console.log('📊 Tracker: Updating currentBest', currentBest);
+                this.currentBest = currentBest;
+            }
             
             // 🌐 BROWSER: Throttle saves to avoid excessive localStorage writes
             if (!this._saveTimeout) {
@@ -1475,6 +1478,9 @@
             const statsElement = document.getElementById('best-config-stats');
             
             if (!displayElement || !statsElement) return;
+            
+            console.log('🖼️ Display: Rendering with currentBest=', this.currentBest ? 'exists' : 'null', 
+                       'hasMetrics=', this.currentBest?.metrics ? 'yes' : 'no');
 
             const runtime = this.startTime ? (Date.now() - this.startTime) / 1000 : 0;
             const runtimeMin = Math.floor(runtime / 60);
