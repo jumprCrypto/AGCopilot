@@ -1965,7 +1965,7 @@
                                         display: block;
                                         margin-bottom: 2px;
                                     ">Small Sample (&lt;500)</label>
-                                    <input type="number" id="min-win-rate-small" value="35" min="0" max="100" step="1" style="
+                                    <input type="number" id="min-win-rate-small" value="15" min="0" max="100" step="1" style="
                                         width: 100%;
                                         padding: 4px 5px;
                                         background: #2d3748;
@@ -1986,7 +1986,7 @@
                                         display: block;
                                         margin-bottom: 2px;
                                     ">Medium (500-999)</label>
-                                    <input type="number" id="min-win-rate-medium" value="30" min="0" max="100" step="1" style="
+                                    <input type="number" id="min-win-rate-medium" value="10" min="0" max="100" step="1" style="
                                         width: 100%;
                                         padding: 4px 5px;
                                         background: #2d3748;
@@ -2007,7 +2007,7 @@
                                         display: block;
                                         margin-bottom: 2px;
                                     ">Large (1000+)</label>
-                                    <input type="number" id="min-win-rate-large" value="25" min="0" max="100" step="1" style="
+                                    <input type="number" id="min-win-rate-large" value="5" min="0" max="100" step="1" style="
                                         width: 100%;
                                         padding: 4px 5px;
                                         background: #2d3748;
