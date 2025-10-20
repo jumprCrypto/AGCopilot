@@ -776,6 +776,70 @@
         try { window.agCachedWeekdays = Array.isArray(weekdays) ? [...weekdays] : null; } catch (_) {}
     }
 
+    // Get time parameters from UI
+    function getTimeParameters() {
+        // Find the Time section select elements
+        const findTimeSelect = (labelText) => {
+            const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+            const label = labels.find(el => el.textContent.trim() === labelText);
+            if (!label) return null;
+            
+            // The select should be the next sibling or within the parent's next element
+            const container = label.parentElement?.nextElementSibling || label.nextElementSibling;
+            return container ? container.querySelector('select') : null;
+        };
+        
+        // Ensure Time section is expanded
+        forceExpandBacktesterSection('Time');
+        
+        const startHourSelect = findTimeSelect('Start Hour');
+        const startMinuteSelect = findTimeSelect('Start Minute');
+        const endHourSelect = findTimeSelect('End Hour');
+        const endMinuteSelect = findTimeSelect('End Minute');
+        
+        return {
+            startHour: startHourSelect?.value || null,
+            startMinute: startMinuteSelect?.value || null,
+            endHour: endHourSelect?.value || null,
+            endMinute: endMinuteSelect?.value || null
+        };
+    }
+
+    // Set time parameters in UI
+    function setTimeParameters(timeParams) {
+        const findTimeSelect = (labelText) => {
+            const labels = Array.from(document.querySelectorAll('.sidebar-label'));
+            const label = labels.find(el => el.textContent.trim() === labelText);
+            if (!label) return null;
+            
+            const container = label.parentElement?.nextElementSibling || label.nextElementSibling;
+            return container ? container.querySelector('select') : null;
+        };
+        
+        // Ensure Time section is expanded
+        forceExpandBacktesterSection('Time');
+        
+        if (timeParams.startHour !== undefined && timeParams.startHour !== null) {
+            const select = findTimeSelect('Start Hour');
+            if (select) select.value = String(timeParams.startHour);
+        }
+        
+        if (timeParams.startMinute !== undefined && timeParams.startMinute !== null) {
+            const select = findTimeSelect('Start Minute');
+            if (select) select.value = String(timeParams.startMinute);
+        }
+        
+        if (timeParams.endHour !== undefined && timeParams.endHour !== null) {
+            const select = findTimeSelect('End Hour');
+            if (select) select.value = String(timeParams.endHour);
+        }
+        
+        if (timeParams.endMinute !== undefined && timeParams.endMinute !== null) {
+            const select = findTimeSelect('End Minute');
+            if (select) select.value = String(timeParams.endMinute);
+        }
+    }
+
     // Get scoring mode from UI or config
     function getScoringMode() {
         const modeSelect = document.getElementById('scoring-mode-select');
@@ -974,7 +1038,8 @@
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
-            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
+            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
+            'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
         };
 
         let dialogHTML = `
@@ -2026,6 +2091,12 @@
                 // Liquidity parameters
                 'Min Liquidity (USD)': 'minLiquidity',
                 'Max Liquidity (USD)': 'maxLiquidity',
+                
+                // Time parameters
+                'Start Hour': 'startHour',
+                'Start Minute': 'startMinute',
+                'End Hour': 'endHour',
+                'End Minute': 'endMinute',
                 
                 // Boolean fields
                 'Description': 'needsDescription',
@@ -4717,6 +4788,7 @@
             wallets: {},
             risk: {},
             advanced: {},
+            time: {},
             tpSettings: {},
             takeProfits: []
         };
@@ -4742,6 +4814,10 @@
             advanced: {
                 sectionTitle: 'Advanced',
                 params: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
+            },
+            time: {
+                sectionTitle: 'Time',
+                params: ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
             }
         };
 
@@ -6683,6 +6759,8 @@
     window.updateResultsWithPinnedSettings = updateResultsWithPinnedSettings;
     window.getTriggerMode = getTriggerMode;
     window.getSelectedSources = getSelectedSources;
+    window.getTimeParameters = getTimeParameters;
+    window.setTimeParameters = setTimeParameters;
     window.updateStatus = updateStatus;
     
     console.log('✅ Global functions exported for external scripts');
@@ -6725,16 +6803,56 @@
         window.copyBestConfigToClipboard = function() {
             const tracker = window.bestConfigTracker;
             if (tracker && tracker.config) {
-                const configText = JSON.stringify(tracker.config, null, 2);
+                // Create formatted config with section comments
+                const config = tracker.config;
+                
+                // Build formatted output with section organization
+                const sections = {
+                    'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                    'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
+                    'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
+                    'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
+                    'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
+                    'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
+                };
+                
+                // Create organized config with only non-empty sections
+                const organizedConfig = {};
+                const sectionKeys = {
+                    'Basic': 'basic',
+                    'Token Details': 'tokenDetails',
+                    'Wallets': 'wallets',
+                    'Risk': 'risk',
+                    'Advanced': 'advanced',
+                    'Time': 'time'
+                };
+                
+                // Add sections that have values
+                Object.entries(sectionKeys).forEach(([displayName, key]) => {
+                    if (config[key] && Object.keys(config[key]).length > 0) {
+                        organizedConfig[key] = config[key];
+                    }
+                });
+                
+                // Add other properties (sources, weekdays, takeProfits, etc.)
+                if (config.sources) organizedConfig.sources = config.sources;
+                if (config.weekdays) organizedConfig.weekdays = config.weekdays;
+                if (config.takeProfits) organizedConfig.takeProfits = config.takeProfits;
+                if (config.tpSettings) organizedConfig.tpSettings = config.tpSettings;
+                if (config.dateRange) organizedConfig.dateRange = config.dateRange;
+                if (config.buyingAmount) organizedConfig.buyingAmount = config.buyingAmount;
+                
+                const configText = JSON.stringify(organizedConfig, null, 2);
                 
                 // Add metadata comment at the top
                 const metadataComment = 
                     `// Best configuration (ID: ${String(tracker.id).substring(0, 8)})\n` + 
                     `// Score: ${tracker.score.toFixed(1)}% | Source: ${tracker.source}\n` + 
-                    `// Generated: ${new Date(tracker.id).toLocaleString()}\n\n`;
+                    `// Generated: ${new Date(tracker.id).toLocaleString()}\n` +
+                    `// Sections: ${Object.keys(organizedConfig).filter(k => !['sources', 'weekdays', 'takeProfits', 'tpSettings', 'dateRange', 'buyingAmount'].includes(k)).join(', ')}\n\n`;
                 
                 navigator.clipboard.writeText(metadataComment + configText).then(() => {
-                    console.log('📋 Best configuration copied to clipboard with metadata');
+                    console.log('📋 Best configuration copied to clipboard with metadata and organized sections');
                 }).catch(err => {
                     console.error('Failed to copy to clipboard:', err);
                 });

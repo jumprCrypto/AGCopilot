@@ -493,7 +493,11 @@
                 'Min TTC (sec)': 'advanced',
                 'Min Win Pred %': 'advanced',
                 'Min Token Age (sec)': 'tokenDetails',
-                'Min Deployer Age (min)': 'tokenDetails'
+                'Min Deployer Age (min)': 'tokenDetails',
+                'Start Hour': 'time',
+                'Start Minute': 'time',
+                'End Hour': 'time',
+                'End Minute': 'time'
             };
             return paramMap[param] || 'basic';
         }
