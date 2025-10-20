@@ -1480,7 +1480,9 @@
             if (!displayElement || !statsElement) return;
             
             console.log('🖼️ Display: Rendering with currentBest=', this.currentBest ? 'exists' : 'null', 
-                       'hasMetrics=', this.currentBest?.metrics ? 'yes' : 'no');
+                       'hasMetrics=', this.currentBest?.metrics ? 'yes' : 'no',
+                       'isRunning=', this.isRunning,
+                       'condition check=', (this.currentBest && this.currentBest.metrics) ? 'PASS' : 'FAIL');
 
             const runtime = this.startTime ? (Date.now() - this.startTime) / 1000 : 0;
             const runtimeMin = Math.floor(runtime / 60);
@@ -1544,6 +1546,7 @@
             }
 
             if (this.currentBest && this.currentBest.metrics) {
+                console.log('✅ Displaying Current Best section');
                 const metrics = this.currentBest.metrics;
                 
                 content += `
@@ -1599,6 +1602,7 @@
                 }
                 window.currentBestConfig = this.currentBest.config;
             } else if (this.isRunning) {
+                console.log('⏳ Displaying "Searching..." message (isRunning=true, no currentBest)');
                 content += `
                     <div style="text-align: center; padding: 8px; font-size: 10px; color: #aaa;">
                         🔍 Searching for optimal configuration...

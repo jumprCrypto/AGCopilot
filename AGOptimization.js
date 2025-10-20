@@ -629,6 +629,16 @@
                 result.metrics.robustScoring = robust;
             }
             
+            console.log(`📊 Baseline robust scoring:`, {
+                rejected: robust?.rejected,
+                robustScore: robust?.score,
+                finalScore: score,
+                tpPnL: result.metrics.tpPnlPercent,
+                realWR: result.metrics.realWinRate,
+                tokens: result.metrics.totalTokens,
+                rejectionReason: robust?.rejectionReason
+            });
+            
             this.bestConfig = currentConfig;
             this.bestScore = score;
             this.bestMetrics = result.metrics;
