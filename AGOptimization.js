@@ -17,17 +17,22 @@
         oldDeployer: { 
             category: "Custom",
             description: "Old Deployer",
-            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" } 
+            tokenDetails: { "Min Deployer Age (min)": 43200, "Min AG Score": "4" }
         },
         oldishDeployer: { 
             category: "Custom",
             description: "Old-ish Deployer",
-            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" } 
+            tokenDetails: { "Min Deployer Age (min)": 4320, "Min AG Score": "4" }
+        },
+        oldToken: { 
+            category: "Custom",
+            description: "Old Token",
+            tokenDetails: { "Min Token Age (sec)": 21600 }
         },
         agScore7: { 
             category: "Custom",
             description: "Min AG Score 7",
-            tokenDetails: { "Min AG Score": "7" } 
+            tokenDetails: { "Min AG Score": "7" }
         },
         
         // Discovery-based presets (from Parameter Impact Analysis)
@@ -443,7 +448,7 @@
     // 🧠 ENHANCED OPTIMIZER CLASS
     // ========================================
     class EnhancedOptimizer {
-        constructor(initialConfig = null) {
+        constructor(initialConfig = null, options = {}) {
             this.bestConfig = initialConfig || null;
             this.bestScore = initialConfig ? -Infinity : -Infinity;
             this.bestMetrics = null;
@@ -473,27 +478,52 @@
 
         getSection(param) {
             const paramMap = {
+                // Basic
                 'Min MCAP (USD)': 'basic',
                 'Max MCAP (USD)': 'basic',
-                'Min KYC Wallets': 'wallets',
-                'Min Unique Wallets': 'wallets',
+                
+                // Token Details
+                'Min Deployer Age (min)': 'tokenDetails',
+                'Min Token Age (sec)': 'tokenDetails',
+                'Max Token Age (sec)': 'tokenDetails',
+                'Min AG Score': 'tokenDetails',
+                
+                // Wallets
+                'Min Holders': 'wallets',
+                'Max Holders': 'wallets',
                 'Holders Growth %': 'wallets',
                 'Holders Growth Minutes': 'wallets',
-                'Min AG Score': 'tokenDetails',
-                'Description': 'risk',
-                'Freeze Authority': 'risk',
-                'Mint Authority': 'risk',
-                'Min Buy Ratio %': 'risk',
+                'Min Unique Wallets': 'wallets',
+                'Max Unique Wallets': 'wallets',
+                'Min KYC Wallets': 'wallets',
+                'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets',
+                'Max Dormant Wallets': 'wallets',
+                
+                // Risk
+                'Min Bundled %': 'risk',
                 'Max Bundled %': 'risk',
-                'Max Drained %': 'risk',
-                'Max Drained Count': 'risk',
+                'Min Deployer Balance (SOL)': 'risk',
+                'Min Buy Ratio %': 'risk',
+                'Max Buy Ratio %': 'risk',
                 'Min Vol MCAP %': 'risk',
                 'Max Vol MCAP %': 'risk',
-                'Max Liquidity %': 'advanced',
+                'Max Drained %': 'risk',
+                'Max Drained Count': 'risk',
+                'Description': 'risk',
+                'Fresh Deployer': 'risk',
+                'Skip If No KYC/CEX Funding': 'risk',
+                'Freeze Authority': 'risk',
+                'Mint Authority': 'risk',
+                
+                // Advanced
                 'Min TTC (sec)': 'advanced',
+                'Max TTC (sec)': 'advanced',
+                'Max Liquidity %': 'advanced',
                 'Min Win Pred %': 'advanced',
-                'Min Token Age (sec)': 'tokenDetails',
-                'Min Deployer Age (min)': 'tokenDetails',
+                'Has Buy Signal': 'advanced',
+                
+                // Time
                 'Start Hour': 'time',
                 'Start Minute': 'time',
                 'End Hour': 'time',
@@ -580,10 +610,51 @@
             console.log(`📊 Display updated: Score ${this.bestScore.toFixed(1)}%, ${this.testCount} tests, ${runtime}s`);
         }
 
+        // Validate and fix min/max relationships in config
+        validateMinMaxPairs(config) {
+            const minMaxPairs = [
+                { min: 'Min MCAP (USD)', max: 'Max MCAP (USD)', section: 'basic' },
+                { min: 'Min Token Age (sec)', max: 'Max Token Age (sec)', section: 'tokenDetails' },
+                { min: 'Min Holders', max: 'Max Holders', section: 'wallets' },
+                { min: 'Min Unique Wallets', max: 'Max Unique Wallets', section: 'wallets' },
+                { min: 'Min KYC Wallets', max: 'Max KYC Wallets', section: 'wallets' },
+                { min: 'Min Dormant Wallets', max: 'Max Dormant Wallets', section: 'wallets' },
+                { min: 'Min Bundled %', max: 'Max Bundled %', section: 'risk' },
+                { min: 'Min Buy Ratio %', max: 'Max Buy Ratio %', section: 'risk' },
+                { min: 'Min Vol MCAP %', max: 'Max Vol MCAP %', section: 'risk' },
+                { min: 'Min TTC (sec)', max: 'Max TTC (sec)', section: 'advanced' }
+            ];
+
+            let fixed = false;
+            for (const pair of minMaxPairs) {
+                const minVal = config[pair.section]?.[pair.min];
+                const maxVal = config[pair.section]?.[pair.max];
+
+                // Skip if either value is undefined/null
+                if (minVal == null || maxVal == null) continue;
+
+                const minNum = typeof minVal === 'string' ? parseFloat(minVal) : minVal;
+                const maxNum = typeof maxVal === 'string' ? parseFloat(maxVal) : maxVal;
+
+                // If max < min, swap them or remove max
+                if (!isNaN(minNum) && !isNaN(maxNum) && maxNum < minNum) {
+                    console.warn(`⚠️ Invalid pair: ${pair.min}=${minNum} > ${pair.max}=${maxNum}, removing max`);
+                    delete config[pair.section][pair.max];
+                    fixed = true;
+                }
+            }
+
+            return fixed;
+        }
+
         async testConfig(config, label = 'Test') {
             if (window.STOPPED) return { success: false, stopped: true };
             
             this.testCount++;
+            
+            // Validate min/max pairs before testing
+            this.validateMinMaxPairs(config);
+            
             const completeConfig = window.ensureCompleteConfig(config);
             
             // Check cache first
@@ -775,6 +846,12 @@
                         // Generate neighbor by modifying random parameter
                         const neighborConfig = window.deepClone(currentConfig);
                         const params = window.PARAM_RULES ? Object.keys(window.PARAM_RULES) : [];
+                        
+                        if (params.length === 0) {
+                            console.log('⚠️ No parameters to optimize in simulated annealing');
+                            break;
+                        }
+                        
                         const param = params[Math.floor(Math.random() * params.length)];
                         const section = this.getSection(param);
                         
@@ -1002,7 +1079,7 @@
     // 🔗 CHAINED OPTIMIZER CLASS
     // ========================================
     class ChainedOptimizer {
-        constructor(initialConfig = null) {
+        constructor(initialConfig = null, options = {}) {
             this.chainResults = [];
             this.globalBestConfig = initialConfig || null;
             this.globalBestScore = initialConfig ? -Infinity : -Infinity;
@@ -1012,6 +1089,63 @@
             this.currentRun = 0;
             this.totalRuns = 3;
             this.timePerRun = 15;
+        }
+
+        getSection(param) {
+            // Complete mapping matching PARAM_RULES and COMPLETE_CONFIG_TEMPLATE
+            const paramMap = {
+                // Basic
+                'Min MCAP (USD)': 'basic',
+                'Max MCAP (USD)': 'basic',
+                
+                // Token Details
+                'Min Deployer Age (min)': 'tokenDetails',
+                'Min Token Age (sec)': 'tokenDetails',
+                'Max Token Age (sec)': 'tokenDetails',
+                'Min AG Score': 'tokenDetails',
+                
+                // Wallets
+                'Min Holders': 'wallets',
+                'Max Holders': 'wallets',
+                'Holders Growth %': 'wallets',
+                'Holders Growth Minutes': 'wallets',
+                'Min Unique Wallets': 'wallets',
+                'Max Unique Wallets': 'wallets',
+                'Min KYC Wallets': 'wallets',
+                'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets',
+                'Max Dormant Wallets': 'wallets',
+                
+                // Risk
+                'Min Bundled %': 'risk',
+                'Max Bundled %': 'risk',
+                'Min Deployer Balance (SOL)': 'risk',
+                'Min Buy Ratio %': 'risk',
+                'Max Buy Ratio %': 'risk',
+                'Min Vol MCAP %': 'risk',
+                'Max Vol MCAP %': 'risk',
+                'Max Drained %': 'risk',
+                'Max Drained Count': 'risk',
+                'Description': 'risk',
+                'Fresh Deployer': 'risk',
+                'Skip If No KYC/CEX Funding': 'risk',
+                'Freeze Authority': 'risk',
+                'Mint Authority': 'risk',
+                
+                // Advanced
+                'Min TTC (sec)': 'advanced',
+                'Max TTC (sec)': 'advanced',
+                'Max Liquidity %': 'advanced',
+                'Min Win Pred %': 'advanced',
+                'Has Buy Signal': 'advanced',
+                
+                // Time
+                'Start Hour': 'time',
+                'Start Minute': 'time',
+                'End Hour': 'time',
+                'End Minute': 'time'
+            };
+            return paramMap[param] || 'basic';
         }
 
         async runChainedOptimization(runCount = 3, timePerRunMin = 15) {
@@ -1045,10 +1179,8 @@
                 );
 
                 try {
-                    // For run 1: Use base config from constructor if available
-                    // For subsequent runs: Use the best config from previous runs
+                    // Use previous best or initial config
                     const initialConfig = run === 1 ? this.globalBestConfig : this.globalBestConfig;
-                    const optimizer = new EnhancedOptimizer(initialConfig);
                     
                     if (initialConfig) {
                         if (run === 1) {
@@ -1060,6 +1192,9 @@
                     } else {
                         console.log(`🆕 Run ${run} starting fresh with baseline discovery`);
                     }
+                    
+                    // Create optimizer
+                    const optimizer = new EnhancedOptimizer(initialConfig);
                     
                     const originalRuntime = window.CONFIG.MAX_RUNTIME_MIN;
                     window.CONFIG.MAX_RUNTIME_MIN = timePerRunMin;
@@ -1159,7 +1294,7 @@
                 
                 const scoreProgression = successfulRuns.map(r => r.score.toFixed(1));
                 console.log(`\n📈 Score progression: [${scoreProgression.join('% → ')}%]`);
-                console.log(`🔄 Runs 2+ started from previous best configuration instead of baseline discovery`);
+                console.log(`🔄 Runs 2+ started from previous best configuration`);
                 
                 const allParams = new Map();
                 successfulRuns.forEach(run => {
@@ -1948,6 +2083,25 @@
                                     outline: none;
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
+                            </div>
+                            <div style="margin-top: 8px;">
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 6px;
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: #e2e8f0;
+                                    cursor: pointer;
+                                    user-select: none;
+                                ">
+                                    <input type="checkbox" id="use-deep-dive" style="
+                                        width: 14px;
+                                        height: 14px;
+                                        cursor: pointer;
+                                    ">
+                                    <span>� Deep Dive (Fine-tune top parameters)</span>
+                                </label>
                             </div>
                         </div>
 
