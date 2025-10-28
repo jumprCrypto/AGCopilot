@@ -58,39 +58,21 @@
         // Take Profit (TP) configuration for accurate PnL calculations
         TP_CONFIGURATIONS: [
             { size: 20, gain: 300 },
-            { size: 20, gain: 650 },
+            { size: 20, gain: 650 },    
             { size: 20, gain: 1400 },
             { size: 20, gain: 3000 },
             { size: 20, gain: 10000 }
         ],
         
-         // Rate limiting - ULTRA CONSERVATIVE MODE for 0-1 rate limit errors per session
-        RATE_LIMIT_THRESHOLD: 10,     // 8 calls per burst = 4 config tests per burst
-        RATE_LIMIT_RECOVERY: 12000,  // 12s recovery time (5 bursts/min max)
-        RATE_LIMIT_SAFETY_MARGIN: 1.5, // 50% safety margin (increased from 10%)
-        INTRA_BURST_DELAY: 250,      // 200ms delay between requests
-        MAX_REQUESTS_PER_MINUTE: 49, // Conservative hard cap at 50 req/min
-        USE_BURST_RATE_LIMITING: true, // Use burst mode for efficiency
-        SMART_BURST_SIZE: true,        // Keep smart burst size learning for optimal discovery
-        
-        // Rate limiting modes
-        RATE_LIMIT_MODE: 'normal', // 'normal' or 'slower'
-        RATE_LIMIT_MODES: {
-            normal: {
-                BACKTEST_WAIT: 20000,        // 20s
-                RATE_LIMIT_THRESHOLD: 10,    // 20 calls/burst
-                RATE_LIMIT_RECOVERY: 12000,  // 12s recovery
-                REQUEST_DELAY: 9360,         // 9.36s for signal analysis
-                INTRA_BURST_DELAY: 250       // 100ms
-            },
-            slower: {
-                BACKTEST_WAIT: 30000,        // 30s (50% slower)
-                RATE_LIMIT_THRESHOLD: 5,    // 15 calls/burst (25% fewer)
-                RATE_LIMIT_RECOVERY: 15000,  // 15s recovery (50% slower)
-                REQUEST_DELAY: 14000,        // 14s for signal analysis (50% slower)
-                INTRA_BURST_DELAY: 350       // 150ms (50% slower)
-            }
-        }
+        // ⚡ BURST RATE LIMITING CONFIGURATION
+        BURST_SIZE: 15,           // Requests per burst
+        BURST_RATE: 0.5,         // Requests per second during burst (1.5s between requests)
+        BURST_COOLDOWN_MS: 5000, // Cooldown after burst (5 seconds)
+
+        // Backward compatibility - use burst rate as base rate
+        get REQUESTS_PER_SECOND() { return this.BURST_RATE; },
+        get BACKTEST_WAIT() { return Math.round(1000 / this.BURST_RATE); },
+        get REQUEST_DELAY() { return Math.round(1000 / this.BURST_RATE); }
     };
 
     // Parameter validation rules (same as original AGCopilot)
@@ -217,258 +199,196 @@
     
     // Rate limiting mode toggle function
     function toggleRateLimitingMode() {
-        const currentMode = CONFIG.RATE_LIMIT_MODE;
-        const newMode = currentMode === 'normal' ? 'slower' : 'normal';
+        // Cycle through burst rate presets
+        const ratePresets = [
+            { rate: 0.25, burst: 10, cooldown: 12000 },  // Conservative
+            { rate: 0.33, burst: 12, cooldown: 10000 },   // Moderate  
+            { rate: 0.5, burst: 15, cooldown: 5000 }   // Aggressive (default)
+        ];
         
-        // Update CONFIG with new mode
-        CONFIG.RATE_LIMIT_MODE = newMode;
-        const modeSettings = CONFIG.RATE_LIMIT_MODES[newMode];
+        const currentIndex = ratePresets.findIndex(p => 
+            p.rate === CONFIG.BURST_RATE && 
+            p.burst === CONFIG.BURST_SIZE
+        );
+        const nextIndex = (currentIndex + 1) % ratePresets.length;
+        const nextPreset = ratePresets[nextIndex];
         
-        // Apply the new settings
-        CONFIG.BACKTEST_WAIT = modeSettings.BACKTEST_WAIT;
-        CONFIG.RATE_LIMIT_THRESHOLD = modeSettings.RATE_LIMIT_THRESHOLD;
-        CONFIG.RATE_LIMIT_RECOVERY = modeSettings.RATE_LIMIT_RECOVERY;
-        CONFIG.REQUEST_DELAY = modeSettings.REQUEST_DELAY;
-        CONFIG.INTRA_BURST_DELAY = modeSettings.INTRA_BURST_DELAY;
+        CONFIG.BURST_RATE = nextPreset.rate;
+        CONFIG.BURST_SIZE = nextPreset.burst;
+        CONFIG.BURST_COOLDOWN_MS = nextPreset.cooldown;
         
-        // Recreate rate limiters with new settings
-        if (window.burstRateLimiter) {
-            window.burstRateLimiter = new BurstRateLimiter(
-                CONFIG.RATE_LIMIT_THRESHOLD,
-                CONFIG.RATE_LIMIT_RECOVERY,
-                CONFIG.RATE_LIMIT_SAFETY_MARGIN
-            );
+        // Recreate rate limiter with new settings
+        if (window.rateLimiter) {
+            window.rateLimiter = new SimpleRateLimiter();
         }
         
-        console.log(`🔄 Rate limiting switched to ${newMode.toUpperCase()} mode:`);
-        console.log(`   Backtest Wait: ${CONFIG.BACKTEST_WAIT/1000}s`);
-        console.log(`   Burst Size: ${CONFIG.RATE_LIMIT_THRESHOLD} calls`);
-        console.log(`   Recovery Time: ${CONFIG.RATE_LIMIT_RECOVERY/1000}s`);
+        const reqPerMin = (CONFIG.BURST_RATE * 60).toFixed(0);
+        const delay = (1000 / CONFIG.BURST_RATE).toFixed(0);
+        
+        console.log(`🔄 Burst config: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
         
         // Update UI button text
         const rateLimitBtn = document.getElementById('toggle-rate-limit-btn');
         if (rateLimitBtn) {
-            const modeDisplay = newMode === 'normal' ? 'Normal' : 'Slower';
-            rateLimitBtn.innerHTML = `⏱️ ${modeDisplay}`;
-            rateLimitBtn.title = `Currently using ${modeDisplay.toLowerCase()} rate limiting (${CONFIG.BACKTEST_WAIT/1000}s wait). Click to switch to ${newMode === 'normal' ? 'slower' : 'normal'} mode.`;
+            const mode = nextIndex === 2 ? 'Aggressive' : nextIndex === 1 ? 'Moderate' : 'Conservative';
+            rateLimitBtn.innerHTML = `⏱️ ${mode}`;
+            rateLimitBtn.title = `Burst: ${CONFIG.BURST_SIZE} @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown. Click to cycle.`;
         }
         
-        updateStatus(`🔄 Rate limiting switched to ${newMode.toUpperCase()} mode (${CONFIG.BACKTEST_WAIT/1000}s wait)`);
+        updateStatus(`🔄 Burst mode: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s`);
         
-        return newMode;
+        return CONFIG.BURST_RATE;
     }
     
     // Initialize window.STOPPED for global access
     window.STOPPED = false;
 
-    // Burst Rate Limiter
-    class BurstRateLimiter {
-        constructor(burstLimit = CONFIG.RATE_LIMIT_THRESHOLD, recoveryTime = CONFIG.RATE_LIMIT_RECOVERY, safetyMargin = CONFIG.RATE_LIMIT_SAFETY_MARGIN) {
-            this.originalBurstLimit = burstLimit;
-            this.burstLimit = burstLimit;
-            this.baseRecoveryTime = recoveryTime;
-            this.recoveryTime = recoveryTime * safetyMargin;
-            this.callCount = 0;
-            this.burstStartTime = 0;
-            this.sessionStartTime = 0; // Track overall session start for rate calculation
-            this.lastBurstTime = 0;
+    // Simple Rate Limiter - Just enforces delay between requests
+    class SimpleRateLimiter {
+        constructor() {
+            // Use CONFIG values directly - single source of truth
             this.lastCallTime = 0;
             this.totalCalls = 0;
-            this.rateLimitHits = 0;
-            this.successfulBursts = 0;
-            this.intraBurstDelay = CONFIG.INTRA_BURST_DELAY || 0;
+            this.sessionStartTime = Date.now();
             
-            // Smart burst learning
-            this.rateLimitPositions = []; // Track where in bursts we hit rate limits
-            this.optimalBurstSize = burstLimit; // Learned optimal size
-            this.consecutiveSuccesses = 0;
+            // Burst state tracking
+            this.burstCount = 0;
+            this.lastBurstEndTime = 0;
             
-            // Rolling window for accurate rate tracking (last 60 seconds)
-            this.recentCalls = []; // Array of timestamps for recent calls
+            // Server-side rate limit tracking
+            this.serverRateLimit = {
+                maxRequests: null,
+                currentCount: null,
+                delaySeconds: null,
+                lastUpdate: null,
+                utilizationPercent: null
+            };
             
-            console.log(`🚀 BurstRateLimiter: ${burstLimit} calls/burst, ${(recoveryTime * safetyMargin / 1000).toFixed(1)}s recovery, ${this.intraBurstDelay}ms intra-burst delay`);
-            console.log(`🛑 Rate limit: ${CONFIG.MAX_REQUESTS_PER_MINUTE} requests/minute max`);
-            console.log(`🎯 Goal: Maximum 1 rate limit error per session`);
-        }
-
-        // Adaptive adjustment when we hit unexpected rate limits (ultra-conservative learning)
-        adaptToBurstLimit() {
-            this.rateLimitHits++;
-            this.rateLimitPositions.push(this.callCount); // Record where the 429 occurred
-            this.consecutiveSuccesses = 0; // Reset success counter
-            
-            console.log(`⚠️ Rate limit hit at position ${this.callCount} in burst (hit #${this.rateLimitHits})`);
-            
-            if (CONFIG.SMART_BURST_SIZE) {
-                // Learn the optimal burst size from where rate limits actually occur
-                const avgRateLimitPosition = this.rateLimitPositions.reduce((a, b) => a + b, 0) / this.rateLimitPositions.length;
-                const safetyBuffer = Math.max(8, Math.floor(avgRateLimitPosition * 0.4)); // Larger safety buffer (40% of avg position)
-                this.optimalBurstSize = Math.max(5, Math.floor(avgRateLimitPosition - safetyBuffer));
-                
-                console.log(`🧠 Learning: Rate limits occur around position ${avgRateLimitPosition.toFixed(1)}, setting optimal burst size to ${this.optimalBurstSize} (buffer: ${safetyBuffer})`);
-                this.burstLimit = this.optimalBurstSize;
-            } else {
-                // Ultra-conservative immediate harsh reduction
-                let reductionFactor, minLimit;
-                
-                if (this.rateLimitHits === 1) {
-                    reductionFactor = 0.5; // Immediate 50% reduction on first hit
-                    minLimit = 5;
-                    console.log(`⚠️ First rate limit hit - immediate harsh reduction (50%)`);
-                } else {
-                    reductionFactor = 0.3; // 70% reduction on subsequent hits
-                    minLimit = 3;
-                    console.log(`⚠️ Multiple rate limits - extreme reduction (70%)`);
-                }
-                
-                const newLimit = Math.max(minLimit, Math.floor(this.callCount * reductionFactor));
-                this.burstLimit = newLimit;
-            }
-            
-            // Significant recovery time increase to avoid rapid re-triggering
-            const recoveryMultiplier = 1.5; // 50% increase each time
-            this.recoveryTime = Math.min(30000, this.recoveryTime * recoveryMultiplier); // Cap at 30s
-            
-            console.log(`📉 Burst limit: ${this.burstLimit}, Recovery: ${(this.recoveryTime/1000).toFixed(1)}s`);
-        }
-
-        // Simple success tracking - no adaptive behavior
-        adaptToSuccess() {
-            this.successfulBursts++;
-            this.consecutiveSuccesses++;
-            // Just track successful bursts, no adaptive changes to limits or recovery times
+            console.log(`🚀 Burst Rate Limiter: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, then ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
         }
 
         async throttle() {
             const now = Date.now();
             
-            // Add respectful delay between ALL requests
-            if (this.intraBurstDelay > 0 && this.lastCallTime > 0) {
-                const timeSinceLastCall = now - this.lastCallTime;
-                if (timeSinceLastCall < this.intraBurstDelay) {
-                    await sleep(this.intraBurstDelay - timeSinceLastCall);
+            // Check if we need to cooldown after completing a burst
+            if (this.burstCount >= CONFIG.BURST_SIZE) {
+                const timeSinceBurstEnd = now - this.lastBurstEndTime;
+                
+                if (timeSinceBurstEnd < CONFIG.BURST_COOLDOWN_MS) {
+                    const cooldownRemaining = CONFIG.BURST_COOLDOWN_MS - timeSinceBurstEnd;
+                    console.log(`❄️ Burst cooldown: waiting ${(cooldownRemaining/1000).toFixed(1)}s (burst complete: ${this.burstCount}/${CONFIG.BURST_SIZE})`);
+                    await sleep(cooldownRemaining);
                 }
+                
+                // Reset burst counter after cooldown
+                this.burstCount = 0;
+                console.log(`🚀 New burst starting (${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s)`);
             }
-
-            const rollingRate = this.getRollingWindowRate();
-            if (rollingRate >= CONFIG.MAX_REQUESTS_PER_MINUTE) {
-                // Calculate how long to wait to get back under the limit
-                const excessRequests = rollingRate - CONFIG.MAX_REQUESTS_PER_MINUTE + 1;
-                const waitTime = (excessRequests / CONFIG.MAX_REQUESTS_PER_MINUTE) * 60000; // Convert to ms
-                console.log(`⏳ Rate limit prevention: ${rollingRate}/${CONFIG.MAX_REQUESTS_PER_MINUTE} req/min, waiting ${(waitTime/1000).toFixed(1)}s...`);
+            
+            // Apply burst rate delay
+            const burstDelayMs = 1000 / CONFIG.BURST_RATE;
+            const timeSinceLastCall = now - this.lastCallTime;
+            
+            // Calculate required delay
+            let requiredDelay = burstDelayMs;
+            
+            // If server requests a delay, add 1s safety buffer and use the larger delay
+            if (this.serverRateLimit.delaySeconds > 0) {
+                const serverDelay = (this.serverRateLimit.delaySeconds + 1) * 1000; // +1s buffer
+                requiredDelay = Math.max(requiredDelay, serverDelay);
+            }
+            
+            if (timeSinceLastCall < requiredDelay) {
+                const waitTime = requiredDelay - timeSinceLastCall;
                 await sleep(waitTime);
             }
-
-            // Reset burst count if enough time has passed since last burst
-            if (now - this.lastBurstTime > this.recoveryTime) {
-                if (this.callCount > 0) {
-                    console.log(`🔄 Burst limit reset (${((now - this.lastBurstTime) / 1000).toFixed(1)}s elapsed)`);
-                    this.adaptToSuccess(); // Reward successful completion
-                }
-                this.callCount = 0;
-            }
             
-            // If we're at the start of a new burst
-            if (this.callCount === 0) {
-                this.burstStartTime = now;
-                // Set session start time on very first call
-                if (this.sessionStartTime === 0) {
-                    this.sessionStartTime = now;
-                }
-            }
-            
-            // If we've hit the burst limit, wait for recovery with extra safety margin
-            if (this.callCount >= this.burstLimit) {
-                const timeSinceBurst = now - this.burstStartTime;
-                const waitTime = Math.max(0, this.recoveryTime - timeSinceBurst);
-                
-                if (waitTime > 0) {
-                    console.log(`⏳ Burst limit reached (${this.callCount}/${this.burstLimit}), waiting ${(waitTime/1000).toFixed(1)}s...`);
-                    console.log(`📊 Current rate: ~${this.getRequestsPerMinute()} requests/minute (rolling: ${this.getRollingWindowRate()})`);
-                    await sleep(waitTime);
-                }
-                
-                // Reset for next burst
-                this.callCount = 0;
-                this.burstStartTime = Date.now();
-            }
-            
-            this.callCount++;
+            this.lastCallTime = Date.now();
             this.totalCalls++;
-            this.lastBurstTime = now;
-            this.lastCallTime = now;
+            this.burstCount++;
             
-            // Track this call in rolling window
-            this.recentCalls.push(now);
+            // Mark burst end time when we hit the burst limit
+            if (this.burstCount === CONFIG.BURST_SIZE) {
+                this.lastBurstEndTime = Date.now();
+            }
             
-            if (this.callCount === 1) {
-                console.log(`📡 Starting new burst (${this.totalCalls} total calls, burst limit: ${this.burstLimit})`);
-            } else if (this.callCount % 5 === 0 || this.callCount >= this.burstLimit - 2) {
-                console.log(`📡 Burst progress: ${this.callCount}/${this.burstLimit} | ${this.getRequestsPerMinute()} req/min | Rolling: ${this.getRollingWindowRate()} req/min`);
+            // Log every 10 requests with rate limit status
+            if (this.totalCalls % 10 === 0) {
+                const elapsed = (Date.now() - this.sessionStartTime) / 1000;
+                const actualRate = (this.totalCalls / elapsed).toFixed(2);
+                let logMsg = `📡 ${this.totalCalls} requests | Actual: ${actualRate} req/s | Burst: ${this.burstCount}/${CONFIG.BURST_SIZE}`;
+                
+                // Add server rate limit info if available
+                if (this.serverRateLimit.maxRequests !== null) {
+                    const remaining = this.serverRateLimit.maxRequests - this.serverRateLimit.currentCount;
+                    logMsg += ` | Server: ${this.serverRateLimit.currentCount}/${this.serverRateLimit.maxRequests} (${remaining} left)`;
+                }
+                
+                console.log(logMsg);
             }
         }
-
-        // Get requests per minute using a rolling 60-second window (more accurate for hard cap)
-        getRollingWindowRate() {
-            const now = Date.now();
-            const oneMinuteAgo = now - 60000;
+        
+        // Update rate limit info from API response
+        updateFromResponse(rateLimitData) {
+            if (!rateLimitData) return;
             
-            // Clean old calls and count recent ones
-            this.recentCalls = this.recentCalls.filter(timestamp => timestamp > oneMinuteAgo);
+            this.serverRateLimit = {
+                maxRequests: rateLimitData.maxRequests || null,
+                currentCount: rateLimitData.requestCount || null,
+                delaySeconds: rateLimitData.delaySeconds || 0,
+                lastUpdate: Date.now(),
+                utilizationPercent: rateLimitData.maxRequests 
+                    ? ((rateLimitData.requestCount / rateLimitData.maxRequests) * 100).toFixed(1)
+                    : null
+            };
             
-            return this.recentCalls.length;
-        }
-
-        getRequestsPerMinute() {
-            if (this.totalCalls < 2) return 0;
+            // Log warning if approaching rate limit
+            if (this.serverRateLimit.utilizationPercent > 80) {
+                console.warn(`⚠️ Rate limit warning: ${this.serverRateLimit.currentCount}/${this.serverRateLimit.maxRequests} requests used (${this.serverRateLimit.utilizationPercent}%)`);
+            }
             
-            // Use session start time for overall rate calculation (more accurate for rate limiting)
-            const startTime = this.sessionStartTime || this.burstStartTime;
-            const elapsedMs = Date.now() - startTime;
-            const elapsedMinutes = elapsedMs / 60000;
-            
-            if (elapsedMinutes <= 0) return 0;
-            
-            // For very short durations, use a minimum elapsed time to prevent inflated rates
-            const minElapsedMinutes = Math.max(elapsedMinutes, 0.1); // At least 6 seconds
-            const rate = this.totalCalls / minElapsedMinutes;
-            
-            // Cap the rate calculation for early session anomalies
-            return Math.min(Math.round(rate), 500); // Cap at 500 to prevent crazy early numbers
+            // If server requests a delay, log it
+            if (rateLimitData.delaySeconds > 0) {
+                console.warn(`🛑 Server requesting ${rateLimitData.delaySeconds}s delay between requests`);
+            }
         }
 
         getStats() {
-            return {
-                currentBurstCount: this.callCount,
-                burstLimit: this.burstLimit,
-                originalBurstLimit: this.originalBurstLimit,
-                optimalBurstSize: this.optimalBurstSize || this.burstLimit,
+            const elapsed = (Date.now() - this.sessionStartTime) / 1000;
+            const actualRate = elapsed > 0 ? (this.totalCalls / elapsed) : 0;
+            
+            const stats = {
                 totalCalls: this.totalCalls,
-                rateLimitHits: this.rateLimitHits,
-                rateLimitPositions: this.rateLimitPositions,
-                successfulBursts: this.successfulBursts,
-                consecutiveSuccesses: this.consecutiveSuccesses,
-                timeSinceLastCall: Date.now() - this.lastBurstTime,
-                requestsPerMinute: this.getRequestsPerMinute(),
-                rollingWindowRate: this.getRollingWindowRate(),
-                maxRequestsPerMinute: CONFIG.MAX_REQUESTS_PER_MINUTE,
-                recoveryTime: this.recoveryTime,
-                intraBurstDelay: this.intraBurstDelay,
-                isApproachingLimit: this.getRollingWindowRate() >= CONFIG.MAX_REQUESTS_PER_MINUTE * 0.9
+                actualRate: actualRate,
+                burstMode: {
+                    currentBurst: `${this.burstCount}/${CONFIG.BURST_SIZE}`,
+                    burstRate: `${CONFIG.BURST_RATE} req/s`,
+                    cooldown: `${CONFIG.BURST_COOLDOWN_MS/1000}s`
+                },
+                timeSinceLastCall: Date.now() - this.lastCallTime
             };
+            
+            // Add server rate limit info if available
+            if (this.serverRateLimit.maxRequests !== null) {
+                stats.serverRateLimit = {
+                    current: this.serverRateLimit.currentCount,
+                    max: this.serverRateLimit.maxRequests,
+                    utilization: `${this.serverRateLimit.utilizationPercent}%`,
+                    remaining: this.serverRateLimit.maxRequests - this.serverRateLimit.currentCount,
+                    delayRequired: this.serverRateLimit.delaySeconds > 0 ? `${this.serverRateLimit.delaySeconds}s` : 'none'
+                };
+            }
+            
+            return stats;
         }
     }
 
-    // Create rate limiter instances
-    // Note: Signal analysis now uses BurstRateLimiter for consistency and performance
-    window.burstRateLimiter = new BurstRateLimiter(
-        CONFIG.RATE_LIMIT_THRESHOLD, 
-        CONFIG.RATE_LIMIT_RECOVERY, 
-        CONFIG.RATE_LIMIT_SAFETY_MARGIN
-    );
+    // Create rate limiter instance (no parameters needed - uses CONFIG)
+    window.rateLimiter = new SimpleRateLimiter();
+    window.burstRateLimiter = window.rateLimiter; // Backward compatibility alias
     
     // Create local references for backward compatibility
-    const burstRateLimiter = window.burstRateLimiter;
+    const burstRateLimiter = window.rateLimiter;
 
 
 
@@ -1557,6 +1477,10 @@
             // Get burst rate limiter stats
             const burstStats = burstRateLimiter.getStats();
             
+            // Get server rate limit status if available
+            const serverRateLimit = burstRateLimiter.serverRateLimit;
+            const hasServerRateLimit = serverRateLimit && serverRateLimit.maxRequests !== null;
+            
             // 🚀 OPTIMIZATION: Get cache performance metrics
             const cache = window.globalConfigCache;
             const cacheMetrics = cache ? cache.getMetrics() : null;
@@ -1591,6 +1515,52 @@
                     }
                 </div>
             `;
+            
+            // Add server rate limit status if available
+            if (hasServerRateLimit) {
+                const utilizationColor = serverRateLimit.utilizationPercent > 80 ? '#ff4444' : 
+                                        serverRateLimit.utilizationPercent > 60 ? '#ff9800' : '#4CAF50';
+                const remaining = serverRateLimit.maxRequests - serverRateLimit.currentCount;
+                
+                content += `
+                    <div style="
+                        margin-bottom: 8px; 
+                        padding: 8px; 
+                        background: rgba(59, 130, 246, 0.1); 
+                        border: 1px solid rgba(59, 130, 246, 0.3); 
+                        border-radius: 6px; 
+                        font-size: 11px;
+                    ">
+                        <div style="font-weight: bold; margin-bottom: 4px; color: #63b3ed;">🌐 Server Rate Limit</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px;">
+                            <div><span style="color: #aaa;">Used:</span> <span style="color: ${utilizationColor}; font-weight: bold;">${serverRateLimit.currentCount}/${serverRateLimit.maxRequests}</span></div>
+                            <div><span style="color: #aaa;">Remaining:</span> <span style="color: ${remaining > 10 ? '#4CAF50' : '#ff9800'}; font-weight: bold;">${remaining}</span></div>
+                            <div style="grid-column: 1 / -1;">
+                                <span style="color: #aaa;">Utilization:</span> 
+                                <span style="color: ${utilizationColor}; font-weight: bold;">${serverRateLimit.utilizationPercent}%</span>
+                                ${serverRateLimit.delaySeconds > 0 ? 
+                                    `<span style="color: #ff9800; margin-left: 8px;">⏳ ${serverRateLimit.delaySeconds}s delay</span>` : 
+                                    ''
+                                }
+                            </div>
+                        </div>
+                        <div style="
+                            margin-top: 4px; 
+                            background: rgba(255,255,255,0.1); 
+                            border-radius: 10px; 
+                            height: 4px; 
+                            overflow: hidden;
+                        ">
+                            <div style="
+                                width: ${serverRateLimit.utilizationPercent}%; 
+                                height: 100%; 
+                                background: ${utilizationColor}; 
+                                transition: width 0.3s ease;
+                            "></div>
+                        </div>
+                    </div>
+                `;
+            }
             
             // Add progress bar for time remaining (only when running and time remaining is available)
             if (timeRemaining && this.isRunning && this.maxRuntimeMs > 0) {
@@ -1842,177 +1812,6 @@
     class BacktesterAPI {
         constructor() {
             this.baseUrl = 'https://backtester.alphagardeners.xyz/api/stats';
-            this.prepareUrl = 'https://backtester.alphagardeners.xyz/api/stats/prepare';
-        }
-        
-        /**
-         * Step 1: Call /prepare endpoint to get a temporary token
-         * @param {Object} apiParams - API parameters
-         * @returns {Promise<{success: boolean, token?: string, expiresIn?: number, error?: string}>}
-         */
-        async prepareToken(apiParams) {
-            try {
-                // 🚨 CRITICAL: Apply rate limiting BEFORE /prepare call
-                // Both /prepare and /stats count against the same rate limit
-                await burstRateLimiter.throttle();
-                
-                // Convert apiParams to body format (with TP settings included)
-                // CRITICAL: The API requires a SPECIFIC FIXED ORDER for all fields
-                const body = {};
-                
-                // THIS IS THE EXACT ORDER from the backtester's working API calls
-                // Every field must appear in this order, whether set or not
-                const orderedKeys = [
-                    'maxTtc',
-                    'minMcap',
-                    'minAgScore',
-                    'maxBuyRatio',
-                    'maxTokenAge',
-                    'minBuyRatio',
-                    'minTokenAge',
-                    'triggerMode',
-                    'maxKycWallets',
-                    'minDeployerAge',
-                    'maxLiquidityPct',
-                    'minHoldersCount',
-                    'maxUniqueWallets',
-                    'maxBundledPercent',
-                    'maxDormantWallets',
-                    'maxVolMcapPercent',
-                    'minBundledPercent',
-                    'minWinPredPercent',
-                    'minDeployerBalance',
-                    'maxHoldersSinceMinutes',
-                    'fromDate',
-                    'toDate',
-                    'maxMcap',
-                    'minLiquidity',
-                    'maxLiquidity',
-                    'maxHoldersCount',
-                    'minHoldersDiffPct',
-                    'minTopHoldersPct',
-                    'maxTopHoldersPct',
-                    'minKycWallets',
-                    'minUniqueWallets',
-                    'minSmWallets',
-                    'minDormantWallets',
-                    'maxDrainedPercent',
-                    'maxDrainedCount',
-                    'needsDescription',
-                    'skipIfNoKycCexFunding',
-                    'needsFreshDeployer',
-                    'minVolMcapPercent',
-                    'weekdays',
-                    'minTtc',
-                    'buyingAmount'
-                ];
-                
-                // Add parameters in EXACT order
-                orderedKeys.forEach(key => {
-                    const value = apiParams[key];
-                    
-                    // Skip internal parameters
-                    if (key.startsWith('__')) return;
-                    
-                    // Skip if not in apiParams at all
-                    if (!(key in apiParams)) return;
-                    
-                    // Handle weekdays array
-                    if (key === 'weekdays') {
-                        if (Array.isArray(value) && value.length > 0) {
-                            body.weekdays = value;
-                        }
-                        return;
-                    }
-                    
-                    // Handle triggerMode (numeric)
-                    if (key === 'triggerMode') {
-                        if (value !== undefined && value !== null) {
-                            body[key] = Number(value);
-                        }
-                        return;
-                    }
-                    
-                    // Handle boolean fields
-                    if (key === 'needsDescription' || key === 'skipIfNoKycCexFunding' || key === 'needsFreshDeployer') {
-                        if (value === true || value === false) {
-                            body[key] = value;
-                        }
-                        return;
-                    }
-                    
-                    // Handle the three required empty-string fields
-                    const alwaysIncludeFields = ['maxHoldersSinceMinutes', 'fromDate', 'toDate'];
-                    if (alwaysIncludeFields.includes(key)) {
-                        body[key] = (value !== undefined && value !== null && value !== '') ? String(value) : '';
-                        return;
-                    }
-                    
-                    // All other fields: only include if non-empty
-                    if (value !== undefined && value !== null && value !== '') {
-                        body[key] = String(value);
-                    }
-                });
-                
-                // 🎯 CRITICAL: Include tpSettings LAST (NOT in /stats URL)
-                // Format: [{"sizePct":20,"targetGainPct":307}, ...] - with NUMERIC values
-                if (Array.isArray(apiParams.__takeProfits) && apiParams.__takeProfits.length > 0) {
-                    body.tpSettings = apiParams.__takeProfits.map(tp => ({
-                        sizePct: Number(tp.size),
-                        targetGainPct: Number(tp.gain)
-                    }));
-                } else {
-                    // Fallback to CONFIG.TP_CONFIGURATIONS if no TP settings provided
-                    body.tpSettings = (CONFIG.TP_CONFIGURATIONS || []).map(tp => ({
-                        sizePct: Number(tp.size),
-                        targetGainPct: Number(tp.gain)
-                    }));
-                }
-                
-                // Stringify the body for the API call
-                const bodyString = JSON.stringify(body);
-                const response = await fetch(this.prepareUrl, {
-                    method: 'POST',
-                    mode: 'cors',
-                    credentials: 'include',
-                    headers: {
-                        'Accept': '*/*',  // Match backtester's accept header
-                        'Content-Type': 'application/json'
-                    },
-                    body: bodyString
-                });
-                
-                if (!response.ok) {
-                    // Handle 429 rate limit on /prepare endpoint
-                    if (response.status === 429) {
-                        const error = new Error(`Rate limit (429) on /prepare endpoint`);
-                        error.isRateLimit = true;
-                        error.statusCode = 429;
-                        throw error;
-                    }
-                    
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                
-                if (!data.token) {
-                    throw new Error('No token received from /prepare endpoint');
-                }
-                
-                return {
-                    success: true,
-                    token: data.token,
-                    expiresIn: data.expiresIn || 300
-                };
-                
-            } catch (error) {
-                console.error(`❌ /prepare call failed: ${error.message}`);
-                return {
-                    success: false,
-                    error: error.message
-                };
-            }
         }
 
         // Map AGCopilot parameter names to API parameter names
@@ -2270,15 +2069,8 @@
             };
         }
         
-        // Build API URL from parameters or token
-        buildApiUrl(apiParams, token = null) {
-            // If token provided, use simple token-based URL
-            // TP settings are already in the token from /prepare, don't add them to /stats URL
-            if (token) {
-                return `${this.baseUrl}?token=${token}`;
-            }
-            
-            // Legacy URL building for backward compatibility (if ever needed)
+        // Build API URL from parameters
+        buildApiUrl(apiParams) {
             const params = new URLSearchParams();
             
             Object.entries(apiParams).forEach(([key, value]) => {
@@ -2357,12 +2149,21 @@
                     .map(tp => ({ size: Number(tp.size), gain: Number(tp.gain) }));
             }
 
-            const tpParams = tpPairs.map(tp => `tpSize=${tp.size}&tpGain=${tp.gain}`).join('&');
-            const base = `${this.baseUrl}?${params.toString()}`;
-            return tpParams ? `${base}&${tpParams}` : base;
+            // Add TP settings as a single JSON parameter
+            // Format: tpSettings=[{"sizePct":20,"targetGainPct":300},...]
+            const tpSettingsArray = tpPairs.map(tp => ({
+                sizePct: Number(tp.size),
+                targetGainPct: Number(tp.gain)
+            }));
+            
+            params.append('tpSettings', JSON.stringify(tpSettingsArray));
+            
+            console.log(`🎯 Built URL with ${tpPairs.length} TP pairs:`, tpSettingsArray);
+            
+            return `${this.baseUrl}?${params.toString()}`;
         }
         
-        // Fetch results from API using new two-step process
+        // Fetch results from API using direct /stats call
         async fetchResults(config, retries = 3) {
             try {
                 // Map AGCopilot config to API parameters FIRST for cache key generation
@@ -2392,9 +2193,6 @@
                     cache.recordMiss();
                 }
                 
-                // NOTE: Rate limiting is now handled inside prepareToken() method
-                // This ensures /prepare and /stats calls are both rate-limited properly
-                
                 // Log date range information if present
                 if (apiParams.fromDate || apiParams.toDate) {
                     console.log(`📅 Date range: ${apiParams.fromDate || 'No start'} to ${apiParams.toDate || 'No end'}`);
@@ -2412,20 +2210,12 @@
                 
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
-                        // Step 1: Get token from /prepare endpoint (rate-limited inside prepareToken)
-                        const tokenResult = await this.prepareToken(apiParams);
-                        
-                        if (!tokenResult.success || !tokenResult.token) {
-                            console.error(`❌ Failed to get token from /prepare: ${tokenResult.error}`);
-                            throw new Error(`Token preparation failed: ${tokenResult.error}`);
-                        }
-                        
-                        // Step 2: Use token to fetch stats (apply rate limiting for the second API call)
+                        // Apply rate limiting before API call
                         await burstRateLimiter.throttle();
                         
-                        const url = this.buildApiUrl(apiParams, tokenResult.token);
+                        const url = this.buildApiUrl(apiParams);
                         
-                        console.log(`📊 Fetching stats with token: ${url.substring(0, 80)}...`);
+                        console.log(`📊 Full stats URL: ${url}`);
                         
                         const response = await fetch(url, {
                             method: 'GET',
@@ -2505,6 +2295,15 @@
                         
                         const data = await response.json();
                         
+                        // Extract and update rate limit information if present
+                        if (data.rateLimit && burstRateLimiter) {
+                            burstRateLimiter.updateFromResponse(data.rateLimit);
+                        }
+                        
+                        // Debug: Log raw API response to understand structure
+                        console.log('🔍 Raw API response keys:', Object.keys(data));
+                        console.log('🔍 Raw API response:', data);
+                        
                         // Transform to AGCopilot expected format
                         const transformedMetrics = {
                             totalTokens: data.totalTokens || 0,
@@ -2523,8 +2322,11 @@
                         // Ensure valid numbers
                         if (isNaN(transformedMetrics.tpPnlPercent) || isNaN(transformedMetrics.totalTokens)) {
                             console.error('❌ Invalid metrics - contains NaN values:', transformedMetrics);
+                            console.error('❌ Raw data:', data);
                             throw new Error(`Invalid metrics: tpPnlPercent=${transformedMetrics.tpPnlPercent}, totalTokens=${transformedMetrics.totalTokens}`);
                         }
+                        
+                        console.log('✅ Transformed metrics:', transformedMetrics);
                         
                         const result = {
                             success: true,
@@ -2542,37 +2344,6 @@
                         return result;
                         
                     } catch (error) {
-                        // Handle 429 errors from /prepare endpoint
-                        if (error.isRateLimit || error.message.includes('429')) {
-                            console.warn(`⚠️ Rate limit hit on /prepare endpoint (attempt ${attempt}/${retries})`);
-                            burstRateLimiter.adaptToBurstLimit();
-                            
-                            let waitTime = Math.max(20000, CONFIG.RATE_LIMIT_RECOVERY * 2);
-                            
-                            // Exponential backoff
-                            if (attempt > 1) {
-                                waitTime *= Math.pow(2, attempt - 1);
-                            }
-                            
-                            // Cap at 2 minutes
-                            waitTime = Math.min(120000, Math.max(20000, waitTime));
-                            
-                            console.warn(`⏳ EXTENDED BACKOFF: Waiting ${(waitTime/1000).toFixed(1)}s before retry...`);
-                            console.warn(`📊 Burst limiter adapted: ${burstRateLimiter.burstLimit} calls/burst, ${(burstRateLimiter.recoveryTime/1000).toFixed(1)}s recovery`);
-                            
-                            if (attempt < retries) {
-                                await sleep(waitTime);
-                                continue;
-                            } else {
-                                return {
-                                    success: false,
-                                    error: 'Rate limit exceeded after all retries (on /prepare)',
-                                    isRateLimit: true,
-                                    retryable: true
-                                };
-                            }
-                        }
-                        
                         // Enhanced CORS and network error handling
                         if (error.name === 'TypeError' && error.message.includes('fetch')) {
                             console.error('❌ Network or CORS error:', error.message);
@@ -5911,25 +5682,62 @@
             const metrics = tracker?.metrics || window.optimizationTracker?.currentBest?.metrics;
             
             if (config) {
-                const configText = JSON.stringify(config, null, 2);
+                // Get metadata
                 const id = tracker?.id ? String(tracker.id).substring(0, 8) : 'current';
                 const score = tracker?.score || metrics?.score || 'N/A';
                 const source = tracker?.source || window.optimizationTracker?.currentBest?.method || 'Unknown';
                 const timestamp = tracker?.id ? new Date(tracker.id).toLocaleString() : new Date().toLocaleString();
                 
-                // Add metadata comment at the top
-                const metadataComment = 
-                    `// Best configuration (ID: ${id})\n` + 
-                    `// Score: ${typeof score === 'number' ? score.toFixed(1) : score} | Source: ${source}\n` + 
-                    `// Generated: ${timestamp}\n\n`;
+                // Format config with proper section detection
+                let configText;
+                const sections = Object.keys(config).filter(k => 
+                    ['basic', 'tokenDetails', 'wallets', 'risk', 'advanced', 'time', 'sources', 'weekdays', 'takeProfits', 'tpSettings'].includes(k)
+                );
                 
-                navigator.clipboard.writeText(metadataComment + configText).then(() => {
-                    console.log(`📋 Best configuration (ID: ${id}) copied to clipboard!`);
-                    updateStatus('📋 Configuration copied to clipboard');
-                }).catch(err => {
-                    console.log('❌ Failed to copy configuration to clipboard:', err);
-                    updateStatus('❌ Failed to copy configuration');
-                });
+                if (sections.length > 0) {
+                    // Sectioned config - show which sections have values
+                    const sectionList = sections.filter(s => {
+                        const sectionData = config[s];
+                        if (Array.isArray(sectionData)) return sectionData.length > 0;
+                        if (typeof sectionData === 'object' && sectionData !== null) {
+                            return Object.keys(sectionData).length > 0;
+                        }
+                        return false;
+                    }).join(', ');
+                    
+                    configText = JSON.stringify(config, null, 2);
+                    
+                    // Add metadata comment at the top
+                    const metadataComment = 
+                        `// Best configuration (ID: ${id})\n` + 
+                        `// Score: ${typeof score === 'number' ? score.toFixed(1) + '%' : score} | Source: ${source}\n` + 
+                        `// Generated: ${timestamp}\n` +
+                        `// Sections: ${sectionList}\n\n`;
+                    
+                    navigator.clipboard.writeText(metadataComment + configText).then(() => {
+                        console.log(`📋 Best configuration (ID: ${id}) copied to clipboard!`);
+                        updateStatus('📋 Configuration copied to clipboard');
+                    }).catch(err => {
+                        console.log('❌ Failed to copy configuration to clipboard:', err);
+                        updateStatus('❌ Failed to copy configuration');
+                    });
+                } else {
+                    // Flat config
+                    configText = JSON.stringify(config, null, 2);
+                    
+                    const metadataComment = 
+                        `// Best configuration (ID: ${id})\n` + 
+                        `// Score: ${typeof score === 'number' ? score.toFixed(1) + '%' : score} | Source: ${source}\n` + 
+                        `// Generated: ${timestamp}\n\n`;
+                    
+                    navigator.clipboard.writeText(metadataComment + configText).then(() => {
+                        console.log(`📋 Best configuration (ID: ${id}) copied to clipboard!`);
+                        updateStatus('📋 Configuration copied to clipboard');
+                    }).catch(err => {
+                        console.log('❌ Failed to copy configuration to clipboard:', err);
+                        updateStatus('❌ Failed to copy configuration');
+                    });
+                }
             } else {
                 console.log('❌ No best configuration available to copy');
                 updateStatus('❌ No configuration available');
