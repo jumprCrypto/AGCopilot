@@ -2084,25 +2084,6 @@
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
                             </div>
-                            <div style="margin-top: 8px;">
-                                <label style="
-                                    display: flex;
-                                    align-items: center;
-                                    gap: 6px;
-                                    font-size: 10px;
-                                    font-weight: 500;
-                                    color: #e2e8f0;
-                                    cursor: pointer;
-                                    user-select: none;
-                                ">
-                                    <input type="checkbox" id="use-deep-dive" style="
-                                        width: 14px;
-                                        height: 14px;
-                                        cursor: pointer;
-                                    ">
-                                    <span>� Deep Dive (Fine-tune top parameters)</span>
-                                </label>
-                            </div>
                         </div>
 
                         <!-- Win Rate Configuration -->
