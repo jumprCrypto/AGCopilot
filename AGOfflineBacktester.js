@@ -171,6 +171,7 @@
         constructor(dataLoader) {
             this.dataLoader = dataLoader;
             this.cache = new Map(); // Cache filtered results
+            this.defaultDateRange = null; // Store default date range (calculated once)
         }
         
         // Test a configuration against the historical data
@@ -185,9 +186,41 @@
             // Flatten nested config object (AGCopilot uses nested structure)
             const flatConfig = this.flattenConfig(config);
             
+            // Calculate default date range if not specified (to ensure cache consistency)
+            if (!flatConfig['Start Date'] && !flatConfig['End Date']) {
+                if (!this.defaultDateRange) {
+                    // Calculate once and cache
+                    let maxTs = -Infinity;
+                    for (let i = 0; i < Math.min(1000, this.dataLoader.data.length); i++) {
+                        const ts = parseInt(this.dataLoader.data[i].timestamp);
+                        if (!isNaN(ts) && ts > maxTs) maxTs = ts;
+                    }
+                    
+                    if (maxTs !== -Infinity) {
+                        this.defaultDateRange = {
+                            start: new Date((maxTs - (7 * 24 * 60 * 60)) * 1000).toISOString(),
+                            end: new Date(maxTs * 1000).toISOString()
+                        };
+                        console.log(`📅 Calculated default date range (last 1 week of CSV):`, this.defaultDateRange);
+                    }
+                }
+                
+                // Add default dates to config for cache key consistency
+                if (this.defaultDateRange) {
+                    flatConfig['Start Date'] = this.defaultDateRange.start;
+                    flatConfig['End Date'] = this.defaultDateRange.end;
+                }
+            }
+            
             // Debug: Log flattened config on first call
             if (this.cache.size === 0) {
                 console.log('🔍 First config test - flattened parameters:', flatConfig);
+                
+                // Sample a few rows to see what data looks like
+                if (this.dataLoader.data.length > 0) {
+                    console.log('🔍 Sample CSV row (first row):', this.dataLoader.data[0]);
+                    console.log('🔍 CSV headers:', this.dataLoader.headers);
+                }
             }
             
             // Generate cache key from flattened config
@@ -200,12 +233,23 @@
             const filtered = this.filterData(flatConfig);
             
             // Debug: Log filtering results
-            if (this.cache.size === 0) {
-                console.log(`🔍 Filtered ${filtered.length.toLocaleString()} / ${this.dataLoader.totalRows.toLocaleString()} rows`);
+            if (this.cache.size < 5) {
+                console.log(`🔍 Config #${this.cache.size + 1}: Filtered ${filtered.length.toLocaleString()} / ${this.dataLoader.totalRows.toLocaleString()} rows`);
+                console.log(`   Active filters:`, Object.keys(flatConfig).filter(k => flatConfig[k] !== undefined && flatConfig[k] !== null));
             }
             
             // Calculate metrics
             const metrics = this.calculateMetrics(filtered);
+            
+            // Debug: Log first few results with details
+            if (this.cache.size < 3) {
+                console.log(`🔍 Config ${this.cache.size + 1} Results:`, {
+                    matchedRows: filtered.length,
+                    tokensHitTp: metrics.tokensHitTp,
+                    winRate: metrics.winRate,
+                    tpPnlPercent: metrics.tpPnlPercent
+                });
+            }
             
             // Cache result
             const result = {
@@ -250,34 +294,139 @@
         }
         
         // Filter data based on configuration parameters
-        filterData(config) {
-            return this.dataLoader.data.filter(row => {
+        filterData(config, cachedDateRange = null) {
+            // Debug: Track filter results on first call
+            let debugMode = this.cache && this.cache.size === 0;
+            let filterStats = {};
+            let firstRowFailedAt = null;
+            
+            // Date range filtering (uses UI settings or defaults to 1 week)
+            let startTimestamp = null;
+            let endTimestamp = null;
+            
+            // Use cached date range if provided (for consistent cache keys)
+            if (cachedDateRange) {
+                startTimestamp = cachedDateRange.start;
+                endTimestamp = cachedDateRange.end;
+            } else if (config['Start Date'] || config['End Date']) {
+                // Use UI-specified dates
+                if (config['Start Date']) {
+                    startTimestamp = new Date(config['Start Date']).getTime() / 1000;
+                }
+                if (config['End Date']) {
+                    endTimestamp = new Date(config['End Date']).getTime() / 1000;
+                }
+            } else {
+                // Default to 1 week from the most recent data point
+                const now = Date.now() / 1000;
+                const oneWeekAgo = now - (7 * 24 * 60 * 60);
+                
+                // Find max timestamp in dataset for reference
+                let maxTs = -Infinity;
+                for (let i = 0; i < Math.min(1000, this.dataLoader.data.length); i++) {
+                    const ts = parseInt(this.dataLoader.data[i].timestamp);
+                    if (!isNaN(ts) && ts > maxTs) maxTs = ts;
+                }
+                
+                if (maxTs !== -Infinity) {
+                    // Use last week of the dataset
+                    endTimestamp = maxTs;
+                    startTimestamp = maxTs - (7 * 24 * 60 * 60);
+                    
+                    if (debugMode) {
+                        console.log(`📅 No date range set - using last 1 week of CSV data`);
+                        console.log(`   Start: ${new Date(startTimestamp * 1000).toISOString()}`);
+                        console.log(`   End: ${new Date(endTimestamp * 1000).toISOString()}`);
+                    }
+                }
+            }
+            
+            // Store date range for return (so it can be cached)
+            const usedDateRange = {
+                start: startTimestamp,
+                end: endTimestamp
+            };
+            
+            // First pass: filter by all criteria
+            const filteredRows = this.dataLoader.data.filter(row => {
+                // Date range filter
+                if (startTimestamp !== null || endTimestamp !== null) {
+                    const timestamp = parseInt(row.timestamp);
+                    if (debugMode && !filterStats['Date Range']) {
+                        filterStats['Date Range'] = { 
+                            value: timestamp, 
+                            start: startTimestamp, 
+                            end: endTimestamp,
+                            pass: (!startTimestamp || timestamp >= startTimestamp) && (!endTimestamp || timestamp <= endTimestamp)
+                        };
+                    }
+                    if (isNaN(timestamp)) return false;
+                    if (startTimestamp !== null && timestamp < startTimestamp) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Start Date';
+                        return false;
+                    }
+                    if (endTimestamp !== null && timestamp > endTimestamp) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'End Date';
+                        return false;
+                    }
+                }
+                
                 // Basic filters
                 if (config['Min MCAP (USD)'] !== undefined) {
                     const mcap = parseFloat(row.mcap);
-                    if (isNaN(mcap) || mcap < config['Min MCAP (USD)']) return false;
+                    if (debugMode && !filterStats['MCAP']) {
+                        filterStats['MCAP'] = { value: mcap, threshold: config['Min MCAP (USD)'], pass: !isNaN(mcap) && mcap >= config['Min MCAP (USD)'] };
+                    }
+                    if (isNaN(mcap) || mcap < config['Min MCAP (USD)']) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Min MCAP (USD)';
+                        return false;
+                    }
                 }
                 
                 if (config['Max MCAP (USD)'] !== undefined) {
                     const mcap = parseFloat(row.mcap);
-                    if (isNaN(mcap) || mcap > config['Max MCAP (USD)']) return false;
+                    if (debugMode && !filterStats['Max MCAP']) {
+                        filterStats['Max MCAP'] = { value: mcap, threshold: config['Max MCAP (USD)'], pass: !isNaN(mcap) && mcap <= config['Max MCAP (USD)'] };
+                    }
+                    if (isNaN(mcap) || mcap > config['Max MCAP (USD)']) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Max MCAP (USD)';
+                        return false;
+                    }
                 }
                 
                 // AG Score
                 if (config['Min AG Score'] !== undefined) {
                     const agScore = parseFloat(row.agScore);
-                    if (isNaN(agScore) || agScore < config['Min AG Score']) return false;
+                    if (debugMode && !filterStats['AG Score']) {
+                        filterStats['AG Score'] = { value: agScore, threshold: config['Min AG Score'], pass: !isNaN(agScore) && agScore >= config['Min AG Score'] };
+                    }
+                    if (isNaN(agScore) || agScore < config['Min AG Score']) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Min AG Score';
+                        return false;
+                    }
                 }
                 
-                // Token Age
+                // Token Age (CSV column is 'tokenAge', not 'tokenAgeInSeconds')
                 if (config['Min Token Age (sec)'] !== undefined) {
-                    const tokenAge = parseFloat(row.tokenAgeInSeconds);
-                    if (isNaN(tokenAge) || tokenAge < config['Min Token Age (sec)']) return false;
+                    const tokenAge = parseFloat(row.tokenAge);
+                    if (debugMode && !filterStats['Token Age']) {
+                        filterStats['Token Age'] = { value: tokenAge, threshold: config['Min Token Age (sec)'], pass: !isNaN(tokenAge) && tokenAge >= config['Min Token Age (sec)'] };
+                    }
+                    if (isNaN(tokenAge) || tokenAge < config['Min Token Age (sec)']) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Min Token Age (sec)';
+                        return false;
+                    }
                 }
                 
                 if (config['Max Token Age (sec)'] !== undefined) {
-                    const tokenAge = parseFloat(row.tokenAgeInSeconds);
-                    if (isNaN(tokenAge) || tokenAge > config['Max Token Age (sec)']) return false;
+                    const tokenAge = parseFloat(row.tokenAge);
+                    if (debugMode && !filterStats['Max Token Age']) {
+                        filterStats['Max Token Age'] = { value: tokenAge, threshold: config['Max Token Age (sec)'], pass: !isNaN(tokenAge) && tokenAge <= config['Max Token Age (sec)'] };
+                    }
+                    if (isNaN(tokenAge) || tokenAge > config['Max Token Age (sec)']) {
+                        if (debugMode && !firstRowFailedAt) firstRowFailedAt = 'Max Token Age (sec)';
+                        return false;
+                    }
                 }
                 
                 // Deployer Age
@@ -426,6 +575,94 @@
                 
                 return true; // Passed all filters
             });
+            
+            // Second pass: Deduplicate by tokenAddress, keeping only the earliest instance
+            const tokenMap = new Map();
+            
+            for (let i = 0; i < filteredRows.length; i++) {
+                const row = filteredRows[i];
+                const tokenAddress = row.tokenAddress;
+                const timestamp = parseInt(row.timestamp);
+                
+                if (!tokenMap.has(tokenAddress)) {
+                    // First occurrence of this token
+                    tokenMap.set(tokenAddress, row);
+                } else {
+                    // Token already seen - keep the earlier one
+                    const existing = tokenMap.get(tokenAddress);
+                    const existingTimestamp = parseInt(existing.timestamp);
+                    
+                    if (timestamp < existingTimestamp) {
+                        // This one is earlier, replace
+                        tokenMap.set(tokenAddress, row);
+                    }
+                }
+            }
+            
+            // Convert map back to array
+            const filtered = Array.from(tokenMap.values());
+            
+            // Debug: Log deduplication stats
+            if (debugMode) {
+                console.log(`🔄 Deduplication: ${filteredRows.length} signals → ${filtered.length} unique tokens`);
+                if (filteredRows.length > filtered.length) {
+                    console.log(`   Removed ${filteredRows.length - filtered.length} duplicate signals (kept earliest per token)`);
+                }
+            }
+            
+            // Debug: Log filter statistics
+            if (debugMode) {
+                console.log('🔍 First row filter results:', filterStats);
+                if (firstRowFailedAt) {
+                    console.log(`❌ First row FAILED at filter: "${firstRowFailedAt}"`);
+                } else {
+                    console.log(`✅ First row PASSED all filters`);
+                }
+                console.log(`📊 Final filtered count: ${filtered.length} / ${this.dataLoader.data.length} rows`);
+                
+                // If no rows passed, let's check a few more rows to see patterns
+                if (filtered.length === 0) {
+                    console.log('⚠️ NO rows passed filters! Checking first 10 rows for failure patterns...');
+                    
+                    const failureReasons = {};
+                    for (let i = 0; i < Math.min(10, this.dataLoader.data.length); i++) {
+                        const testRow = this.dataLoader.data[i];
+                        
+                        // Test each filter
+                        if (config['Min MCAP (USD)'] !== undefined) {
+                            const mcap = parseFloat(testRow.mcap);
+                            if (isNaN(mcap) || mcap < config['Min MCAP (USD)']) {
+                                failureReasons['Min MCAP (USD)'] = (failureReasons['Min MCAP (USD)'] || 0) + 1;
+                            }
+                        }
+                        
+                        if (config['Max MCAP (USD)'] !== undefined) {
+                            const mcap = parseFloat(testRow.mcap);
+                            if (isNaN(mcap) || mcap > config['Max MCAP (USD)']) {
+                                failureReasons['Max MCAP (USD)'] = (failureReasons['Max MCAP (USD)'] || 0) + 1;
+                            }
+                        }
+                        
+                        if (config['Min AG Score'] !== undefined) {
+                            const agScore = parseFloat(testRow.agScore);
+                            if (isNaN(agScore) || agScore < config['Min AG Score']) {
+                                failureReasons['Min AG Score'] = (failureReasons['Min AG Score'] || 0) + 1;
+                            }
+                        }
+                        
+                        if (config['Min Token Age (sec)'] !== undefined) {
+                            const tokenAge = parseFloat(testRow.tokenAge);
+                            if (isNaN(tokenAge) || tokenAge < config['Min Token Age (sec)']) {
+                                failureReasons['Min Token Age (sec)'] = (failureReasons['Min Token Age (sec)'] || 0) + 1;
+                            }
+                        }
+                    }
+                    
+                    console.log('📊 Failure counts (first 10 rows):', failureReasons);
+                }
+            }
+            
+            return filtered;
         }
         
         // Calculate performance metrics from filtered data
@@ -468,9 +705,12 @@
             const realWinRate = winRate;
             
             // PnL estimation based on >5x threshold
-            // target=1: >5x gain (500%+ profit)
-            // target=0: did not reach 5x (conservative: -100% loss assumption)
-            const avgGainPerHit = 500; // 5x gain minimum (actual gains may be higher)
+            // IMPORTANT: With >5x threshold, win rates will be LOW (1-10%)
+            // But each win is 5x minimum, so we need to account for actual trade sizing
+            // Assuming equal position sizing per trade:
+            // - Hit: 5x gain = +400% profit on that position
+            // - Miss: -100% loss on that position
+            const avgGainPerHit = 400; // 5x = 400% profit (not 500%)
             const avgLossPerMiss = -100; // Total loss
             
             const totalPnl = (tokensHitTp * avgGainPerHit) + ((totalTokens - tokensHitTp) * avgLossPerMiss);
@@ -516,8 +756,15 @@
         generateConfigKey(config) {
             // Config should already be flattened when passed here
             // Sort keys and stringify for consistent caching
+            // Include date range in cache key
             const sortedKeys = Object.keys(config).sort();
-            const keyParts = sortedKeys.map(key => `${key}:${config[key]}`);
+            const keyParts = sortedKeys.map(key => {
+                // Handle date objects by converting to ISO string
+                if (key === 'Start Date' || key === 'End Date') {
+                    return `${key}:${config[key] ? new Date(config[key]).toISOString() : 'null'}`;
+                }
+                return `${key}:${config[key]}`;
+            });
             return keyParts.join('|');
         }
         

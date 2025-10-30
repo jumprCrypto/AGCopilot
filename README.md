@@ -61,6 +61,14 @@ javascript:(async function(){try{const r=await fetch('https://raw.githubusercont
 - 10-second dialog with auto-timeout
 - Maintains pinned values across all algorithm phases
 
+### 🗄️ **Offline Backtesting** ⚡NEW
+- Load CSV data dumps for ultra-fast testing
+- **60-100x faster** than API-based optimization
+- 539K+ historical signals (3 months of data)
+- Unlimited testing without rate limits
+- Perfect for parameter discovery and R&D
+- [📖 Learn more](../OFFLINE_BACKTESTING.md)
+
 ---
 
 ## � Usage
