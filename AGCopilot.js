@@ -2166,6 +2166,25 @@
         // Fetch results from API using direct /stats call
         async fetchResults(config, retries = 3) {
             try {
+                // 🗄️ CHECK OFFLINE MODE FIRST - bypass all API logic if offline
+                if (window.offlineBacktester && window.offlineBacktester.isEnabled) {
+                    console.log('🗄️ OFFLINE MODE: Using local CSV data (bypassing API call)');
+                    
+                    // Use offline backtester instead of API
+                    const offlineResult = window.offlineBacktester.backtester.testConfiguration(config);
+                    
+                    if (!offlineResult.success) {
+                        return offlineResult;
+                    }
+                    
+                    // Return in API-compatible format
+                    return {
+                        success: true,
+                        metrics: offlineResult.metrics,
+                        isOffline: true
+                    };
+                }
+                
                 // Map AGCopilot config to API parameters FIRST for cache key generation
                 const apiParams = this.mapParametersToAPI(config);
                 
@@ -2878,7 +2897,13 @@
             const cleanedConfig = cleanConfiguration(config);
             
             // Use the new API to get results directly
+            // (Offline mode is automatically handled inside backtesterAPI.fetchResults)
             const result = await backtesterAPI.fetchResults(cleanedConfig);
+            
+            // Log offline mode indicator if applicable
+            if (result.isOffline) {
+                console.log(`🗄️ ${testName} (OFFLINE MODE)`);
+            }
             
             if (!result.success) {
                 console.warn(`❌ ${testName} failed: ${result.error}`);
@@ -5446,6 +5471,20 @@
                             color: #e2e8f0;
                         "></div>
                         <div style="margin-bottom: 12px;">
+                            <!-- Mode Indicator -->
+                            <div id="optimization-mode-indicator" style="
+                                padding: 8px 12px;
+                                background: rgba(66, 153, 225, 0.1);
+                                border: 1px solid rgba(66, 153, 225, 0.3);
+                                border-radius: 4px;
+                                font-size: 11px;
+                                color: #4299e1;
+                                text-align: center;
+                                margin-bottom: 12px;
+                            ">
+                                📡 Mode: <span id="mode-status">Online (API)</span>
+                            </div>
+                            
                             <!-- Main Action Buttons -->
                             <div style="margin-bottom: 12px;">
                                 <button id="start-optimization" style="
@@ -6111,6 +6150,53 @@
         }
     }
     
+    // ========================================
+    // 🗄️ OFFLINE BACKTESTER MODULE LOADER
+    // ========================================
+    let offlineBacktesterLoaded = false;
+    
+    async function loadOfflineBacktesterModule() {
+        // Don't reload if already loaded
+        if (offlineBacktesterLoaded) {
+            console.log('✅ Offline backtester already loaded');
+            return;
+        }
+        
+        try {
+            console.log('🌐 Fetching AGOfflineBacktester.js from GitHub...');
+            
+            // Load Offline Backtester script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGOfflineBacktester.js';
+            const response = await fetch(scriptUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load Offline Backtester: HTTP ${response.status}`);
+            }
+            
+            const scriptContent = await response.text();
+            console.log(`📜 Loaded ${scriptContent.length} characters from GitHub`);
+            
+            // Execute the script - it will inject itself into the optimization tab
+            console.log('⚙️ Executing AGOfflineBacktester.js...');
+            eval(scriptContent);
+            
+            offlineBacktesterLoaded = true;
+            console.log('✅ Offline Backtester module loaded successfully!');
+            console.log('💡 Use window.offlineBacktester to access offline backtesting features');
+            
+        } catch (error) {
+            console.error('❌ Offline Backtester loading error:', error);
+            console.warn('⚠️ Offline backtesting will not be available. Continuing with online mode only.');
+            // Don't show error to user - offline mode is optional
+        }
+    }
+    
+    // Global retry function for Offline Backtester error recovery
+    window.retryLoadOfflineBacktester = function() {
+        offlineBacktesterLoaded = false;
+        loadOfflineBacktesterModule();
+    };
+    
     async function loadBaseConfigBuilderInTab() {
         // Don't reload if already loaded
         if (baseConfigBuilderLoaded) {
@@ -6590,6 +6676,11 @@
         // Load optimization module immediately since config-tab is the default active tab
         setTimeout(() => {
             loadOptimizationInTab();
+            //TODO: Uncomment this when AGOfflineBacktester.js is ready
+            // Also load offline backtester module after a short delay
+            // setTimeout(() => {
+            //     loadOfflineBacktesterModule();
+            // }, 500);
         }, 100);
         
         // Make functions globally available for onclick handlers
