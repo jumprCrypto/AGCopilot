@@ -2437,6 +2437,9 @@
         const { min, max, step, type } = rule;
         const testValues = [];
         
+        // Check if offline mode is active - if so, test MANY more values!
+        const isOfflineMode = window.offlineBacktester?.isEnabled;
+        
         // Always include min and max values
         testValues.push(min);
         if (max !== min) {
@@ -2459,6 +2462,25 @@
             return finalValues;
         }
         
+        // OFFLINE MODE: Test every single step value (no sampling needed!)
+        if (isOfflineMode && numSteps <= 100) {
+            // For ranges with ≤100 steps, test EVERY value
+            for (let value = min + step; value < max; value += step) {
+                testValues.push(type === 'integer' ? Math.round(value) : value);
+            }
+            
+            const finalValues = [...new Set(testValues)].sort((a, b) => a - b);
+            
+            if (paramName === 'Min AG Score') {
+                const stringValues = finalValues.map(v => String(v));
+                console.log(`📊 🗄️ OFFLINE: Generated ${stringValues.length} test values for ${paramName} (testing ALL steps)`);
+                return stringValues;
+            }
+            
+            console.log(`📊 🗄️ OFFLINE: Generated ${finalValues.length} test values for ${paramName} (testing ALL steps)`);
+            return finalValues;
+        }
+        
         // For larger ranges, generate strategic test points
         if (numSteps <= 5) {
             // Small number of steps - test all values
@@ -2467,10 +2489,14 @@
             }
         } else {
             // Larger ranges - use strategic sampling
-            // Test quartiles and a few key points
-            const quartile1 = min + (range * 0.25);
-            const median = min + (range * 0.5);
-            const quartile3 = min + (range * 0.75);
+            // In offline mode, use MUCH denser sampling
+            const samplingDensity = isOfflineMode ? 0.05 : 0.25; // 5% intervals offline, 25% online
+            
+            // Generate percentile points
+            const percentiles = [];
+            for (let pct = samplingDensity; pct < 1; pct += samplingDensity) {
+                percentiles.push(min + (range * pct));
+            }
             
             // Round to nearest step
             const roundToStep = (val) => {
@@ -2478,24 +2504,14 @@
                 return type === 'integer' ? Math.round(rounded) : rounded;
             };
             
-            testValues.push(roundToStep(quartile1));
-            testValues.push(roundToStep(median));
-            testValues.push(roundToStep(quartile3));
-            
-            // Add a couple more strategic points for very large ranges
-            if (numSteps > 20) {
-                const point1 = min + (range * 0.1);  // 10th percentile
-                const point2 = min + (range * 0.9);  // 90th percentile
-                testValues.push(roundToStep(point1));
-                testValues.push(roundToStep(point2));
-            }
+            percentiles.forEach(val => testValues.push(roundToStep(val)));
         }
         
         // Remove duplicates and sort
         const uniqueValues = [...new Set(testValues)].sort((a, b) => a - b);
         
-        // Limit to maximum 8 values to keep testing reasonable
-        const maxValues = 8;
+        // Limit to maximum values - MUCH higher limit in offline mode
+        const maxValues = isOfflineMode ? 100 : 8; // 100 values offline, 8 online
         let finalValues;
         if (uniqueValues.length > maxValues) {
             // Keep min, max, and evenly spaced intermediate values
@@ -2515,7 +2531,8 @@
             finalValues = finalValues.map(v => String(v));
         }
         
-        console.log(`📊 Generated ${finalValues.length} test values for ${paramName}: [${finalValues.join(', ')}]`);
+        const modeLabel = isOfflineMode ? '🗄️ OFFLINE' : '🌐 API';
+        console.log(`📊 ${modeLabel}: Generated ${finalValues.length} test values for ${paramName}: [${finalValues.join(', ')}]`);
         return finalValues;
     }
     

@@ -676,12 +676,30 @@
                 return true; // Passed all filters
             });
             
-            // Second pass: Deduplicate by tokenAddress, keeping only the earliest instance
+            // NEW APPROACH: First identify which TOKENS match (any signal), then use earliest signal for metrics
+            // This allows tokens with multiple signals to match on ANY signal, but metrics count each token once
+            const matchingTokens = new Set();
+            
+            // Collect all tokens that have at least one matching signal
+            for (let i = 0; i < filteredRows.length; i++) {
+                matchingTokens.add(filteredRows[i].tokenAddress);
+            }
+            
+            if (debugMode) {
+                console.log(`🔍 Found ${matchingTokens.size} unique tokens with matching signals (from ${filteredRows.length} total signals)`);
+            }
+            
+            // Now get the EARLIEST signal for each matching token (for metrics calculation)
             const tokenMap = new Map();
             
-            for (let i = 0; i < filteredRows.length; i++) {
-                const row = filteredRows[i];
+            // Go through ALL data (not just filtered) to find earliest signal for each matching token
+            for (let i = 0; i < this.dataLoader.data.length; i++) {
+                const row = this.dataLoader.data[i];
                 const tokenAddress = row.tokenAddress;
+                
+                // Only process tokens that had at least one matching signal
+                if (!matchingTokens.has(tokenAddress)) continue;
+                
                 const timestamp = parseInt(row.timestamp);
                 
                 if (!tokenMap.has(tokenAddress)) {
@@ -704,9 +722,9 @@
             
             // Debug: Log deduplication stats
             if (debugMode) {
-                console.log(`🔄 Deduplication: ${filteredRows.length} signals → ${filtered.length} unique tokens`);
+                console.log(`🔄 Using earliest signals: ${matchingTokens.size} tokens → ${filtered.length} earliest signals`);
                 if (filteredRows.length > filtered.length) {
-                    console.log(`   Removed ${filteredRows.length - filtered.length} duplicate signals (kept earliest per token)`);
+                    console.log(`   ${filteredRows.length} matching signals reduced to ${filtered.length} tokens (using earliest per token)`);
                 }
             }
             
