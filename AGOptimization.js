@@ -652,6 +652,19 @@
             
             this.testCount++;
             
+            // 🗄️ Log offline mode status for first test
+            if (this.testCount === 1 && window.offlineBacktester) {
+                console.log('🔍 OPTIMIZATION MODE CHECK:');
+                console.log('   Offline Backtester Available:', !!window.offlineBacktester);
+                console.log('   Offline Mode Enabled:', window.offlineBacktester.isEnabled);
+                console.log('   Data Loaded:', window.offlineBacktester.dataLoader?.isLoaded);
+                if (window.offlineBacktester.isEnabled) {
+                    console.log('   ✅ Optimization will use LOCAL CSV data');
+                } else {
+                    console.log('   ⚠️ Optimization will use API calls (slower)');
+                }
+            }
+            
             // Validate min/max pairs before testing
             this.validateMinMaxPairs(config);
             
@@ -688,11 +701,22 @@
             const result = await this.testConfig(currentConfig, 'Baseline');
             
             if (!result.success || !result.metrics) {
-                throw new Error('Failed to establish baseline');
+                const errorDetails = !result.success ? `API error: ${result.error}` : 'No metrics returned';
+                console.error('❌ Baseline test failed:', errorDetails);
+                if (result.matchedRows !== undefined) {
+                    console.error(`   Matched rows: ${result.matchedRows} / ${result.totalRows}`);
+                }
+                throw new Error(`Failed to establish baseline: ${errorDetails}`);
             }
             
             const scaledThresholds = window.getScaledTokenThresholds();
             if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) {
+                console.error('❌ Baseline has insufficient tokens!');
+                console.error(`   Got: ${result.metrics.totalTokens} tokens`);
+                console.error(`   Required: ${scaledThresholds.MIN_TOKENS} tokens`);
+                if (result.matchedRows !== undefined) {
+                    console.error(`   Matched rows: ${result.matchedRows} / ${result.totalRows}`);
+                }
                 throw new Error(`Baseline has insufficient tokens: ${result.metrics.totalTokens} < ${scaledThresholds.MIN_TOKENS}`);
             }
             
@@ -1289,7 +1313,8 @@
                 sortedRuns.slice(0, 3).forEach((run, index) => {
                     const rank = index + 1;
                     const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
-                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${run.metrics.totalTokens} tokens, ${run.testCount} tests)`);
+                    const tokenCount = run.metrics?.totalTokens || 0;
+                    console.log(`${medal} Run ${run.runNumber}: ${run.score.toFixed(1)}% (${tokenCount} tokens, ${run.testCount} tests)`);
                 });
                 
                 const scoreProgression = successfulRuns.map(r => r.score.toFixed(1));

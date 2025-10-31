@@ -2169,19 +2169,25 @@
                 // 🗄️ CHECK OFFLINE MODE FIRST - bypass all API logic if offline
                 if (window.offlineBacktester && window.offlineBacktester.isEnabled) {
                     console.log('🗄️ OFFLINE MODE: Using local CSV data (bypassing API call)');
+                    console.log('   Config keys:', Object.keys(config).slice(0, 5).join(', '), '...');
                     
                     // Use offline backtester instead of API
                     const offlineResult = window.offlineBacktester.backtester.testConfiguration(config);
                     
                     if (!offlineResult.success) {
+                        console.error('   ❌ Offline test failed:', offlineResult.error);
                         return offlineResult;
                     }
+                    
+                    console.log(`   ✅ Offline result: ${offlineResult.matchedRows} rows, ${offlineResult.metrics.winRate}% WR, ${offlineResult.metrics.tpPnlPercent}% PnL`);
                     
                     // Return in API-compatible format
                     return {
                         success: true,
                         metrics: offlineResult.metrics,
-                        isOffline: true
+                        isOffline: true,
+                        matchedRows: offlineResult.matchedRows,
+                        totalRows: offlineResult.totalRows
                     };
                 }
                 
@@ -5746,12 +5752,32 @@
                     
                     configText = JSON.stringify(config, null, 2);
                     
+                    // Check for date range info
+                    let dateRangeInfo = '';
+                    if (config.dateRange && (config.dateRange.fromDate || config.dateRange.toDate)) {
+                        const from = config.dateRange.fromDate || 'none';
+                        const to = config.dateRange.toDate || 'none';
+                        dateRangeInfo = `\n// Date Range: ${from} to ${to}`;
+                        
+                        // Calculate span if both dates present
+                        if (config.dateRange.fromDate && config.dateRange.toDate) {
+                            const start = new Date(config.dateRange.fromDate);
+                            const end = new Date(config.dateRange.toDate);
+                            const days = Math.round((end - start) / (1000 * 60 * 60 * 24));
+                            dateRangeInfo += ` (${days} days)`;
+                            
+                            if (days < 14) {
+                                dateRangeInfo += '\n// ⚠️ WARNING: Narrow date range may not match real backtester results!';
+                            }
+                        }
+                    }
+                    
                     // Add metadata comment at the top
                     const metadataComment = 
                         `// Best configuration (ID: ${id})\n` + 
                         `// Score: ${typeof score === 'number' ? score.toFixed(1) + '%' : score} | Source: ${source}\n` + 
                         `// Generated: ${timestamp}\n` +
-                        `// Sections: ${sectionList}\n\n`;
+                        `// Sections: ${sectionList}${dateRangeInfo}\n\n`;
                     
                     navigator.clipboard.writeText(metadataComment + configText).then(() => {
                         console.log(`📋 Best configuration (ID: ${id}) copied to clipboard!`);
@@ -6678,9 +6704,9 @@
             loadOptimizationInTab();
             //TODO: Uncomment this when AGOfflineBacktester.js is ready
             // Also load offline backtester module after a short delay
-            // setTimeout(() => {
-            //     loadOfflineBacktesterModule();
-            // }, 500);
+            setTimeout(() => {
+                loadOfflineBacktesterModule();
+            }, 500);
         }, 100);
         
         // Make functions globally available for onclick handlers

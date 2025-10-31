@@ -186,22 +186,90 @@
             // Flatten nested config object (AGCopilot uses nested structure)
             const flatConfig = this.flattenConfig(config);
             
+            // Debug: Log first config to check structure
+            if (this.cache.size === 0) {
+                console.log('🔍 OFFLINE MODE - First config received:');
+                console.log('   Is Nested:', this.isNestedConfig(config));
+                console.log('   Original Keys:', Object.keys(config).join(', '));
+                console.log('   Flattened Keys:', Object.keys(flatConfig).slice(0, 10).join(', '), '...');
+                console.log('   Sample Values:');
+                console.log('     Min MCAP:', flatConfig['Min MCAP (USD)']);
+                console.log('     Max MCAP:', flatConfig['Max MCAP (USD)']);
+                console.log('     Min AG Score:', flatConfig['Min AG Score']);
+                
+                // Show date range info
+                if (flatConfig['Start Date'] || flatConfig['End Date']) {
+                    console.log('     📅 Date Range from config:');
+                    console.log('        Start:', flatConfig['Start Date']);
+                    console.log('        End:', flatConfig['End Date']);
+                    
+                    // Calculate span
+                    if (flatConfig['Start Date'] && flatConfig['End Date']) {
+                        const start = new Date(flatConfig['Start Date']);
+                        const end = new Date(flatConfig['End Date']);
+                        const days = (end - start) / (1000 * 60 * 60 * 24);
+                        console.log('        Span:', days.toFixed(1), 'days');
+                        
+                        if (days < 14) {
+                            console.warn('     ⚠️ WARNING: Date range is very narrow (<2 weeks). This will limit available data!');
+                        }
+                    }
+                }
+            }
+            
             // Calculate default date range if not specified (to ensure cache consistency)
             if (!flatConfig['Start Date'] && !flatConfig['End Date']) {
                 if (!this.defaultDateRange) {
-                    // Calculate once and cache
+                    // Calculate once and cache - scan ALL rows to find true min/max
                     let maxTs = -Infinity;
-                    for (let i = 0; i < Math.min(1000, this.dataLoader.data.length); i++) {
+                    let minTs = Infinity;
+                    
+                    console.log('📅 Scanning CSV to find date range...');
+                    
+                    // Sample strategy: Check every 100th row + first/last 1000 rows for performance
+                    const totalRows = this.dataLoader.data.length;
+                    
+                    // Check first 1000 rows
+                    for (let i = 0; i < Math.min(1000, totalRows); i++) {
                         const ts = parseInt(this.dataLoader.data[i].timestamp);
-                        if (!isNaN(ts) && ts > maxTs) maxTs = ts;
+                        if (!isNaN(ts)) {
+                            if (ts > maxTs) maxTs = ts;
+                            if (ts < minTs) minTs = ts;
+                        }
                     }
                     
-                    if (maxTs !== -Infinity) {
+                    // Check last 1000 rows
+                    for (let i = Math.max(0, totalRows - 1000); i < totalRows; i++) {
+                        const ts = parseInt(this.dataLoader.data[i].timestamp);
+                        if (!isNaN(ts)) {
+                            if (ts > maxTs) maxTs = ts;
+                            if (ts < minTs) minTs = ts;
+                        }
+                    }
+                    
+                    // Sample every 100th row in the middle
+                    for (let i = 1000; i < totalRows - 1000; i += 100) {
+                        const ts = parseInt(this.dataLoader.data[i].timestamp);
+                        if (!isNaN(ts)) {
+                            if (ts > maxTs) maxTs = ts;
+                            if (ts < minTs) minTs = ts;
+                        }
+                    }
+                    
+                    if (maxTs !== -Infinity && minTs !== Infinity) {
+                        const datasetSpanDays = ((maxTs - minTs) / 86400).toFixed(1);
+                        
+                        // Use ALL data by default (no date restriction)
                         this.defaultDateRange = {
-                            start: new Date((maxTs - (7 * 24 * 60 * 60)) * 1000).toISOString(),
+                            start: new Date(minTs * 1000).toISOString(),
                             end: new Date(maxTs * 1000).toISOString()
                         };
-                        console.log(`📅 Calculated default date range (last 1 week of CSV):`, this.defaultDateRange);
+                        
+                        console.log('📅 Dataset date range found:');
+                        console.log('   Start (earliest):', this.defaultDateRange.start);
+                        console.log('   End (latest):', this.defaultDateRange.end);
+                        console.log('   Span:', datasetSpanDays, 'days');
+                        console.log('   🎯 Using FULL dataset (no date filtering)');
                     }
                 }
                 
@@ -214,12 +282,21 @@
             
             // Debug: Log flattened config on first call
             if (this.cache.size === 0) {
-                console.log('🔍 First config test - flattened parameters:', flatConfig);
+                console.log('🔍 First config test - flattened parameters:');
+                Object.entries(flatConfig).forEach(([key, value]) => {
+                    console.log(`   ${key}: ${value}`);
+                });
                 
                 // Sample a few rows to see what data looks like
                 if (this.dataLoader.data.length > 0) {
-                    console.log('🔍 Sample CSV row (first row):', this.dataLoader.data[0]);
-                    console.log('🔍 CSV headers:', this.dataLoader.headers);
+                    const sampleRow = this.dataLoader.data[0];
+                    console.log('🔍 Sample CSV row (first row):');
+                    console.log('   Token:', sampleRow.tokenAddress);
+                    console.log('   Timestamp:', sampleRow.timestamp);
+                    console.log('   MCAP:', sampleRow.mcap);
+                    console.log('   AG Score:', sampleRow.agScore);
+                    console.log('   Target:', sampleRow.target);
+                    console.log('🔍 CSV has', this.dataLoader.headers.length, 'columns');
                 }
             }
             
@@ -235,7 +312,15 @@
             // Debug: Log filtering results
             if (this.cache.size < 5) {
                 console.log(`🔍 Config #${this.cache.size + 1}: Filtered ${filtered.length.toLocaleString()} / ${this.dataLoader.totalRows.toLocaleString()} rows`);
+                console.log(`   Match rate: ${((filtered.length / this.dataLoader.totalRows) * 100).toFixed(2)}%`);
                 console.log(`   Active filters:`, Object.keys(flatConfig).filter(k => flatConfig[k] !== undefined && flatConfig[k] !== null));
+                
+                // Show date range being used
+                if (flatConfig['Start Date'] || flatConfig['End Date']) {
+                    const start = flatConfig['Start Date'] ? new Date(flatConfig['Start Date']).toISOString().split('T')[0] : 'None';
+                    const end = flatConfig['End Date'] ? new Date(flatConfig['End Date']).toISOString().split('T')[0] : 'None';
+                    console.log(`   Date range: ${start} to ${end}`);
+                }
             }
             
             // Calculate metrics
@@ -243,12 +328,23 @@
             
             // Debug: Log first few results with details
             if (this.cache.size < 3) {
-                console.log(`🔍 Config ${this.cache.size + 1} Results:`, {
-                    matchedRows: filtered.length,
-                    tokensHitTp: metrics.tokensHitTp,
-                    winRate: metrics.winRate,
-                    tpPnlPercent: metrics.tpPnlPercent
+                console.log(`🔍 Config ${this.cache.size + 1} Results:`);
+                console.log('   Matched Rows:', filtered.length);
+                console.log('   Tokens Hit TP:', metrics.tokensHitTp);
+                console.log('   Win Rate:', metrics.winRate + '%');
+                console.log('   TP PnL:', metrics.tpPnlPercent + '%');
+            }
+            
+            // CRITICAL: If no rows matched, log warning with more details
+            if (filtered.length === 0 && this.cache.size < 5) {
+                console.warn(`⚠️ OFFLINE MODE WARNING: Config ${this.cache.size + 1} matched 0 rows!`);
+                console.warn(`   Date range: ${flatConfig['Start Date']} to ${flatConfig['End Date']}`);
+                console.warn(`   Sample filters:`, {
+                    'Min MCAP (USD)': flatConfig['Min MCAP (USD)'],
+                    'Max MCAP (USD)': flatConfig['Max MCAP (USD)'],
+                    'Min AG Score': flatConfig['Min AG Score']
                 });
+                console.warn(`   CSV has ${this.dataLoader.totalRows} total rows`);
             }
             
             // Cache result
@@ -276,7 +372,11 @@
             
             // Flatten nested structure
             for (const [section, params] of Object.entries(config)) {
-                if (typeof params === 'object' && params !== null && !Array.isArray(params)) {
+                if (section === 'dateRange' && typeof params === 'object' && params !== null) {
+                    // Special handling for date range - convert to filter-compatible names
+                    if (params.fromDate) flat['Start Date'] = params.fromDate;
+                    if (params.toDate) flat['End Date'] = params.toDate;
+                } else if (typeof params === 'object' && params !== null && !Array.isArray(params)) {
                     Object.assign(flat, params);
                 } else {
                     flat[section] = params;
@@ -612,7 +712,10 @@
             
             // Debug: Log filter statistics
             if (debugMode) {
-                console.log('🔍 First row filter results:', filterStats);
+                console.log('🔍 First row filter results:');
+                Object.entries(filterStats).forEach(([filter, stats]) => {
+                    console.log(`   ${filter}: value=${stats.value}, threshold=${stats.threshold}, pass=${stats.pass}`);
+                });
                 if (firstRowFailedAt) {
                     console.log(`❌ First row FAILED at filter: "${firstRowFailedAt}"`);
                 } else {
