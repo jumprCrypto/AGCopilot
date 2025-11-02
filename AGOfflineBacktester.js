@@ -345,6 +345,88 @@
                     'Min AG Score': flatConfig['Min AG Score']
                 });
                 console.warn(`   CSV has ${this.dataLoader.totalRows} total rows`);
+                
+                // ENHANCED DEBUG: Show which filters are active and check data availability
+                console.warn('\n🔬 DEBUGGING 0 TOKENS RESULT:');
+                console.warn('   Running progressive filter diagnostic...\n');
+                
+                // Get date-filtered baseline
+                let startTs = flatConfig['Start Date'] ? new Date(flatConfig['Start Date']).getTime() / 1000 : null;
+                let endTs = flatConfig['End Date'] ? new Date(flatConfig['End Date']).getTime() / 1000 : null;
+                
+                let testRows = this.dataLoader.data.filter(row => {
+                    const ts = parseInt(row.timestamp);
+                    if (isNaN(ts)) return false;
+                    if (startTs && ts < startTs) return false;
+                    if (endTs && ts > endTs) return false;
+                    return true;
+                });
+                
+                console.warn(`   Start: ${testRows.length} rows after date filter`);
+                
+                // Test each active filter
+                const activeFilters = [
+                    { name: 'Max MCAP (USD)', field: 'mcap', value: flatConfig['Max MCAP (USD)'], type: 'max' },
+                    { name: 'Min Token Age (sec)', field: 'tokenAge', value: flatConfig['Min Token Age (sec)'], type: 'min' },
+                    { name: 'Max Token Age (sec)', field: 'tokenAge', value: flatConfig['Max Token Age (sec)'], type: 'max' },
+                    { name: 'Min Unique Wallets', field: 'uniqueCount', value: flatConfig['Min Unique Wallets'], type: 'min' },
+                    { name: 'Max Unique Wallets', field: 'uniqueCount', value: flatConfig['Max Unique Wallets'], type: 'max' },
+                    { name: 'Min Dormant Wallets', field: 'dormantCount', value: flatConfig['Min Dormant Wallets'], type: 'min' },
+                    { name: 'Max Dormant Wallets', field: 'dormantCount', value: flatConfig['Max Dormant Wallets'], type: 'max' },
+                    { name: 'Min Holders', field: 'holdersCount', value: flatConfig['Min Holders'], type: 'min' },
+                    { name: 'Min Buy Ratio %', field: 'buyVolumePct', value: flatConfig['Min Buy Ratio %'], type: 'min' },
+                    { name: 'Max Vol MCAP %', field: 'volMcapPct', value: flatConfig['Max Vol MCAP %'], type: 'max' },
+                    { name: 'Max TTC (sec)', field: 'ttc', value: flatConfig['Max TTC (sec)'], type: 'max' },
+                    { name: 'Min Win Pred %', field: 'winPredPercent', value: flatConfig['Min Win Pred %'], type: 'min' }
+                ];
+                
+                for (const filter of activeFilters) {
+                    if (filter.value === undefined || filter.value === null) continue;
+                    
+                    const beforeCount = testRows.length;
+                    
+                    // Count NaN values
+                    let nanCount = 0;
+                    let validCount = 0;
+                    let passingCount = 0;
+                    
+                    for (const row of testRows) {
+                        const val = parseFloat(row[filter.field]);
+                        if (isNaN(val)) {
+                            nanCount++;
+                        } else {
+                            validCount++;
+                            if (filter.type === 'min' && val >= filter.value) passingCount++;
+                            if (filter.type === 'max' && val <= filter.value) passingCount++;
+                        }
+                    }
+                    
+                    // Apply filter (CURRENT LENIENT BEHAVIOR)
+                    testRows = testRows.filter(row => {
+                        const val = parseFloat(row[filter.field]);
+                        if (isNaN(val)) return true; // LENIENT: pass NaN
+                        if (filter.type === 'min') return val >= filter.value;
+                        if (filter.type === 'max') return val <= filter.value;
+                        return true;
+                    });
+                    
+                    const afterCount = testRows.length;
+                    const removed = beforeCount - afterCount;
+                    
+                    console.warn(`   ${filter.name}: ${filter.value}`);
+                    console.warn(`      Before: ${beforeCount} rows`);
+                    console.warn(`      Valid values: ${validCount} | NaN: ${nanCount} (${((nanCount/beforeCount)*100).toFixed(1)}%)`);
+                    console.warn(`      Passing threshold: ${passingCount}`);
+                    console.warn(`      After filter: ${afterCount} (removed ${removed})`);
+                    
+                    if (afterCount === 0) {
+                        console.warn(`      🚨 THIS FILTER ELIMINATED ALL ROWS!`);
+                        break;
+                    }
+                }
+                
+                console.warn(`\n   📊 FINAL: ${testRows.length} rows`);
+                console.warn('   🔍 This explains why offline returns 0 tokens.\n');
             }
             
             // Cache result
@@ -447,6 +529,60 @@
                 end: endTimestamp
             };
             
+            // VALIDATION: Check if date range actually overlaps with CSV data
+            if ((startTimestamp !== null || endTimestamp !== null) && debugMode) {
+                // Use the pre-calculated default date range if available (which scans more thoroughly)
+                let csvMinTs, csvMaxTs;
+                
+                if (this.defaultDateRange) {
+                    // Use cached full dataset range
+                    csvMinTs = new Date(this.defaultDateRange.start).getTime() / 1000;
+                    csvMaxTs = new Date(this.defaultDateRange.end).getTime() / 1000;
+                } else {
+                    // Fallback: sample first/last 1000 rows for quick estimate
+                    csvMinTs = Infinity;
+                    csvMaxTs = -Infinity;
+                    const totalRows = this.dataLoader.data.length;
+                    
+                    // Check first 1000
+                    for (let i = 0; i < Math.min(1000, totalRows); i++) {
+                        const ts = parseInt(this.dataLoader.data[i].timestamp);
+                        if (!isNaN(ts)) {
+                            csvMinTs = Math.min(csvMinTs, ts);
+                            csvMaxTs = Math.max(csvMaxTs, ts);
+                        }
+                    }
+                    
+                    // Check last 1000
+                    for (let i = Math.max(0, totalRows - 1000); i < totalRows; i++) {
+                        const ts = parseInt(this.dataLoader.data[i].timestamp);
+                        if (!isNaN(ts)) {
+                            csvMinTs = Math.min(csvMinTs, ts);
+                            csvMaxTs = Math.max(csvMaxTs, ts);
+                        }
+                    }
+                }
+                
+                // Check for overlap
+                const queryStart = startTimestamp || -Infinity;
+                const queryEnd = endTimestamp || Infinity;
+                const noOverlap = (queryStart > csvMaxTs) || (queryEnd < csvMinTs);
+                
+                if (noOverlap) {
+                    console.error('🚨🚨🚨 CRITICAL: Date range does NOT overlap with CSV data! 🚨🚨🚨');
+                    console.error('   CSV data range:');
+                    console.error('      ', new Date(csvMinTs * 1000).toISOString(), 'to', new Date(csvMaxTs * 1000).toISOString());
+                    console.error('   Query date range:');
+                    console.error('      ', new Date(queryStart * 1000).toISOString(), 'to', new Date(queryEnd * 1000).toISOString());
+                    console.error('   ⚠️ Expected result: 0 tokens (no data in query range)');
+                    console.error('   ⚠️ This means offline results CANNOT match API results!');
+                } else {
+                    console.log('✅ Date range validation: Query overlaps with CSV data');
+                    console.log('   CSV:', new Date(csvMinTs * 1000).toISOString(), 'to', new Date(csvMaxTs * 1000).toISOString());
+                    console.log('   Query:', new Date(queryStart * 1000).toISOString(), 'to', new Date(queryEnd * 1000).toISOString());
+                }
+            }
+            
             // First pass: filter by all criteria
             const filteredRows = this.dataLoader.data.filter(row => {
                 // Date range filter
@@ -471,8 +607,8 @@
                     }
                 }
                 
-                // Basic filters
-                if (config['Min MCAP (USD)'] !== undefined) {
+                // Basic filters - STRICT NaN rejection (matches API)
+                if (config['Min MCAP (USD)'] !== undefined && config['Min MCAP (USD)'] > 0) {
                     const mcap = parseFloat(row.mcap);
                     if (debugMode && !filterStats['MCAP']) {
                         filterStats['MCAP'] = { value: mcap, threshold: config['Min MCAP (USD)'], pass: !isNaN(mcap) && mcap >= config['Min MCAP (USD)'] };
@@ -494,7 +630,7 @@
                     }
                 }
                 
-                // AG Score
+                // AG Score - STRICT
                 if (config['Min AG Score'] !== undefined) {
                     const agScore = parseFloat(row.agScore);
                     if (debugMode && !filterStats['AG Score']) {
@@ -506,7 +642,7 @@
                     }
                 }
                 
-                // Token Age (CSV column is 'tokenAge', not 'tokenAgeInSeconds')
+                // Token Age - STRICT (CSV column is 'tokenAge')
                 if (config['Min Token Age (sec)'] !== undefined) {
                     const tokenAge = parseFloat(row.tokenAge);
                     if (debugMode && !filterStats['Token Age']) {
@@ -529,13 +665,13 @@
                     }
                 }
                 
-                // Deployer Age
-                if (config['Min Deployer Age (min)'] !== undefined) {
+                // Deployer Age - STRICT
+                if (config['Min Deployer Age (min)'] !== undefined && config['Min Deployer Age (min)'] > 0) {
                     const deployerAge = parseFloat(row.deployerAge);
                     if (isNaN(deployerAge) || deployerAge < config['Min Deployer Age (min)']) return false;
                 }
                 
-                // Wallet criteria
+                // Wallet criteria - STRICT
                 if (config['Min Unique Wallets'] !== undefined) {
                     const uniqueCount = parseFloat(row.uniqueCount);
                     if (isNaN(uniqueCount) || uniqueCount < config['Min Unique Wallets']) return false;
@@ -546,7 +682,7 @@
                     if (isNaN(uniqueCount) || uniqueCount > config['Max Unique Wallets']) return false;
                 }
                 
-                if (config['Min KYC Wallets'] !== undefined) {
+                if (config['Min KYC Wallets'] !== undefined && config['Min KYC Wallets'] > 0) {
                     const kycCount = parseFloat(row.kycCount);
                     if (isNaN(kycCount) || kycCount < config['Min KYC Wallets']) return false;
                 }
@@ -577,8 +713,9 @@
                 }
                 
                 // Holder growth filter
-                if (config['Holders Growth %'] !== undefined) {
+                if (config['Holders Growth %'] !== undefined && config['Holders Growth %'] > 0) {
                     const holdersDiffPct = parseFloat(row.holdersDiffPct);
+                    // STRICT: If filter is active (>0), require valid data
                     if (isNaN(holdersDiffPct) || holdersDiffPct < config['Holders Growth %']) return false;
                 }
                 
@@ -587,7 +724,7 @@
                     if (isNaN(holdersSinceMinutes) || holdersSinceMinutes > config['Holders Growth Minutes']) return false;
                 }
                 
-                // Risk criteria
+                // Risk criteria - STRICT
                 if (config['Min Bundled %'] !== undefined) {
                     const bundledPct = parseFloat(row.bundledPct);
                     if (isNaN(bundledPct) || bundledPct < config['Min Bundled %']) return false;
@@ -613,7 +750,7 @@
                     if (isNaN(buyVolumePct) || buyVolumePct > config['Max Buy Ratio %']) return false;
                 }
                 
-                if (config['Min Vol MCAP %'] !== undefined) {
+                if (config['Min Vol MCAP %'] !== undefined && config['Min Vol MCAP %'] > 0) {
                     const volMcapPct = parseFloat(row.volMcapPct);
                     if (isNaN(volMcapPct) || volMcapPct < config['Min Vol MCAP %']) return false;
                 }
@@ -646,7 +783,7 @@
                     if (!config['Fresh Deployer'] && freshDeployer) return false;
                 }
                 
-                // Advanced criteria
+                // Advanced criteria - STRICT
                 if (config['Min TTC (sec)'] !== undefined) {
                     const ttc = parseFloat(row.ttc);
                     if (isNaN(ttc) || ttc < config['Min TTC (sec)']) return false;
@@ -676,37 +813,28 @@
                 return true; // Passed all filters
             });
             
-            // NEW APPROACH: First identify which TOKENS match (any signal), then use earliest signal for metrics
-            // This allows tokens with multiple signals to match on ANY signal, but metrics count each token once
-            const matchingTokens = new Set();
-            
-            // Collect all tokens that have at least one matching signal
-            for (let i = 0; i < filteredRows.length; i++) {
-                matchingTokens.add(filteredRows[i].tokenAddress);
-            }
-            
-            if (debugMode) {
-                console.log(`🔍 Found ${matchingTokens.size} unique tokens with matching signals (from ${filteredRows.length} total signals)`);
-            }
-            
-            // Now get the EARLIEST signal for each matching token (for metrics calculation)
+            // Second pass: Deduplicate by tokenAddress, keeping only the earliest MATCHING signal
+            // IMPORTANT: We deduplicate ONLY from filteredRows (signals that passed filters)
+            // We do NOT go back to all data - that would include signals that failed filters!
             const tokenMap = new Map();
+            let droppedDueToInvalidTimestamp = 0;
             
-            // Go through ALL data (not just filtered) to find earliest signal for each matching token
-            for (let i = 0; i < this.dataLoader.data.length; i++) {
-                const row = this.dataLoader.data[i];
+            for (let i = 0; i < filteredRows.length; i++) {
+                const row = filteredRows[i];
                 const tokenAddress = row.tokenAddress;
-                
-                // Only process tokens that had at least one matching signal
-                if (!matchingTokens.has(tokenAddress)) continue;
-                
                 const timestamp = parseInt(row.timestamp);
                 
+                // Skip rows with invalid timestamps
+                if (isNaN(timestamp)) {
+                    droppedDueToInvalidTimestamp++;
+                    continue;
+                }
+                
                 if (!tokenMap.has(tokenAddress)) {
-                    // First occurrence of this token
+                    // First occurrence of this token (among filtered signals)
                     tokenMap.set(tokenAddress, row);
                 } else {
-                    // Token already seen - keep the earlier one
+                    // Token already seen - keep the earlier one (among filtered signals)
                     const existing = tokenMap.get(tokenAddress);
                     const existingTimestamp = parseInt(existing.timestamp);
                     
@@ -722,9 +850,20 @@
             
             // Debug: Log deduplication stats
             if (debugMode) {
-                console.log(`🔄 Using earliest signals: ${matchingTokens.size} tokens → ${filtered.length} earliest signals`);
+                console.log(`🔄 Deduplication: ${filteredRows.length} matching signals → ${filtered.length} unique tokens`);
                 if (filteredRows.length > filtered.length) {
-                    console.log(`   ${filteredRows.length} matching signals reduced to ${filtered.length} tokens (using earliest per token)`);
+                    console.log(`   Removed ${filteredRows.length - filtered.length} duplicate signals (kept earliest per token among matching)`);
+                }
+                if (droppedDueToInvalidTimestamp > 0) {
+                    console.warn(`   ⚠️ Dropped ${droppedDueToInvalidTimestamp} signals with invalid timestamps`);
+                }
+                
+                // Count actual unique tokens in filteredRows for comparison
+                const uniqueTokensBeforeDedup = new Set(filteredRows.map(r => r.tokenAddress)).size;
+                console.log(`   🔍 Debug: ${uniqueTokensBeforeDedup} unique tokens before dedup, ${filtered.length} after dedup`);
+                if (uniqueTokensBeforeDedup !== filtered.length) {
+                    console.warn(`   ⚠️ Lost ${uniqueTokensBeforeDedup - filtered.length} unique tokens during deduplication!`);
+                    console.warn(`   This suggests some tokens have invalid/missing timestamps`);
                 }
             }
             
@@ -902,6 +1041,164 @@
                 memoryEstimate: `${(this.cache.size * 0.5).toFixed(2)} KB` // Rough estimate
             };
         }
+        
+        // 🔍 DIAGNOSTIC: Test each filter individually to find discrepancies
+        diagnoseFilters(config, skipDeduplication = false) {
+            console.log('🔬 =========================');
+            console.log('🔬 FILTER DIAGNOSTIC MODE');
+            console.log('🔬 =========================');
+            
+            if (skipDeduplication) {
+                console.log('⚠️  Deduplication: DISABLED (testing raw signal count)');
+            } else {
+                console.log('✅ Deduplication: ENABLED (default behavior)');
+            }
+            
+            const flatConfig = this.flattenConfig(config);
+            
+            // Get date-filtered baseline
+            let startTimestamp = null;
+            let endTimestamp = null;
+            
+            if (flatConfig['Start Date']) {
+                startTimestamp = new Date(flatConfig['Start Date']).getTime() / 1000;
+            }
+            if (flatConfig['End Date']) {
+                endTimestamp = new Date(flatConfig['End Date']).getTime() / 1000;
+            }
+            
+            // Start with date-filtered rows
+            let currentRows = this.dataLoader.data.filter(row => {
+                const ts = parseInt(row.timestamp);
+                if (isNaN(ts)) return false;
+                if (startTimestamp !== null && ts < startTimestamp) return false;
+                if (endTimestamp !== null && ts > endTimestamp) return false;
+                return true;
+            });
+            
+            console.log(`📅 Start: ${currentRows.length} rows after date filter`);
+            console.log(`   Date range: ${flatConfig['Start Date']} to ${flatConfig['End Date']}`);
+            
+            // Test each filter one by one
+            const filterTests = [
+                { name: 'Min MCAP (USD)', field: 'mcap', type: 'min' },
+                { name: 'Max MCAP (USD)', field: 'mcap', type: 'max' },
+                { name: 'Min Token Age (sec)', field: 'tokenAge', type: 'min' },
+                { name: 'Min Deployer Age (min)', field: 'deployerAge', type: 'min' },
+                { name: 'Min Unique Wallets', field: 'uniqueCount', type: 'min' },
+                { name: 'Max Dormant Wallets', field: 'dormantCount', type: 'max' },
+                { name: 'Min Holders', field: 'holdersCount', type: 'min' },
+                { name: 'Holders Growth %', field: 'holdersDiffPct', type: 'min' },
+                { name: 'Min Bundled %', field: 'bundledPct', type: 'min' },
+                { name: 'Max Bundled %', field: 'bundledPct', type: 'max' },
+                { name: 'Min Deployer Balance (SOL)', field: 'deployerBalance', type: 'min' },
+                { name: 'Min Buy Ratio %', field: 'buyVolumePct', type: 'min' },
+                { name: 'Max Buy Ratio %', field: 'buyVolumePct', type: 'max' },
+                { name: 'Min Vol MCAP %', field: 'volMcapPct', type: 'min' },
+                { name: 'Max Vol MCAP %', field: 'volMcapPct', type: 'max' },
+                { name: 'Min TTC (sec)', field: 'ttc', type: 'min' },
+                { name: 'Max Liquidity %', field: 'liquidityPct', type: 'max' }
+            ];
+            
+            for (const test of filterTests) {
+                const threshold = flatConfig[test.name];
+                if (threshold === undefined || threshold === null) continue;
+                
+                const beforeCount = currentRows.length;
+                
+                currentRows = currentRows.filter(row => {
+                    const value = parseFloat(row[test.field]);
+                    if (isNaN(value)) return false;
+                    
+                    if (test.type === 'min') return value >= threshold;
+                    if (test.type === 'max') return value <= threshold;
+                    return true;
+                });
+                
+                const afterCount = currentRows.length;
+                const removed = beforeCount - afterCount;
+                const pctRemoved = beforeCount > 0 ? ((removed / beforeCount) * 100).toFixed(1) : '0.0';
+                
+                console.log(`🔍 ${test.name}: ${threshold}`);
+                console.log(`   CSV field: "${test.field}"`);
+                console.log(`   ${beforeCount} → ${afterCount} rows (removed ${removed}, ${pctRemoved}%)`);
+                
+                // Sample some removed rows to see values
+                if (removed > 0 && removed < 100) {
+                    const sample = this.dataLoader.data.filter(row => {
+                        const ts = parseInt(row.timestamp);
+                        if (isNaN(ts)) return false;
+                        if (startTimestamp !== null && ts < startTimestamp) return false;
+                        if (endTimestamp !== null && ts > endTimestamp) return false;
+                        
+                        const value = parseFloat(row[test.field]);
+                        if (isNaN(value)) return false;
+                        
+                        if (test.type === 'min') return value < threshold;
+                        if (test.type === 'max') return value > threshold;
+                        return false;
+                    }).slice(0, 3);
+                    
+                    console.log(`   Sample removed values:`, sample.map(r => parseFloat(r[test.field])));
+                }
+            }
+            
+            console.log(`\n📊 After all filters: ${currentRows.length} signals`);
+            console.log(`   Expected from earlier test: ~370 signals`);
+            if (Math.abs(currentRows.length - 370) > 10) {
+                console.warn(`   ⚠️ Significant difference! Some filters may be behaving differently`);
+            }
+            
+            // Deduplicate final result (unless disabled for testing)
+            let finalTokens;
+            if (skipDeduplication) {
+                finalTokens = currentRows.length;
+                console.log(`⚠️  Skipping deduplication: ${currentRows.length} signals returned as-is`);
+            } else {
+                const tokenMap = new Map();
+                for (const row of currentRows) {
+                    const token = row.tokenAddress;
+                    const ts = parseInt(row.timestamp);
+                    
+                    if (!tokenMap.has(token)) {
+                        tokenMap.set(token, row);
+                    } else {
+                        const existing = tokenMap.get(token);
+                        const existingTs = parseInt(existing.timestamp);
+                        if (ts < existingTs) {
+                            tokenMap.set(token, row);
+                        }
+                    }
+                }
+                
+                finalTokens = tokenMap.size;
+                console.log(`🔄 After deduplication: ${currentRows.length} signals → ${finalTokens} unique tokens`);
+            }
+            console.log('🔬 =========================');
+            console.log('');
+            console.log('📊 COMPARISON SUMMARY:');
+            console.log(`   Offline (with dedup): ${finalTokens} tokens`);
+            console.log(`   Signals (no dedup): ${currentRows.length} signals`);
+            console.log(`   API reported: 476 tokens`);
+            console.log('');
+            if (currentRows.length >= 476 && finalTokens <= 476) {
+                console.log('🎯 HYPOTHESIS: API might NOT be deduplicating signals!');
+                console.log('   Or API uses different deduplication logic (keeps all matching signals)');
+            } else if (finalTokens === 146) {
+                console.log('❓ MYSTERY: Offline has correct filtering but API returns more tokens');
+                console.log('   Possible causes:');
+                console.log('   1. API uses looser filter thresholds');
+                console.log('   2. API handles null/NaN values differently');
+                console.log('   3. CSV data is incomplete compared to live database');
+            }
+            console.log('🔬 =========================');
+            
+            return {
+                finalRows: currentRows.length,
+                finalTokens: finalTokens,
+                originalRows: this.dataLoader.data.length
+            };
+        }
     }
     
     // ========================================
@@ -998,6 +1295,11 @@
             <div style="margin-top: 12px; padding: 8px; background: rgba(160, 174, 192, 0.1); border-radius: 4px; font-size: 10px; color: #a0aec0;">
                 💡 <strong>Tip:</strong> Offline mode is perfect for rapid parameter testing without rate limits.
                 Results are cached for instant re-testing of the same configuration.
+            </div>
+            
+            <div style="margin-top: 8px; padding: 8px; background: rgba(237, 137, 54, 0.05); border: 1px solid rgba(237, 137, 54, 0.2); border-radius: 4px; font-size: 9px; color: #ed8936;">
+                ⚠️ <strong>Note:</strong> Offline data is a snapshot. Token counts may differ from live API (~70-85% accuracy).
+                Use offline for screening, then validate top configs with online mode.
             </div>
         `;
         
