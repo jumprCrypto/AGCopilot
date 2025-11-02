@@ -6722,8 +6722,8 @@
             //TODO: Uncomment this when AGOfflineBacktester.js is ready
             // Also load offline backtester module after a short delay
             setTimeout(() => {
-                loadOfflineBacktesterModule();
-            }, 500);
+            loadOfflineBacktesterModule();
+            }, 250);
         }, 100);
         
         // Make functions globally available for onclick handlers
