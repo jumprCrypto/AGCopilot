@@ -576,21 +576,123 @@
             this.dataLoader = dataLoader;
         }
         
+        /**
+         * Calculate TP PnL for a single token based on ATH gain and TP settings
+         * @param {number} athGainPct - ATH gain percentage (e.g., 150 for 150% gain)
+         * @param {Array} tpSettings - TP configuration [{sizePct: 25, targetGainPct: 300}, ...]
+         * @returns {number} PnL percentage for this token
+         */
+        calculateTokenTPPnL(athGainPct, tpSettings) {
+            if (!tpSettings || tpSettings.length === 0) {
+                // Fallback: simple binary outcome if no TP settings
+                return athGainPct >= 300 ? 400 : -100;
+            }
+            
+            let totalPnL = 0;
+            let remainingSize = 100; // Start with 100% position
+            
+            // Sort TPs by gain target (ascending)
+            const sortedTPs = [...tpSettings].sort((a, b) => a.targetGainPct - b.targetGainPct);
+            
+            for (const tp of sortedTPs) {
+                const sizePct = tp.sizePct || 0;
+                const targetGain = tp.targetGainPct || 0;
+                
+                if (athGainPct >= targetGain) {
+                    // TP hit - this portion made targetGain% profit
+                    totalPnL += (sizePct / 100) * targetGain;
+                    remainingSize -= sizePct;
+                } else {
+                    // TP not hit - calculate partial gains for remaining position
+                    // Remaining position got athGainPct% (could be negative)
+                    totalPnL += (remainingSize / 100) * athGainPct;
+                    break;
+                }
+            }
+            
+            // If all TPs hit and there's still remaining size (shouldn't happen with proper config)
+            if (remainingSize > 0) {
+                totalPnL += (remainingSize / 100) * athGainPct;
+            }
+            
+            return totalPnL;
+        }
+        
+        /**
+         * Parse TP settings from CSV (stored as JSON string)
+         * @param {string} tpSettingsStr - JSON string of TP settings
+         * @returns {Array|null} Parsed TP settings or null
+         */
+        parseTpSettings(tpSettingsStr) {
+            if (!tpSettingsStr || tpSettingsStr === '' || tpSettingsStr === 'null') {
+                return null;
+            }
+            
+            try {
+                const parsed = JSON.parse(tpSettingsStr);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed;
+                }
+            } catch (e) {
+                // Invalid JSON, return null
+            }
+            
+            return null;
+        }
+        
         calculate(indices) {
             if (indices.length === 0) return this.getEmpty();
             
+            const athGainIdx = this.dataLoader.headerMap.get('athGainPct');
+            const tpSettingsIdx = this.dataLoader.headerMap.get('tpSettings');
             const targetIdx = this.dataLoader.headerMap.get('target');
+            
+            let totalPnL = 0;
             let hits = 0;
+            let useSimplifiedCalculation = false;
+            
+            // Check if we have TP calculation fields
+            if (athGainIdx === undefined || tpSettingsIdx === undefined) {
+                console.warn('⚠️ CSV missing athGainPct or tpSettings columns - using simplified calculation');
+                useSimplifiedCalculation = true;
+            }
             
             for (const idx of indices) {
-                const target = parseInt(this.dataLoader.data[idx][targetIdx]);
-                if (target === 1) hits++;
+                const row = this.dataLoader.data[idx];
+                
+                if (useSimplifiedCalculation) {
+                    // Fallback: simple binary outcome based on target column
+                    const target = parseInt(row[targetIdx]);
+                    if (target === 1) {
+                        hits++;
+                        totalPnL += 400; // Assume +400% for wins
+                    } else {
+                        totalPnL += -100; // Assume -100% for losses
+                    }
+                } else {
+                    // Accurate calculation using ATH gain and TP settings
+                    const athGainStr = row[athGainIdx];
+                    const tpSettingsStr = row[tpSettingsIdx];
+                    
+                    const athGain = parseFloat(athGainStr);
+                    const tpSettings = this.parseTpSettings(tpSettingsStr);
+                    
+                    if (!isNaN(athGain)) {
+                        const tokenPnL = this.calculateTokenTPPnL(athGain, tpSettings);
+                        totalPnL += tokenPnL;
+                        
+                        // Count as hit if positive PnL
+                        if (tokenPnL > 0) hits++;
+                    } else {
+                        // No ATH data, assume loss
+                        totalPnL += -100;
+                    }
+                }
             }
             
             const total = indices.length;
             const winRate = (hits / total) * 100;
-            const totalPnl = (hits * 400) + ((total - hits) * -100);
-            const tpPnlPercent = totalPnl / total;
+            const tpPnlPercent = totalPnL / total;
             
             return {
                 totalTokens: total,
@@ -602,7 +704,8 @@
                 uniqueTokens: total,
                 avgMcap: this.calcAvg(indices, 'mcap'),
                 avgAgScore: this.calcAvg(indices, 'agScore'),
-                avgLiquidity: this.calcAvg(indices, 'liquidity')
+                avgLiquidity: this.calcAvg(indices, 'liquidity'),
+                calculationMethod: useSimplifiedCalculation ? 'simplified' : 'accurate'
             };
         }
         
@@ -610,7 +713,8 @@
             return {
                 totalTokens: 0, tokensHitTp: 0, winRate: 0, realWinRate: 0,
                 tpPnlPercent: 0, avgPnlPerToken: 0, uniqueTokens: 0,
-                avgMcap: 0, avgAgScore: 0, avgLiquidity: 0
+                avgMcap: 0, avgAgScore: 0, avgLiquidity: 0,
+                calculationMethod: 'none'
             };
         }
         
@@ -685,6 +789,279 @@
         clearCache() { this.cache.clear(); }
         getCacheStats() { return { size: this.cache.size }; }
         getStats() { return this.dataLoader.getStats(); }
+        
+        // ========================================
+        // 🚀 ENHANCED OPTIMIZATION (DEFAULT)
+        // ========================================
+        
+        /**
+         * Load AGOptimizationEnhanced module if not already loaded
+         */
+        async loadEnhancedModule() {
+            if (window.AGOptimizationEnhanced) {
+                console.log('✅ AGOptimizationEnhanced already loaded');
+                return true;
+            }
+            
+            console.log('⏳ Loading AGOptimizationEnhanced module...');
+            
+            try {
+                // Use same pattern as other scripts: fetch + eval (not script tag)
+                const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGOptimizationEnhanced.js';
+                const response = await fetch(scriptUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load AGOptimizationEnhanced: HTTP ${response.status}`);
+                }
+                
+                const scriptContent = await response.text();
+                console.log(`📜 Loaded ${scriptContent.length} characters from GitHub`);
+                
+                // Execute the script
+                console.log('⚙️ Executing AGOptimizationEnhanced.js...');
+                eval(scriptContent);
+                
+                // Verify it loaded correctly
+                if (!window.AGOptimizationEnhanced) {
+                    throw new Error('Script executed but window.AGOptimizationEnhanced not found');
+                }
+                
+                console.log('✅ AGOptimizationEnhanced loaded successfully');
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Failed to load AGOptimizationEnhanced:', error);
+                console.error('   URL: https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGOptimizationEnhanced.js');
+                throw new Error('Failed to load enhanced optimization module: ' + error.message);
+            }
+        }
+        
+        /**
+         * Run enhanced genetic algorithm optimization (20,000 tests)
+         * This is the DEFAULT optimization method for offline mode
+         */
+        async runEnhancedOptimization(options = {}) {
+            console.log('🚀 Starting Enhanced Optimization (Offline Mode Default)');
+            console.log('━'.repeat(60));
+            
+            // Check data loaded
+            if (!this.dataLoader.isLoaded) {
+                throw new Error('❌ No CSV data loaded! Load data first.');
+            }
+            
+            const stats = this.getStats();
+            console.log(`✅ CSV loaded: ${stats.totalRows.toLocaleString()} rows, ${stats.uniqueTokens.toLocaleString()} tokens`);
+            
+            // Load enhanced module if needed
+            await this.loadEnhancedModule();
+            
+            // Configuration
+            const config = {
+                populationSize: options.populationSize || 200,
+                generations: options.generations || 100,
+                mutationRate: options.mutationRate || 0.15,
+                elitePercent: options.elitePercent || 0.1,
+                minConsistency: options.minConsistency || 0.70,
+                ...options
+            };
+            
+            console.log(`📊 Configuration:`);
+            console.log(`   Population: ${config.populationSize}`);
+            console.log(`   Generations: ${config.generations}`);
+            console.log(`   Total Tests: ${config.populationSize * config.generations}`);
+            console.log(`   Scoring Mode: ${window.CONFIG?.SCORING_MODE || 'robust'}`);
+            console.log(`   Min Win Rate: ${window.CONFIG?.MIN_WIN_RATE || 25}%`);
+            
+            // =====================================
+            // PHASE 1: Enhanced Genetic Algorithm
+            // =====================================
+            console.log('\n🧬 PHASE 1: Enhanced Genetic Algorithm');
+            console.log(`   ${config.populationSize} population × ${config.generations} generations = ${config.populationSize * config.generations} tests`);
+            
+            // Create multi-objective optimizer (respects CONFIG automatically)
+            const moo = new AGOptimizationEnhanced.MultiObjectiveOptimizer({
+                useRobustScore: true  // Uses window.calculateRobustScore (respects CONFIG.SCORING_MODE)
+            });
+            
+            // Test function using offline backtester
+            const testConfig = async (testCfg) => {
+                if (window.STOPPED) throw new Error('Optimization stopped by user');
+                
+                const result = this.testConfiguration(testCfg, false);
+                
+                if (!result.success) {
+                    return { config: testCfg, score: -Infinity, metrics: {} };
+                }
+                
+                // ✅ CRITICAL: Check MIN_TOKENS requirement (respects UI setting)
+                const scaledThresholds = window.getScaledTokenThresholds ? window.getScaledTokenThresholds() : null;
+                const minTokensRequired = scaledThresholds?.MIN_TOKENS || 70; // Default: 10/day × 7 days
+                
+                if (result.metrics.totalTokens < minTokensRequired) {
+                    return { 
+                        config: testCfg, 
+                        score: -Infinity, 
+                        metrics: result.metrics,
+                        rejected: true,
+                        rejectionReason: `Only ${result.metrics.totalTokens} tokens (need ${minTokensRequired})`
+                    };
+                }
+                
+                // Use multi-objective scoring (respects CONFIG settings automatically)
+                const score = moo.calculateScore(result.metrics);
+                
+                return {
+                    config: testCfg,
+                    score,
+                    metrics: result.metrics
+                };
+            };
+            
+            // Create genetic algorithm
+            const ga = new AGOptimizationEnhanced.EnhancedGeneticAlgorithm({
+                populationSize: config.populationSize,
+                generations: config.generations,
+                mutationRate: config.mutationRate,
+                elitePercent: config.elitePercent,
+                paramRules: window.PARAM_RULES
+            });
+            
+            // Get current config or start random
+            const currentConfig = window.getCurrentConfiguration ? 
+                await window.getCurrentConfiguration() : {};
+            
+            // ✅ CRITICAL: Flatten config and ensure date ranges are preserved
+            const baseConfig = {};
+            
+            // Extract all parameters from nested config structure
+            if (typeof currentConfig === 'object' && currentConfig !== null) {
+                for (const [sectionKey, sectionValue] of Object.entries(currentConfig)) {
+                    if (sectionValue && typeof sectionValue === 'object' && !Array.isArray(sectionValue)) {
+                        // Handle dateRange section specially
+                        if (sectionKey === 'dateRange') {
+                            if (sectionValue.fromDate) baseConfig['Start Date'] = sectionValue.fromDate;
+                            if (sectionValue.toDate) baseConfig['End Date'] = sectionValue.toDate;
+                        } else {
+                            // Merge other sections
+                            Object.assign(baseConfig, sectionValue);
+                        }
+                    }
+                }
+            }
+            
+            console.log(`📖 Read ${Object.keys(baseConfig).length} fields from UI, ${Object.values(baseConfig).filter(v => v !== null && v !== undefined && v !== '').length} have values set`);
+            
+            ga.initializePopulation(baseConfig);
+            
+            // Progress tracking
+            let lastUpdate = Date.now();
+            let testsPerSecond = 0;
+            let testCount = 0;
+            const startTime = Date.now();
+            
+            const progressCallback = (progress, gen, totalGens, bestScore) => {
+                testCount++;
+                const now = Date.now();
+                
+                if (now - lastUpdate > 2000) { // Update every 2 seconds
+                    const elapsed = (now - lastUpdate) / 1000;
+                    testsPerSecond = (testCount / elapsed).toFixed(0);
+                    const totalElapsed = ((now - startTime) / 1000 / 60).toFixed(1);
+                    
+                    console.log(`   Gen ${gen}/${totalGens} (${progress.toFixed(1)}%) - Best: ${bestScore.toFixed(2)} - Speed: ${testsPerSecond} tests/sec - Time: ${totalElapsed}m`);
+                    
+                    // Update UI if available (use setCurrentBest, not updateBest)
+                    if (window.optimizationTracker && ga.bestIndividual) {
+                        window.optimizationTracker.setCurrentBest(
+                            { 
+                                config: ga.bestIndividual.config,
+                                metrics: { ...ga.bestIndividual.metrics, score: bestScore }
+                            }, 
+                            'Enhanced Genetic Algorithm'
+                        );
+                    }
+                    
+                    lastUpdate = now;
+                    testCount = 0;
+                }
+            };
+            
+            // Run genetic algorithm
+            const gaStartTime = Date.now();
+            const gaResult = await ga.run(testConfig, progressCallback);
+            const gaDuration = ((Date.now() - gaStartTime) / 1000 / 60).toFixed(1);
+            
+            console.log(`\n✅ Genetic Algorithm Complete in ${gaDuration} minutes`);
+            console.log(`🏆 Best Score: ${gaResult.bestScore.toFixed(2)}`);
+            console.log(`📊 Best Metrics:`, gaResult.bestMetrics);
+            
+            // =====================================
+            // PHASE 2: Ensemble Validation
+            // =====================================
+            if (config.skipEnsemble) {
+                console.log('\n⏭️ Skipping Ensemble Validation (skipEnsemble: true)');
+            } else {
+                console.log('\n🎯 PHASE 2: Ensemble Validation');
+                console.log('   Testing across 4 time periods...');
+                
+                const ensemble = new AGOptimizationEnhanced.EnsembleOptimizer({
+                    minConsistency: config.minConsistency
+                });
+                
+                const ensembleStartTime = Date.now();
+                const ensembleResults = await ensemble.testAcrossRanges(gaResult.bestConfig, testConfig);
+                const consistency = ensemble.calculateConsistency(ensembleResults);
+                const ensembleDuration = ((Date.now() - ensembleStartTime) / 1000).toFixed(1);
+                
+                console.log(`✅ Ensemble Validation Complete in ${ensembleDuration}s`);
+                console.log(`📊 Consistency: ${(consistency.consistencyRate * 100).toFixed(0)}% positive periods`);
+                console.log(`💰 Avg Score: ${consistency.avgScore.toFixed(2)}`);
+                console.log(`📈 Sharpe Ratio: ${consistency.sharpeRatio.toFixed(2)}`);
+                console.log(`✅ Is Consistent: ${consistency.isConsistent ? 'YES ✓' : 'NO ✗'}`);
+                
+                if (!consistency.isConsistent) {
+                    console.warn(`⚠️ Warning: Config not consistent across time periods (${(consistency.consistencyRate * 100).toFixed(0)}% < ${config.minConsistency * 100}%)`);
+                }
+                
+                gaResult.ensemble = {
+                    results: ensembleResults,
+                    consistency
+                };
+            }
+            
+            // =====================================
+            // FINAL RESULTS
+            // =====================================
+            const totalDuration = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+            const totalTests = config.populationSize * config.generations;
+            const avgTestsPerSecond = (totalTests / ((Date.now() - startTime) / 1000)).toFixed(0);
+            
+            console.log('\n' + '━'.repeat(60));
+            console.log('🎉 ENHANCED OPTIMIZATION COMPLETE');
+            console.log('━'.repeat(60));
+            console.log(`⏱️  Total Time: ${totalDuration} minutes`);
+            console.log(`🧪 Total Tests: ${totalTests.toLocaleString()}`);
+            console.log(`⚡ Avg Speed: ${avgTestsPerSecond} tests/second`);
+            console.log(`🏆 Best Score: ${gaResult.bestScore.toFixed(2)}`);
+            console.log(`💰 Best PnL: ${gaResult.bestMetrics.tpPnlPercent?.toFixed(2) || 'N/A'}%`);
+            console.log(`🎯 Win Rate: ${gaResult.bestMetrics.realWinRate?.toFixed(2) || gaResult.bestMetrics.winRate?.toFixed(2) || 'N/A'}%`);
+            console.log(`📊 Tokens: ${gaResult.bestMetrics.totalTokens || 'N/A'}`);
+            console.log('━'.repeat(60));
+            
+            return {
+                success: true,
+                config: gaResult.bestConfig,
+                score: gaResult.bestScore,
+                metrics: gaResult.bestMetrics,
+                history: gaResult.history,
+                ensemble: gaResult.ensemble,
+                performance: {
+                    totalTests,
+                    durationMinutes: parseFloat(totalDuration),
+                    testsPerSecond: parseFloat(avgTestsPerSecond)
+                }
+            };
+        }
     }
     
     // ========================================
@@ -757,9 +1134,13 @@
                 <button id="load-csv-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:12px">📂 Load CSV Data</button>
             </div>
             <div id="data-stats" style="display:none;margin-bottom:12px;padding:10px;background:rgba(72,187,120,0.1);border:1px solid rgba(72,187,120,0.3);border-radius:4px;font-size:11px"></div>
+            <div id="offline-mode-notice" style="display:none;margin-bottom:12px;padding:10px;background:rgba(237,137,54,0.1);border:1px solid rgba(237,137,54,0.3);border-radius:4px;font-size:11px;color:#ed8936">
+                <div style="font-weight:600;margin-bottom:4px">🚀 Enhanced Optimization Active</div>
+                <div>Click "Start Optimization" in the Optimization tab to run 20,000 tests (~10-15 min)</div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
                 <button id="test-config-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🧪 Test</button>
-                <button id="clear-cache-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🗑️ Clear</button>
+                <button id="clear-cache-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">�️ Clear</button>
             </div>
             <button id="toggle-mode-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:11px">🔄 Go Online</button>
         `;
@@ -771,6 +1152,7 @@
         const loadBtn = $('load-csv-btn'), fileInput = $('csv-file-input');
         const testBtn = $('test-config-btn'), clearBtn = $('clear-cache-btn'), toggleBtn = $('toggle-mode-btn');
         const stats = $('data-stats');
+        const notice = $('offline-mode-notice');
         
         loadBtn?.addEventListener('click', () => fileInput?.click());
         
@@ -778,7 +1160,6 @@
             const file = e.target.files[0];
             if (!file) return;
             
-            status.innerHTML = '⏳ Loading...';
             loadBtn.disabled = true;
             loadBtn.innerHTML = '⏳ Loading...';
             
@@ -786,10 +1167,6 @@
                 const result = await bt.loadData(file);
                 
                 if (result.success) {
-                    status.innerHTML = `✅ Loaded: ${result.rows.toLocaleString()} rows - Offline mode ready`;
-                    status.style.background = 'rgba(72,187,120,0.1)';
-                    status.style.color = '#48bb78';
-                    
                     const s = bt.getStats();
                     stats.style.display = 'block';
                     stats.innerHTML = `
@@ -812,22 +1189,23 @@
                     clearBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
                     toggleBtn.style.background = 'linear-gradient(135deg,#4299e1 0%,#3182ce 100%)';
                     
+                    // Show enhanced optimization notice
+                    if (notice) {
+                        notice.style.display = 'block';
+                    }
+                    
                     loadBtn.innerHTML = '✅ Loaded';
                     
-                    // Re-enable offline mode and reset force online button
+                    // Re-enable offline mode
                     window.offlineBacktester.enable();
-                    forceOnlineBtn.innerHTML = '⚠️ Force Online Mode';
-                    forceOnlineBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
                     
                     // Update toggle button to show "Go Online" since we're now offline
                     toggleBtn.innerHTML = '🔄 Go Online';
                 }
             } catch (error) {
-                status.innerHTML = `❌ Error: ${error.message}`;
-                status.style.background = 'rgba(245,101,101,0.1)';
-                status.style.color = '#f56565';
                 loadBtn.disabled = false;
                 loadBtn.innerHTML = '📂 Load CSV Data';
+                console.error('CSV Load Error:', error);
             }
         });
         
@@ -863,15 +1241,6 @@
             
             // Update toggle button
             toggleBtn.innerHTML = enabled ? '🔄 Go Online' : '🔄 Go Offline';
-            
-            // Update force online button to reflect current state
-            if (enabled) {
-                forceOnlineBtn.innerHTML = '⚠️ Force Online Mode';
-                forceOnlineBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
-            } else {
-                forceOnlineBtn.innerHTML = '✅ Online Mode Active';
-                forceOnlineBtn.style.background = 'linear-gradient(135deg,#48bb78 0%,#38a169 100%)';
-            }
             
             alert(enabled ? '🗄️ Offline Mode Enabled' : '📡 Online Mode Enabled');
         });

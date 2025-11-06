@@ -1793,7 +1793,33 @@
             try {
                 let results;
                 
-                if (useChainedRuns) {
+                // 🚀 DETECT OFFLINE MODE: Use enhanced optimization if offline with CSV data loaded
+                const isOfflineMode = window.offlineBacktester?.isEnabled && 
+                                     window.offlineBacktester?.backtester?.dataLoader?.isLoaded;
+                
+                if (isOfflineMode) {
+                    console.log('🗄️ Offline mode detected with CSV data - using Enhanced Optimization!');
+                    console.log('📊 This will run 20,000 tests (200 pop × 100 gen) instead of standard optimization');
+                    console.log('⏱️ Expected time: 10-15 minutes');
+                    
+                    // Load enhanced module if needed
+                    await window.offlineBacktester.backtester.loadEnhancedModule();
+                    
+                    // Run enhanced optimization
+                    results = await window.offlineBacktester.backtester.runEnhancedOptimization({
+                        populationSize: 200,
+                        generations: 100,
+                        skipEnsemble: false,  // Include ensemble validation
+                        mutationRate: 0.15,
+                        elitePercent: 0.1
+                    });
+                    
+                    // Transform results to match expected format
+                    if (results && results.success) {
+                        results.bestScore = results.score;
+                        results.bestMetrics = results.metrics;
+                    }
+                } else if (useChainedRuns) {
                     const chainedOptimizer = new ChainedOptimizer(currentConfig);
                     results = await chainedOptimizer.runChainedOptimization(chainRunCount, runtimeMin);
                 } else {
