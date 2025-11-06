@@ -751,12 +751,7 @@
     function createUI() {
         const div = document.createElement('div');
         div.id = 'offline-backtester-ui';
-        div.innerHTML = `
-            <div style="margin-bottom:16px;padding:12px;background:rgba(66,153,225,0.1);border:1px solid rgba(66,153,225,0.3);border-radius:6px">
-                <h4 style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#4299e1">🗄️ Offline Mode (Default)</h4>
-                <div style="margin:0;font-size:11px;color:#a0aec0">Load CSV for fast optimization. Use console to force online mode.</div>
-            </div>
-            <div id="offline-status" style="margin-bottom:12px;padding:10px;background:rgba(237,137,54,0.1);border:1px solid rgba(237,137,54,0.3);border-radius:4px;font-size:11px;color:#ed8936">⚠️ Offline mode active - Load CSV or type: offlineBacktester.forceOnline()</div>
+        div.innerHTML = `           
             <div style="margin-bottom:12px">
                 <input type="file" id="csv-file-input" accept=".csv" style="display:none"/>
                 <button id="load-csv-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:12px">📂 Load CSV Data</button>
