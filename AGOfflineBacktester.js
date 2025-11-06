@@ -761,8 +761,7 @@
                 <button id="test-config-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🧪 Test</button>
                 <button id="clear-cache-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🗑️ Clear</button>
             </div>
-            <button id="force-online-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#f56565 0%,#e53e3e 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:11px;margin-bottom:8px">⚠️ Force Online Mode</button>
-            <button id="toggle-mode-btn" disabled style="width:100%;padding:10px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🔄 Toggle</button>
+            <button id="toggle-mode-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:11px">🔄 Go Online</button>
         `;
         return div;
     }
@@ -771,25 +770,9 @@
         const $ = id => document.getElementById(id);
         const loadBtn = $('load-csv-btn'), fileInput = $('csv-file-input');
         const testBtn = $('test-config-btn'), clearBtn = $('clear-cache-btn'), toggleBtn = $('toggle-mode-btn');
-        const forceOnlineBtn = $('force-online-btn');
-        const status = $('offline-status'), stats = $('data-stats');
+        const stats = $('data-stats');
         
         loadBtn?.addEventListener('click', () => fileInput?.click());
-        
-        // Force Online button handler
-        forceOnlineBtn?.addEventListener('click', () => {
-            if (confirm('⚠️ WARNING: Switch to ONLINE mode?\n\n' +
-                       'This will use the live API with rate limits.\n' +
-                       'Optimizations will be much slower.\n\n' +
-                       'Use offlineBacktester.enable() in console to return to offline mode.')) {
-                window.offlineBacktester.forceOnline();
-                status.innerHTML = '⚠️ ONLINE MODE - API rate limits active';
-                status.style.background = 'rgba(245,101,101,0.1)';
-                status.style.color = '#f56565';
-                forceOnlineBtn.innerHTML = '✅ Online Mode Active';
-                forceOnlineBtn.style.background = 'linear-gradient(135deg,#48bb78 0%,#38a169 100%)';
-            }
-        });
         
         fileInput?.addEventListener('change', async e => {
             const file = e.target.files[0];
@@ -835,6 +818,9 @@
                     window.offlineBacktester.enable();
                     forceOnlineBtn.innerHTML = '⚠️ Force Online Mode';
                     forceOnlineBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
+                    
+                    // Update toggle button to show "Go Online" since we're now offline
+                    toggleBtn.innerHTML = '🔄 Go Online';
                 }
             } catch (error) {
                 status.innerHTML = `❌ Error: ${error.message}`;
@@ -874,8 +860,20 @@
         toggleBtn?.addEventListener('click', () => {
             window.offlineBacktester.toggle();
             const enabled = window.offlineBacktester.isEnabled;
+            
+            // Update toggle button
             toggleBtn.innerHTML = enabled ? '🔄 Go Online' : '🔄 Go Offline';
-            alert(enabled ? '🗄️ Offline Mode' : '📡 Online Mode');
+            
+            // Update force online button to reflect current state
+            if (enabled) {
+                forceOnlineBtn.innerHTML = '⚠️ Force Online Mode';
+                forceOnlineBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
+            } else {
+                forceOnlineBtn.innerHTML = '✅ Online Mode Active';
+                forceOnlineBtn.style.background = 'linear-gradient(135deg,#48bb78 0%,#38a169 100%)';
+            }
+            
+            alert(enabled ? '🗄️ Offline Mode Enabled' : '📡 Online Mode Enabled');
         });
     }
     
