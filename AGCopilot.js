@@ -2172,7 +2172,7 @@
                     console.log('   Config keys:', Object.keys(config).slice(0, 5).join(', '), '...');
                     
                     // Use offline backtester instead of API
-                    const offlineResult = window.offlineBacktester.backtester.testConfiguration(config);
+                    const offlineResult = window.offlineBacktester.backtester.testConfiguration(config, false);
                     
                     if (!offlineResult.success) {
                         console.error('   ❌ Offline test failed:', offlineResult.error);
@@ -4620,7 +4620,7 @@
             },
             tokenDetails: {
                 sectionTitle: 'Token Details',
-                params: ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)']
+                params: ['Min AG Score', 'Max AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)']
             },
             wallets: {
                 sectionTitle: 'Wallets',
@@ -6719,8 +6719,7 @@
         // Load optimization module immediately since config-tab is the default active tab
         setTimeout(() => {
             loadOptimizationInTab();
-            //TODO: Uncomment this when AGOfflineBacktester.js is ready
-            // Also load offline backtester module after a short delay
+            // Load offline backtester module after a short delay
             setTimeout(() => {
             loadOfflineBacktesterModule();
             }, 250);
