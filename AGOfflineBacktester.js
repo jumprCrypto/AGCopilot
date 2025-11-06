@@ -694,12 +694,12 @@
     
     window.offlineBacktester = {
         backtester: bt,
-        isEnabled: false,
+        isEnabled: true, // DEFAULT TO ENABLED - soft force offline mode
         
         enable() {
             if (!bt.dataLoader.isLoaded) {
-                console.warn('⚠️ No data loaded');
-                return false;
+                console.warn('⚠️ No data loaded - offline mode enabled but will have zero results');
+                console.warn('💡 Load CSV data to use offline mode, or use offlineBacktester.forceOnline() to switch');
             }
             this.isEnabled = true;
             
@@ -724,6 +724,13 @@
             console.log('📡 Online mode enabled');
         },
         
+        forceOnline() {
+            console.log('⚠️ FORCING ONLINE MODE - API rate limits will apply');
+            console.log('💡 Use offlineBacktester.enable() to return to offline mode');
+            this.isEnabled = false;
+            return true;
+        },
+        
         toggle() {
             return this.isEnabled ? (this.disable(), false) : (this.enable(), true);
         },
@@ -733,6 +740,7 @@
                 isLoaded: bt.dataLoader.isLoaded,
                 isEnabled: this.isEnabled,
                 willUseOfflineData: this.isEnabled && bt.dataLoader.isLoaded,
+                willReturnZeroResults: this.isEnabled && !bt.dataLoader.isLoaded,
                 cacheSize: bt.cache.size,
                 totalRows: bt.dataLoader.totalRows,
                 uniqueTokens: bt.dataLoader.uniqueTokens.size
@@ -745,19 +753,20 @@
         div.id = 'offline-backtester-ui';
         div.innerHTML = `
             <div style="margin-bottom:16px;padding:12px;background:rgba(66,153,225,0.1);border:1px solid rgba(66,153,225,0.3);border-radius:6px">
-                <h4 style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#4299e1">🗄️ Offline Backtesting v2.0</h4>
-                <div style="margin:0;font-size:11px;color:#a0aec0">Exact API parity with CSV data. Zero rate limits.</div>
+                <h4 style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#4299e1">🗄️ Offline Mode (Default)</h4>
+                <div style="margin:0;font-size:11px;color:#a0aec0">Load CSV for fast optimization. Use console to force online mode.</div>
             </div>
-            <div id="offline-status" style="margin-bottom:12px;padding:10px;background:rgba(237,137,54,0.1);border:1px solid rgba(237,137,54,0.3);border-radius:4px;font-size:11px;color:#ed8936">⏳ No data loaded</div>
+            <div id="offline-status" style="margin-bottom:12px;padding:10px;background:rgba(237,137,54,0.1);border:1px solid rgba(237,137,54,0.3);border-radius:4px;font-size:11px;color:#ed8936">⚠️ Offline mode active - Load CSV or type: offlineBacktester.forceOnline()</div>
             <div style="margin-bottom:12px">
                 <input type="file" id="csv-file-input" accept=".csv" style="display:none"/>
-                <button id="load-csv-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:12px">📂 Load CSV</button>
+                <button id="load-csv-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#4299e1 0%,#3182ce 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:12px">📂 Load CSV Data</button>
             </div>
             <div id="data-stats" style="display:none;margin-bottom:12px;padding:10px;background:rgba(72,187,120,0.1);border:1px solid rgba(72,187,120,0.3);border-radius:4px;font-size:11px"></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
                 <button id="test-config-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🧪 Test</button>
                 <button id="clear-cache-btn" disabled style="padding:8px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🗑️ Clear</button>
             </div>
+            <button id="force-online-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#f56565 0%,#e53e3e 100%);border:none;border-radius:6px;color:white;font-weight:500;cursor:pointer;font-size:11px;margin-bottom:8px">⚠️ Force Online Mode</button>
             <button id="toggle-mode-btn" disabled style="width:100%;padding:10px;background:#4a5568;border:1px solid #718096;border-radius:4px;color:#e2e8f0;font-size:11px;opacity:0.5;cursor:not-allowed">🔄 Toggle</button>
         `;
         return div;
@@ -767,9 +776,25 @@
         const $ = id => document.getElementById(id);
         const loadBtn = $('load-csv-btn'), fileInput = $('csv-file-input');
         const testBtn = $('test-config-btn'), clearBtn = $('clear-cache-btn'), toggleBtn = $('toggle-mode-btn');
+        const forceOnlineBtn = $('force-online-btn');
         const status = $('offline-status'), stats = $('data-stats');
         
         loadBtn?.addEventListener('click', () => fileInput?.click());
+        
+        // Force Online button handler
+        forceOnlineBtn?.addEventListener('click', () => {
+            if (confirm('⚠️ WARNING: Switch to ONLINE mode?\n\n' +
+                       'This will use the live API with rate limits.\n' +
+                       'Optimizations will be much slower.\n\n' +
+                       'Use offlineBacktester.enable() in console to return to offline mode.')) {
+                window.offlineBacktester.forceOnline();
+                status.innerHTML = '⚠️ ONLINE MODE - API rate limits active';
+                status.style.background = 'rgba(245,101,101,0.1)';
+                status.style.color = '#f56565';
+                forceOnlineBtn.innerHTML = '✅ Online Mode Active';
+                forceOnlineBtn.style.background = 'linear-gradient(135deg,#48bb78 0%,#38a169 100%)';
+            }
+        });
         
         fileInput?.addEventListener('change', async e => {
             const file = e.target.files[0];
@@ -783,7 +808,7 @@
                 const result = await bt.loadData(file);
                 
                 if (result.success) {
-                    status.innerHTML = `✅ Loaded: ${result.rows.toLocaleString()} rows`;
+                    status.innerHTML = `✅ Loaded: ${result.rows.toLocaleString()} rows - Offline mode ready`;
                     status.style.background = 'rgba(72,187,120,0.1)';
                     status.style.color = '#48bb78';
                     
@@ -810,14 +835,18 @@
                     toggleBtn.style.background = 'linear-gradient(135deg,#4299e1 0%,#3182ce 100%)';
                     
                     loadBtn.innerHTML = '✅ Loaded';
+                    
+                    // Re-enable offline mode and reset force online button
                     window.offlineBacktester.enable();
+                    forceOnlineBtn.innerHTML = '⚠️ Force Online Mode';
+                    forceOnlineBtn.style.background = 'linear-gradient(135deg,#f56565 0%,#e53e3e 100%)';
                 }
             } catch (error) {
                 status.innerHTML = `❌ Error: ${error.message}`;
                 status.style.background = 'rgba(245,101,101,0.1)';
                 status.style.color = '#f56565';
                 loadBtn.disabled = false;
-                loadBtn.innerHTML = '📂 Load CSV';
+                loadBtn.innerHTML = '📂 Load CSV Data';
             }
         });
         
@@ -870,5 +899,9 @@
     setTimeout(() => clearInterval(interval), 10000);
     
     console.log('✅ AGOfflineBacktester v2.0 Ready');
+    console.log('🔒 OFFLINE MODE ENABLED BY DEFAULT');
+    console.log('📊 Load CSV data to use offline optimization (60-100x faster)');
+    console.log('⚠️ To force online mode: offlineBacktester.forceOnline()');
+    console.log('💡 To return to offline: offlineBacktester.enable()');
     
 })();

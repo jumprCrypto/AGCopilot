@@ -6719,10 +6719,7 @@
         // Load optimization module immediately since config-tab is the default active tab
         setTimeout(() => {
             loadOptimizationInTab();
-            // Load offline backtester module after a short delay
-            setTimeout(() => {
             loadOfflineBacktesterModule();
-            }, 250);
         }, 100);
         
         // Make functions globally available for onclick handlers
