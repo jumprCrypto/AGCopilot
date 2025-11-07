@@ -126,10 +126,14 @@
                     individual.score = result.score || -Infinity;
                     individual.metrics = result.metrics;
                     
-                    // Track best
+                    // Track best (make deep clone to preserve config)
                     if (individual.score > this.bestScore) {
                         this.bestScore = individual.score;
-                        this.bestIndividual = individual;
+                        this.bestIndividual = {
+                            config: this.cloneConfig(individual.config), // Deep clone!
+                            score: individual.score,
+                            metrics: individual.metrics
+                        };
                     }
                 }
                 
@@ -238,8 +242,12 @@
                 }
             }
             
-            // Ensure base config fields are preserved
-            Object.assign(mutated, this.baseConfigFields || {});
+            // Ensure base config fields are preserved (don't overwrite mutated params!)
+            for (const [key, value] of Object.entries(this.baseConfigFields || {})) {
+                if (!(key in mutated)) {
+                    mutated[key] = value;
+                }
+            }
             
             return mutated;
         }
@@ -314,6 +322,13 @@
             
             console.log(`\n✅ Genetic Algorithm Complete!`);
             console.log(`🏆 Best Score: ${this.bestScore.toFixed(2)}`);
+            console.log(`📋 Best Config has ${Object.keys(this.bestIndividual?.config || {}).length} fields`);
+            
+            // Debug: log sample of config keys
+            if (this.bestIndividual?.config) {
+                const configKeys = Object.keys(this.bestIndividual.config);
+                console.log(`🔑 Config keys (first 10):`, configKeys.slice(0, 10));
+            }
             
             return {
                 bestConfig: this.bestIndividual.config,

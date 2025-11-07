@@ -994,6 +994,18 @@
             console.log(`\n✅ Genetic Algorithm Complete in ${gaDuration} minutes`);
             console.log(`🏆 Best Score: ${gaResult.bestScore.toFixed(2)}`);
             console.log(`📊 Best Metrics:`, gaResult.bestMetrics);
+            console.log(`🎯 Best Config (${Object.keys(gaResult.bestConfig || {}).length} fields):`, gaResult.bestConfig);
+            
+            // ✅ Update tracker with final best config
+            if (window.optimizationTracker && gaResult.bestConfig) {
+                window.optimizationTracker.setCurrentBest(
+                    { 
+                        config: gaResult.bestConfig,
+                        metrics: { ...gaResult.bestMetrics, score: gaResult.bestScore }
+                    }, 
+                    'Enhanced Genetic Algorithm'
+                );
+            }
             
             // =====================================
             // PHASE 2: Ensemble Validation
