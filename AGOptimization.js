@@ -481,6 +481,8 @@
                 // Basic
                 'Min MCAP (USD)': 'basic',
                 'Max MCAP (USD)': 'basic',
+                'Min Market Depth': 'basic',
+                'Max Market Depth': 'basic',
                 
                 // Token Details
                 'Min Deployer Age (min)': 'tokenDetails',
@@ -499,11 +501,15 @@
                 'Max KYC Wallets': 'wallets',
                 'Min Dormant Wallets': 'wallets',
                 'Max Dormant Wallets': 'wallets',
+                'Min Top Holders %': 'wallets',
+                'Max Top Holders %': 'wallets',
+                'Min Convinced Wallets': 'wallets',
                 
                 // Risk
                 'Min Bundled %': 'risk',
                 'Max Bundled %': 'risk',
                 'Min Deployer Balance (SOL)': 'risk',
+                'Max Deployer Balance (SOL)': 'risk',
                 'Min Buy Ratio %': 'risk',
                 'Max Buy Ratio %': 'risk',
                 'Min Vol MCAP %': 'risk',
@@ -1121,6 +1127,8 @@
                 // Basic
                 'Min MCAP (USD)': 'basic',
                 'Max MCAP (USD)': 'basic',
+                'Min Market Depth': 'basic',
+                'Max Market Depth': 'basic',
                 
                 // Token Details
                 'Min Deployer Age (min)': 'tokenDetails',
@@ -1139,11 +1147,15 @@
                 'Max KYC Wallets': 'wallets',
                 'Min Dormant Wallets': 'wallets',
                 'Max Dormant Wallets': 'wallets',
+                'Min Top Holders %': 'wallets',
+                'Max Top Holders %': 'wallets',
+                'Min Convinced Wallets': 'wallets',
                 
                 // Risk
                 'Min Bundled %': 'risk',
                 'Max Bundled %': 'risk',
                 'Min Deployer Balance (SOL)': 'risk',
+                'Max Deployer Balance (SOL)': 'risk',
                 'Min Buy Ratio %': 'risk',
                 'Max Buy Ratio %': 'risk',
                 'Min Vol MCAP %': 'risk',

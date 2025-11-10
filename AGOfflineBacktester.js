@@ -166,6 +166,8 @@
             this.parameterMap = {
                 'Min MCAP (USD)': { column: 'mcap', type: 'min', dataType: 'number' },
                 'Max MCAP (USD)': { column: 'mcap', type: 'max', dataType: 'number' },
+                'Min Market Depth': { column: 'marketDepth', type: 'min', dataType: 'number' },
+                'Max Market Depth': { column: 'marketDepth', type: 'max', dataType: 'number' },
                 'Min Deployer Age (min)': { column: 'deployerAge', type: 'min', dataType: 'number' },
                 'Min Token Age (sec)': { column: 'tokenAgeInSeconds', type: 'min', dataType: 'number', hasAgeConversion: true },
                 'Max Token Age (sec)': { column: 'tokenAgeInSeconds', type: 'max', dataType: 'number', hasAgeConversion: true },
@@ -183,9 +185,11 @@
                 'Min SM Wallets': { column: 'smCount', type: 'min', dataType: 'number' },
                 'Min Top Holders %': { column: 'topHoldersPct', type: 'min', dataType: 'number' },
                 'Max Top Holders %': { column: 'topHoldersPct', type: 'max', dataType: 'number' },
+                'Min Convinced Wallets': { column: 'convincedWalletsCount', type: 'min', dataType: 'number' },
                 'Min Bundled %': { column: 'bundledPct', type: 'min', dataType: 'number' },
                 'Max Bundled %': { column: 'bundledPct', type: 'max', dataType: 'number' },
                 'Min Deployer Balance (SOL)': { column: 'deployerBalance', type: 'min', dataType: 'number' },
+                'Max Deployer Balance (SOL)': { column: 'deployerBalance', type: 'max', dataType: 'number' },
                 'Min Buy Ratio %': { column: 'buyVolumePct', type: 'min', dataType: 'number' },
                 'Max Buy Ratio %': { column: 'buyVolumePct', type: 'max', dataType: 'number' },
                 'Min Vol MCAP %': { column: 'volMcapPct', type: 'min', dataType: 'number' },
@@ -790,6 +794,114 @@
         getCacheStats() { return { size: this.cache.size }; }
         getStats() { return this.dataLoader.getStats(); }
         
+        /**
+         * Convert flat config (from GA) to nested config (for UI)
+         * Maps parameter names to their sections
+         */
+        convertFlatToNestedConfig(flatConfig) {
+            const nested = {
+                basic: {},
+                tokenDetails: {},
+                wallets: {},
+                risk: {},
+                advanced: {},
+                dateRange: {}
+            };
+            
+            // Parameter to section mapping
+            const sectionMap = {
+                // Basic
+                'Min MCAP (USD)': 'basic',
+                'Max MCAP (USD)': 'basic',
+                'Min Market Depth': 'basic',
+                'Max Market Depth': 'basic',
+                'Min Liquidity (USD)': 'basic',
+                'Max Liquidity (USD)': 'basic',
+                
+                // Token Details
+                'Min AG Score': 'tokenDetails',
+                'Max AG Score': 'tokenDetails',
+                'Min Token Age (sec)': 'tokenDetails',
+                'Max Token Age (sec)': 'tokenDetails',
+                'Min Deployer Age (min)': 'tokenDetails',
+                
+                // Wallets
+                'Min Unique Wallets': 'wallets',
+                'Max Unique Wallets': 'wallets',
+                'Min KYC Wallets': 'wallets',
+                'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets',
+                'Max Dormant Wallets': 'wallets',
+                'Min SM Wallets': 'wallets',
+                'Min Holders': 'wallets',
+                'Max Holders': 'wallets',
+                'Holders Growth %': 'wallets',
+                'Holders Growth Minutes': 'wallets',
+                'Min Top Holders %': 'wallets',
+                'Max Top Holders %': 'wallets',
+                'Min Convinced Wallets': 'wallets',
+                
+                // Risk
+                'Min Bundled %': 'risk',
+                'Max Bundled %': 'risk',
+                'Min Deployer Balance (SOL)': 'risk',
+                'Max Deployer Balance (SOL)': 'risk',
+                'Min Buy Ratio %': 'risk',
+                'Max Buy Ratio %': 'risk',
+                'Min Vol MCAP %': 'risk',
+                'Max Vol MCAP %': 'risk',
+                'Max Drained %': 'risk',
+                'Max Drained Count': 'risk',
+                'Description': 'risk',
+                'Fresh Deployer': 'risk',
+                'Skip If No KYC/CEX Funding': 'risk',
+                
+                // Advanced
+                'Min TTC (sec)': 'advanced',
+                'Max TTC (sec)': 'advanced',
+                'Max Liquidity %': 'advanced',
+                'Min Win Pred %': 'advanced',
+                'Has Buy Signal': 'advanced',
+                
+                // Time (kept at root)
+                'Start Hour': 'root',
+                'Start Minute': 'root',
+                'End Hour': 'root',
+                'End Minute': 'root'
+            };
+            
+            for (const [key, value] of Object.entries(flatConfig)) {
+                // Handle date range specially
+                if (key === 'Start Date') {
+                    nested.dateRange.fromDate = value;
+                } else if (key === 'End Date') {
+                    nested.dateRange.toDate = value;
+                } else {
+                    // Map to section
+                    const section = sectionMap[key];
+                    if (section === 'root') {
+                        // Keep at root level
+                        nested[key] = value;
+                    } else if (section) {
+                        nested[section][key] = value;
+                    } else {
+                        // Unknown param, add to advanced
+                        console.warn(`⚠️ Unknown parameter "${key}", adding to advanced section`);
+                        nested.advanced[key] = value;
+                    }
+                }
+            }
+            
+            // Clean up empty sections
+            for (const [section, content] of Object.entries(nested)) {
+                if (typeof content === 'object' && Object.keys(content).length === 0) {
+                    delete nested[section];
+                }
+            }
+            
+            return nested;
+        }
+        
         // ========================================
         // 🚀 ENHANCED OPTIMIZATION (DEFAULT)
         // ========================================
@@ -996,16 +1108,34 @@
             console.log(`📊 Best Metrics:`, gaResult.bestMetrics);
             console.log(`🎯 Best Config (${Object.keys(gaResult.bestConfig || {}).length} fields):`, gaResult.bestConfig);
             
-            // ✅ Update tracker with final best config
-            if (window.optimizationTracker && gaResult.bestConfig) {
+            // ✅ CRITICAL: Convert flat config to nested structure for UI application
+            const nestedConfig = this.convertFlatToNestedConfig(gaResult.bestConfig);
+            console.log(`🔄 Converted to nested config with sections:`, Object.keys(nestedConfig));
+            
+            // ✅ Update tracker with final best config (use NESTED config for UI)
+            if (window.optimizationTracker && nestedConfig) {
                 window.optimizationTracker.setCurrentBest(
                     { 
-                        config: gaResult.bestConfig,
+                        config: nestedConfig,
                         metrics: { ...gaResult.bestMetrics, score: gaResult.bestScore }
                     }, 
                     'Enhanced Genetic Algorithm'
                 );
             }
+            
+            // ✅ CRITICAL: Also update bestConfigTracker for "Apply to UI" button
+            if (window.bestConfigTracker && nestedConfig) {
+                window.bestConfigTracker.update(
+                    nestedConfig,
+                    { ...gaResult.bestMetrics, score: gaResult.bestScore },
+                    gaResult.bestScore,
+                    'Enhanced Genetic Algorithm'
+                );
+                console.log(`✅ Updated bestConfigTracker with ${Object.keys(nestedConfig).length} sections`);
+            }
+            
+            // ✅ CRITICAL: Also set global currentBestConfig for fallback
+            window.currentBestConfig = nestedConfig;
             
             // =====================================
             // PHASE 2: Ensemble Validation

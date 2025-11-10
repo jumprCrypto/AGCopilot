@@ -65,9 +65,9 @@
         ],
         
         // ⚡ BURST RATE LIMITING CONFIGURATION
-        BURST_SIZE: 15,           // Requests per burst
-        BURST_RATE: 0.5,         // Requests per second during burst (1.5s between requests)
-        BURST_COOLDOWN_MS: 5000, // Cooldown after burst (5 seconds)
+        BURST_SIZE: 10,           // Requests per burst
+        BURST_RATE: 0.1,         // Requests per second during burst (1.5s between requests)
+        BURST_COOLDOWN_MS: 7500, // Cooldown after burst (5 seconds)
 
         // Backward compatibility - use burst rate as base rate
         get REQUESTS_PER_SECOND() { return this.BURST_RATE; },
@@ -80,6 +80,8 @@
         // Basic
         'Min MCAP (USD)': { min: 0, max: 20000, step: 1000, type: 'integer'},
         'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
+        'Min Market Depth': { min: 0, max: 100000, step: 5000, type: 'integer' },
+        'Max Market Depth': { min: 0, max: 5000000, step: 10000, type: 'integer' },
 
         // Token Details
         'Min Deployer Age (min)': { min: 0, max: 10080, step: 5, type: 'integer' },
@@ -99,11 +101,15 @@
         'Max KYC Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min Dormant Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
         'Max Dormant Wallets': { min: 1, max: 20, step: 1, type: 'integer' },
+        'Min Top Holders %': { min: 0, max: 100, step: 5, type: 'integer' },
+        'Max Top Holders %': { min: 0, max: 100, step: 5, type: 'integer' },
+        'Min Convinced Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
 
         // Risk
         'Min Bundled %': { min: 0, max: 50, step: 1 },
         'Max Bundled %': { min: 0, max: 100, step: 5 },
         'Min Deployer Balance (SOL)': { min: 0, max: 10, step: 0.5 },
+        'Max Deployer Balance (SOL)': { min: 0, max: 100, step: 5 },
         'Min Buy Ratio %': { min: 0, max: 50, step: 10 },
         'Max Buy Ratio %': { min: 50, max: 100, step: 5 },
         'Min Vol MCAP %': { min: 0, max: 100, step: 10 },
@@ -125,7 +131,9 @@
     const COMPLETE_CONFIG_TEMPLATE = {
         basic: {
             "Min MCAP (USD)": undefined,
-            "Max MCAP (USD)": undefined
+            "Max MCAP (USD)": undefined,
+            "Min Market Depth": undefined,
+            "Max Market Depth": undefined
         },
         tokenDetails: {
             "Min Deployer Age (min)": undefined,
@@ -143,12 +151,16 @@
             "Holders Growth %": undefined,
             "Holders Growth Minutes": undefined,
             "Min Dormant Wallets": undefined,
-            "Max Dormant Wallets": undefined
+            "Max Dormant Wallets": undefined,
+            "Min Top Holders %": undefined,
+            "Max Top Holders %": undefined,
+            "Min Convinced Wallets": undefined
         },
         risk: {
             "Min Bundled %": undefined,
             "Max Bundled %": undefined,
             "Min Deployer Balance (SOL)": undefined,
+            "Max Deployer Balance (SOL)": undefined,
             "Min Buy Ratio %": undefined,
             "Max Buy Ratio %": undefined,
             "Min Vol MCAP %": undefined,
@@ -201,9 +213,9 @@
     function toggleRateLimitingMode() {
         // Cycle through burst rate presets
         const ratePresets = [
-            { rate: 0.25, burst: 10, cooldown: 12000 },  // Conservative
-            { rate: 0.33, burst: 12, cooldown: 10000 },   // Moderate  
-            { rate: 0.5, burst: 15, cooldown: 5000 }   // Aggressive (default)
+            { rate: 0.1, burst: 10, cooldown: 12000 }, // Conservative
+            { rate: 0.2, burst: 10, cooldown: 10000 }, // Moderate  
+            { rate: 0.3, burst: 10, cooldown: 5000 }   // Aggressive 
         ];
         
         const currentIndex = ratePresets.findIndex(p => 
@@ -221,9 +233,6 @@
         if (window.rateLimiter) {
             window.rateLimiter = new SimpleRateLimiter();
         }
-        
-        const reqPerMin = (CONFIG.BURST_RATE * 60).toFixed(0);
-        const delay = (1000 / CONFIG.BURST_RATE).toFixed(0);
         
         console.log(`🔄 Burst config: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
         
@@ -927,10 +936,10 @@
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         `;
 
-        // Flatten config for easier processing
+        // Flatten config for easier processing (skip arrays like weekdays)
         const flatConfig = {};
-        Object.values(currentConfig).forEach(section => {
-            if (typeof section === 'object' && section !== null) {
+        Object.entries(currentConfig).forEach(([sectionName, section]) => {
+            if (typeof section === 'object' && section !== null && !Array.isArray(section)) {
                 Object.assign(flatConfig, section);
             }
         });
@@ -941,6 +950,7 @@
         Object.entries(flatConfig).forEach(([key, value]) => {
             const isButtonToggle = (key === 'Description' || key === 'Fresh Deployer' || key === 'Skip If No KYC/CEX Funding' || key === 'Has Buy Signal');
             const isTakeProfitSetting = takeProfitSettingPattern.test(key);
+            
             if (!isTakeProfitSetting && value !== undefined && value !== '' && key !== 'fromDate' && key !== 'toDate') {
                 // For toggle buttons (Description/Fresh Deployer/Skip If No KYC/CEX Funding), only include if they're set to "Yes" (true)
                 if (isButtonToggle) {
@@ -954,10 +964,10 @@
         });
         // Group settings by category for better organization
         const settingCategories = {
-            'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+            'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)', 'Min Market Depth', 'Max Market Depth'],
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
-            'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
+            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
+            'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
             'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
         };
@@ -1845,6 +1855,8 @@
                 // Basic parameters
                 'Min MCAP (USD)': 'minMcap',
                 'Max MCAP (USD)': 'maxMcap',
+                'Min Market Depth': 'minMarketDepth',
+                'Max Market Depth': 'maxMarketDepth',
                 
                 // Token Details
                 'Min Deployer Age (min)': 'minDeployerAge',
@@ -1867,6 +1879,8 @@
                 // Top Holders (from backtester UI - may not be in AGCopilot UI yet)
                 'Min Top Holders %': 'minTopHoldersPct',
                 'Max Top Holders %': 'maxTopHoldersPct',
+                // Convinced Wallets (new parameter)
+                'Min Convinced Wallets': 'minConvincedWallets',
                 // Smart Money Wallets (from backtester UI - may not be in AGCopilot UI yet)
                 'Min SM Wallets': 'minSmWallets',
                 
@@ -1874,6 +1888,7 @@
                 'Min Bundled %': 'minBundledPercent',
                 'Max Bundled %': 'maxBundledPercent',
                 'Min Deployer Balance (SOL)': 'minDeployerBalance',
+                'Max Deployer Balance (SOL)': 'maxDeployerBalance',
                 'Min Buy Ratio %': 'minBuyRatio',
                 'Max Buy Ratio %': 'maxBuyRatio',
                 'Min Vol MCAP %': 'minVolMcapPercent',
@@ -2037,6 +2052,7 @@
             
             const minMaxPairs = [
                 ['minMcap', 'maxMcap'],
+                ['minMarketDepth', 'maxMarketDepth'],
                 ['minAgScore', 'maxAgScore'],
                 ['minTokenAge', 'maxTokenAge'],
                 ['minTtc', 'maxTtc'],
@@ -2045,7 +2061,9 @@
                 ['minUniqueWallets', 'maxUniqueWallets'],
                 ['minKycWallets', 'maxKycWallets'],
                 ['minHoldersCount', 'maxHoldersCount'],  // Updated parameter name
+                ['minTopHoldersPct', 'maxTopHoldersPct'],
                 ['minBundledPercent', 'maxBundledPercent'],
+                ['minDeployerBalance', 'maxDeployerBalance'],
                 ['minBuyRatio', 'maxBuyRatio'],
                 ['minVolMcapPercent', 'maxVolMcapPercent'],
                 ['minDrainedPercent', 'maxDrainedPercent']
@@ -4616,7 +4634,7 @@
         const sections = {
             basic: {
                 sectionTitle: 'Basic',
-                params: ['Min MCAP (USD)', 'Max MCAP (USD)']
+                params: ['Min MCAP (USD)', 'Max MCAP (USD)', 'Min Market Depth', 'Max Market Depth']
             },
             tokenDetails: {
                 sectionTitle: 'Token Details',
@@ -4624,11 +4642,11 @@
             },
             wallets: {
                 sectionTitle: 'Wallets',
-                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes']
+                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets']
             },
             risk: {
                 sectionTitle: 'Risk',
-                params: ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding']
+                params: ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding']
             },
             advanced: {
                 sectionTitle: 'Advanced',
@@ -6746,10 +6764,10 @@
                 
                 // Build formatted output with section organization
                 const sections = {
-                    'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)'],
+                    'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)', 'Min Market Depth', 'Max Market Depth'],
                     'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-                    'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes'],
-                    'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
+                    'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
+                    'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
                     'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
                     'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
                 };
