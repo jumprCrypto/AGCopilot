@@ -47,7 +47,17 @@
         // Note: CONSISTENCY_WEIGHT + RETURN_WEIGHT should = 1.0
         
         // Signal Analysis API Settings (from AGSignalExtractor)
-        API_BASE_URL: 'https://backtester.alphagardeners.xyz/api',
+        // Use extension API URL if available, otherwise default to AG backtester
+        get API_BASE_URL() {
+            // Check if running in Chrome extension with custom API
+            if (window.USE_AGCOPILOT_API && window.AGCOPILOT_API_URL) {
+                const apiUrl = window.AGCOPILOT_API_URL;
+                console.log('🔧 Using extension API URL:', apiUrl);
+                return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
+            }
+            // Default to AG backtester API
+            return 'https://backtester.alphagardeners.xyz/api';
+        },
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
         REQUEST_DELAY: 9360, // For signal analysis API (60% of BACKTEST_WAIT)
@@ -65,9 +75,9 @@
         ],
         
         // ⚡ BURST RATE LIMITING CONFIGURATION
-        BURST_SIZE: 10,           // Requests per burst
-        BURST_RATE: 0.1,         // Requests per second during burst (1.5s between requests)
-        BURST_COOLDOWN_MS: 7500, // Cooldown after burst (5 seconds)
+        BURST_SIZE: 20,           // Requests per burst
+        BURST_RATE: 5,         
+        BURST_COOLDOWN_MS: 250, // Cooldown after burst
 
         // Backward compatibility - use burst rate as base rate
         get REQUESTS_PER_SECOND() { return this.BURST_RATE; },
@@ -252,7 +262,7 @@
     // Initialize window.STOPPED for global access
     window.STOPPED = false;
 
-    // Simple Rate Limiter - Just enforces delay between requests
+    // Smart Rate Limiter - Reads x-ratelimit headers and proactively backs off
     class SimpleRateLimiter {
         constructor() {
             // Use CONFIG values directly - single source of truth
@@ -264,20 +274,42 @@
             this.burstCount = 0;
             this.lastBurstEndTime = 0;
             
-            // Server-side rate limit tracking
-            this.serverRateLimit = {
-                maxRequests: null,
-                currentCount: null,
-                delaySeconds: null,
-                lastUpdate: null,
-                utilizationPercent: null
+            // Rate limit info from headers
+            this.rateLimitInfo = {
+                limit: null,        // x-ratelimit-limit
+                remaining: null,    // x-ratelimit-remaining
+                reset: null         // x-ratelimit-reset (unix timestamp)
             };
             
-            console.log(`🚀 Burst Rate Limiter: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, then ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
+            // Stats tracking
+            this.stats = {
+                proactiveBackoffs: 0,
+                rateLimitHits: 0
+            };
+            
+            console.log(`🚀 Smart Rate Limiter: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, then ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
+            console.log(`📊 Monitoring x-ratelimit headers for proactive backoff`);
         }
 
         async throttle() {
             const now = Date.now();
+            
+            // Proactive backoff if rate limit is low
+            if (this.rateLimitInfo.remaining !== null && this.rateLimitInfo.remaining <= 5 && this.rateLimitInfo.remaining > 0) {
+                const nowSeconds = Math.floor(now / 1000);
+                const secondsUntilReset = this.rateLimitInfo.reset - nowSeconds;
+                
+                if (secondsUntilReset > 0 && secondsUntilReset < 300) { // Only if reset is within 5 minutes
+                    this.stats.proactiveBackoffs++;
+                    const waitTime = (secondsUntilReset + 5) * 1000; // Wait until reset + 5 seconds buffer
+                    console.warn(
+                        `⚠️ Rate limit low (${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining). ` +
+                        `Proactively waiting ${Math.ceil(waitTime / 1000)}s until reset...`
+                    );
+                    await sleep(waitTime);
+                    console.log(`✅ Resuming after proactive rate limit wait...`);
+                }
+            }
             
             // Check if we need to cooldown after completing a burst
             if (this.burstCount >= CONFIG.BURST_SIZE) {
@@ -298,17 +330,8 @@
             const burstDelayMs = 1000 / CONFIG.BURST_RATE;
             const timeSinceLastCall = now - this.lastCallTime;
             
-            // Calculate required delay
-            let requiredDelay = burstDelayMs;
-            
-            // If server requests a delay, add 1s safety buffer and use the larger delay
-            if (this.serverRateLimit.delaySeconds > 0) {
-                const serverDelay = (this.serverRateLimit.delaySeconds + 1) * 1000; // +1s buffer
-                requiredDelay = Math.max(requiredDelay, serverDelay);
-            }
-            
-            if (timeSinceLastCall < requiredDelay) {
-                const waitTime = requiredDelay - timeSinceLastCall;
+            if (timeSinceLastCall < burstDelayMs) {
+                const waitTime = burstDelayMs - timeSinceLastCall;
                 await sleep(waitTime);
             }
             
@@ -327,38 +350,49 @@
                 const actualRate = (this.totalCalls / elapsed).toFixed(2);
                 let logMsg = `📡 ${this.totalCalls} requests | Actual: ${actualRate} req/s | Burst: ${this.burstCount}/${CONFIG.BURST_SIZE}`;
                 
-                // Add server rate limit info if available
-                if (this.serverRateLimit.maxRequests !== null) {
-                    const remaining = this.serverRateLimit.maxRequests - this.serverRateLimit.currentCount;
-                    logMsg += ` | Server: ${this.serverRateLimit.currentCount}/${this.serverRateLimit.maxRequests} (${remaining} left)`;
+                // Add rate limit info if available
+                if (this.rateLimitInfo.limit !== null) {
+                    logMsg += ` | RL: ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}`;
                 }
                 
                 console.log(logMsg);
             }
         }
         
-        // Update rate limit info from API response
+        // Update rate limit info from response headers (modern approach)
+        updateFromHeaders(headers) {
+            if (!headers) return;
+            
+            const limit = headers.get ? headers.get('x-ratelimit-limit') : headers['x-ratelimit-limit'];
+            const remaining = headers.get ? headers.get('x-ratelimit-remaining') : headers['x-ratelimit-remaining'];
+            const reset = headers.get ? headers.get('x-ratelimit-reset') : headers['x-ratelimit-reset'];
+            
+            if (limit) {
+                this.rateLimitInfo.limit = parseInt(limit);
+                this.rateLimitInfo.remaining = parseInt(remaining);
+                this.rateLimitInfo.reset = parseInt(reset);
+                
+                // Log warning if approaching rate limit (but not every time)
+                if (this.rateLimitInfo.remaining <= 10 && this.totalCalls % 5 === 0) {
+                    console.warn(`⚠️ Rate limit warning: ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} requests remaining`);
+                }
+            }
+        }
+        
+        // Backward compatibility: Update from old rateLimitData format
         updateFromResponse(rateLimitData) {
             if (!rateLimitData) return;
             
-            this.serverRateLimit = {
-                maxRequests: rateLimitData.maxRequests || null,
-                currentCount: rateLimitData.requestCount || null,
-                delaySeconds: rateLimitData.delaySeconds || 0,
-                lastUpdate: Date.now(),
-                utilizationPercent: rateLimitData.maxRequests 
-                    ? ((rateLimitData.requestCount / rateLimitData.maxRequests) * 100).toFixed(1)
-                    : null
-            };
-            
-            // Log warning if approaching rate limit
-            if (this.serverRateLimit.utilizationPercent > 80) {
-                console.warn(`⚠️ Rate limit warning: ${this.serverRateLimit.currentCount}/${this.serverRateLimit.maxRequests} requests used (${this.serverRateLimit.utilizationPercent}%)`);
+            // If it's the new header format, delegate to updateFromHeaders
+            if (rateLimitData.get || rateLimitData['x-ratelimit-limit']) {
+                this.updateFromHeaders(rateLimitData);
+                return;
             }
             
-            // If server requests a delay, log it
-            if (rateLimitData.delaySeconds > 0) {
-                console.warn(`🛑 Server requesting ${rateLimitData.delaySeconds}s delay between requests`);
+            // Old format compatibility (maxRequests/requestCount)
+            if (rateLimitData.maxRequests) {
+                this.rateLimitInfo.limit = rateLimitData.maxRequests;
+                this.rateLimitInfo.remaining = rateLimitData.maxRequests - (rateLimitData.requestCount || 0);
             }
         }
 
@@ -368,6 +402,8 @@
             
             const stats = {
                 totalCalls: this.totalCalls,
+                proactiveBackoffs: this.stats.proactiveBackoffs,
+                rateLimitHits: this.stats.rateLimitHits,
                 actualRate: actualRate,
                 burstMode: {
                     currentBurst: `${this.burstCount}/${CONFIG.BURST_SIZE}`,
@@ -377,14 +413,13 @@
                 timeSinceLastCall: Date.now() - this.lastCallTime
             };
             
-            // Add server rate limit info if available
-            if (this.serverRateLimit.maxRequests !== null) {
-                stats.serverRateLimit = {
-                    current: this.serverRateLimit.currentCount,
-                    max: this.serverRateLimit.maxRequests,
-                    utilization: `${this.serverRateLimit.utilizationPercent}%`,
-                    remaining: this.serverRateLimit.maxRequests - this.serverRateLimit.currentCount,
-                    delayRequired: this.serverRateLimit.delaySeconds > 0 ? `${this.serverRateLimit.delaySeconds}s` : 'none'
+            // Add rate limit info from headers if available
+            if (this.rateLimitInfo.limit !== null) {
+                stats.rateLimit = {
+                    remaining: this.rateLimitInfo.remaining,
+                    limit: this.rateLimitInfo.limit,
+                    reset: this.rateLimitInfo.reset,
+                    utilization: `${Math.round((1 - this.rateLimitInfo.remaining / this.rateLimitInfo.limit) * 100)}%`
                 };
             }
             
@@ -1643,9 +1678,23 @@
 
                 // Update global tracker for the apply buttons
                 if (this.currentBest.metrics && this.currentBest.config && window.bestConfigTracker) {
-                    window.bestConfigTracker.update(this.currentBest.config, this.currentBest.metrics, this.currentBest.metrics.score || 0, this.currentBest.method || 'Unknown');
+                    // Validate that config has actual data before storing
+                    const hasData = Object.keys(this.currentBest.config).some(section => {
+                        const sectionData = this.currentBest.config[section];
+                        if (Array.isArray(sectionData)) return sectionData.length > 0;
+                        if (typeof sectionData === 'object' && sectionData !== null) {
+                            return Object.keys(sectionData).some(k => sectionData[k] !== undefined && sectionData[k] !== null);
+                        }
+                        return sectionData !== undefined && sectionData !== null;
+                    });
+                    
+                    if (hasData) {
+                        window.bestConfigTracker.update(this.currentBest.config, this.currentBest.metrics, this.currentBest.metrics.score || 0, this.currentBest.method || 'Unknown');
+                        window.currentBestConfig = this.currentBest.config;
+                    } else {
+                        console.warn('⚠️ Skipping tracker update - config appears to be empty');
+                    }
                 }
-                window.currentBestConfig = this.currentBest.config;
             } else if (this.isRunning) {
                 console.log('⏳ Displaying "Searching..." message (isRunning=true, no currentBest)');
                 content += `
@@ -1821,7 +1870,6 @@
     // ========================================
     class BacktesterAPI {
         constructor() {
-            this.baseUrl = 'https://backtester.alphagardeners.xyz/api/stats';
         }
 
         // Map AGCopilot parameter names to API parameter names
@@ -2178,7 +2226,11 @@
             
             console.log(`🎯 Built URL with ${tpPairs.length} TP pairs:`, tpSettingsArray);
             
-            return `${this.baseUrl}?${params.toString()}`;
+            // Build the stats endpoint URL
+            // API_BASE_URL already includes /api, so we append /stats
+            const baseUrl = CONFIG.API_BASE_URL;
+            const statsEndpoint = baseUrl.endsWith('/api') ? `${baseUrl}/stats` : baseUrl;
+            return `${statsEndpoint}?${params.toString()}`;
         }
         
         // Fetch results from API using direct /stats call
@@ -2269,6 +2321,9 @@
                                 'Content-Type': 'application/json'
                             }
                         });
+                        
+                        // Read rate limit headers from response
+                        burstRateLimiter.updateFromHeaders(response.headers);
                         
                         if (!response.ok) {
                             if (response.status === 429) {
@@ -4553,6 +4608,11 @@
             const label = labels.find(el => el.textContent.trim() === labelText);
 
             if (!label) {
+                // Debug: Log available labels if label not found
+                if (labelText === 'Min MCAP (USD)') {
+                    console.warn(`⚠️ Could not find label: "${labelText}"`);
+                    console.warn('Available labels:', labels.slice(0, 10).map(l => l.textContent.trim()));
+                }
                 return undefined;
             }
 
@@ -4619,6 +4679,13 @@
     async function getCurrentConfigFromUI() {
         console.log('📖 Reading current configuration from UI...');
         
+        // Verify DOM is ready with backtester elements
+        const sidebarLabels = document.querySelectorAll('.sidebar-label');
+        if (sidebarLabels.length < 5) {
+            console.warn('⚠️ Backtester UI may not be fully loaded - only found', sidebarLabels.length, 'sidebar labels');
+            console.warn('⚠️ This may result in incomplete configuration reading');
+        }
+        
         const config = {
             basic: {},
             tokenDetails: {},
@@ -4668,7 +4735,7 @@
             // Open the section first
             const sectionOpened = await openSection(sectionInfo.sectionTitle);
             if (!sectionOpened) {
-                console.warn(`⚠️ Could not open section: ${sectionInfo.sectionTitle}`);
+                console.warn(`⚠️ Could not open section: ${sectionInfo.sectionTitle} - section may not exist in UI`);
                 continue;
             }
             
@@ -4683,7 +4750,10 @@
                 
                 if (value !== undefined) {
                     fieldsWithValues++;
-                } 
+                    console.log(`  ✓ ${param}: ${value}`);
+                } else {
+                    console.log(`  - ${param}: (not set)`);
+                }
                 
                 // Small delay between field reads
                 await sleep(50);
@@ -5739,6 +5809,25 @@
             const tracker = window.bestConfigTracker;
             const config = tracker?.config || window.currentBestConfig || window.optimizationTracker?.currentBest?.config;
             
+            // Validate that config has actual data
+            if (config) {
+                const hasData = Object.keys(config).some(section => {
+                    const sectionData = config[section];
+                    if (Array.isArray(sectionData)) return sectionData.length > 0;
+                    if (typeof sectionData === 'object' && sectionData !== null) {
+                        return Object.keys(sectionData).some(k => sectionData[k] !== undefined && sectionData[k] !== null);
+                    }
+                    return sectionData !== undefined && sectionData !== null;
+                });
+                
+                if (!hasData) {
+                    console.log('❌ Configuration appears to be empty - this may indicate UI reading failed');
+                    console.log('💡 Try reloading AGCopilot after the page is fully loaded, or run an optimization first');
+                    updateStatus('❌ Configuration is empty - try reloading');
+                    return;
+                }
+            }
+            
             if (config) {
                 const id = tracker?.id ? String(tracker.id).substring(0, 8) : 'current';
                 console.log(`⚙️ Applying best configuration (ID: ${id}) to UI...`);
@@ -5760,6 +5849,25 @@
             const tracker = window.bestConfigTracker;
             const config = tracker?.config || window.currentBestConfig || window.optimizationTracker?.currentBest?.config;
             const metrics = tracker?.metrics || window.optimizationTracker?.currentBest?.metrics;
+            
+            // Validate that config has actual data
+            if (config) {
+                const hasData = Object.keys(config).some(section => {
+                    const sectionData = config[section];
+                    if (Array.isArray(sectionData)) return sectionData.length > 0;
+                    if (typeof sectionData === 'object' && sectionData !== null) {
+                        return Object.keys(sectionData).some(k => sectionData[k] !== undefined && sectionData[k] !== null);
+                    }
+                    return sectionData !== undefined && sectionData !== null;
+                });
+                
+                if (!hasData) {
+                    console.log('❌ Configuration appears to be empty - this may indicate UI reading failed');
+                    console.log('💡 Try reloading AGCopilot after the page is fully loaded, or run an optimization first');
+                    updateStatus('❌ Configuration is empty - try reloading');
+                    return;
+                }
+            }
             
             if (config) {
                 // Get metadata
@@ -6737,7 +6845,7 @@
         // Load optimization module immediately since config-tab is the default active tab
         setTimeout(() => {
             loadOptimizationInTab();
-            loadOfflineBacktesterModule();
+            //loadOfflineBacktesterModule();
         }, 100);
         
         // Make functions globally available for onclick handlers
