@@ -74,10 +74,10 @@
             { size: 20, gain: 10000 }
         ],
         
-        // ⚡ BURST RATE LIMITING CONFIGURATION
-        BURST_SIZE: 20,           // Requests per burst
-        BURST_RATE: 10,         
-        BURST_COOLDOWN_MS: 250, // Cooldown after burst
+        // ⚡ BURST RATE LIMITING CONFIGURATION (Local Backtester)
+        BURST_SIZE: 50,           // Requests per burst (local backtester can handle more)
+        BURST_RATE: 10,           // 10 requests per second for local backtester
+        BURST_COOLDOWN_MS: 100,    // Minimal cooldown for local testing
 
         // Backward compatibility - use burst rate as base rate
         get REQUESTS_PER_SECOND() { return this.BURST_RATE; },
@@ -88,8 +88,8 @@
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
         // Basic
-        'Min MCAP (USD)': { min: 0, max: 20000, step: 500, type: 'integer'},
-        'Max MCAP (USD)': { min: 10000, max: 60000, step: 500, type: 'integer' },
+        'Min MCAP (USD)': { min: 0, max: 20000, step: 250, type: 'integer'},
+        'Max MCAP (USD)': { min: 10000, max: 60000, step: 250, type: 'integer' },
         'Min Market Depth': { min: 0, max: 100000, step: 5000, type: 'integer' },
         'Max Market Depth': { min: 0, max: 5000000, step: 10000, type: 'integer' },
 
@@ -100,8 +100,8 @@
         'Min AG Score': { min: 0, max: 10, step: 1, type: 'integer' },
 
         // Wallets
-        'Min Holders': { min: 1, max: 5, step: 1, type: 'integer' },
-        'Max Holders': { min: 1, max: 50, step: 1, type: 'integer' },
+        'Min Holders': { min: 1, max: 10, step: 1, type: 'integer' },
+        'Max Holders': { min: 1, max: 100, step: 2, type: 'integer' },
         'Min Unique Wallets': { min: 1, max: 3, step: 1, type: 'integer' },
         'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
@@ -115,8 +115,8 @@
         // Risk
         'Min Bundled %': { min: 0, max: 50, step: 1 },
         'Max Bundled %': { min: 0, max: 100, step: 1 },
-        'Min Deployer Balance (SOL)': { min: 0, max: 10, step: 0.1 },
-        'Max Deployer Balance (SOL)': { min: 0, max: 100, step: 1 },
+        'Min Deployer Balance (SOL)': { min: 0, max: 10, step: 0.05 },
+        'Max Deployer Balance (SOL)': { min: 0, max: 100, step: 0.5 },
         'Min Buy Ratio %': { min: 0, max: 50, step: 5 },
         'Max Buy Ratio %': { min: 50, max: 100, step: 1 },
         'Min Vol MCAP %': { min: 0, max: 100, step: 1 },
@@ -216,11 +216,11 @@
     
     // Rate limiting mode toggle function
     function toggleRateLimitingMode() {
-        // Cycle through burst rate presets
+        // Cycle through burst rate presets (optimized for local backtester)
         const ratePresets = [
-            { rate: 0.1, burst: 10, cooldown: 12000 }, // Conservative
-            { rate: 0.2, burst: 10, cooldown: 10000 }, // Moderate  
-            { rate: 0.3, burst: 10, cooldown: 5000 }   // Aggressive 
+            { rate: 5, burst: 25, cooldown: 200 },   // Conservative: 5 req/s
+            { rate: 10, burst: 50, cooldown: 100 },  // Standard: 10 req/s (default)
+            { rate: 20, burst: 100, cooldown: 50 }   // Aggressive: 20 req/s
         ];
         
         const currentIndex = ratePresets.findIndex(p => 
@@ -244,9 +244,9 @@
         // Update UI button text
         const rateLimitBtn = document.getElementById('toggle-rate-limit-btn');
         if (rateLimitBtn) {
-            const mode = nextIndex === 2 ? 'Aggressive' : nextIndex === 1 ? 'Moderate' : 'Conservative';
+            const mode = nextIndex === 2 ? 'Aggressive (20/s)' : nextIndex === 1 ? 'Standard (10/s)' : 'Conservative (5/s)';
             rateLimitBtn.innerHTML = `⏱️ ${mode}`;
-            rateLimitBtn.title = `Burst: ${CONFIG.BURST_SIZE} @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown. Click to cycle.`;
+            rateLimitBtn.title = `Burst: ${CONFIG.BURST_SIZE} @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS}ms cooldown. Click to cycle.`;
         }
         
         updateStatus(`🔄 Burst mode: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s`);
@@ -2213,31 +2213,6 @@
         // Fetch results from API using direct /stats call
         async fetchResults(config, retries = 3) {
             try {
-                // 🗄️ CHECK OFFLINE MODE FIRST - bypass all API logic if offline
-                if (window.offlineBacktester && window.offlineBacktester.isEnabled) {
-                    console.log('🗄️ OFFLINE MODE: Using local CSV data (bypassing API call)');
-                    console.log('   Config keys:', Object.keys(config).slice(0, 5).join(', '), '...');
-                    
-                    // Use offline backtester instead of API
-                    const offlineResult = window.offlineBacktester.backtester.testConfiguration(config, false);
-                    
-                    if (!offlineResult.success) {
-                        console.error('   ❌ Offline test failed:', offlineResult.error);
-                        return offlineResult;
-                    }
-                    
-                    console.log(`   ✅ Offline result: ${offlineResult.matchedRows} rows, ${offlineResult.metrics.winRate}% WR, ${offlineResult.metrics.tpPnlPercent}% PnL`);
-                    
-                    // Return in API-compatible format
-                    return {
-                        success: true,
-                        metrics: offlineResult.metrics,
-                        isOffline: true,
-                        matchedRows: offlineResult.matchedRows,
-                        totalRows: offlineResult.totalRows
-                    };
-                }
-                
                 // Map AGCopilot config to API parameters FIRST for cache key generation
                 const apiParams = this.mapParametersToAPI(config);
                 
@@ -2487,9 +2462,6 @@
         const { min, max, step, type } = rule;
         const testValues = [];
         
-        // Check if offline mode is active - if so, test MANY more values!
-        const isOfflineMode = window.offlineBacktester?.isEnabled;
-        
         // Always include min and max values
         testValues.push(min);
         if (max !== min) {
@@ -2512,25 +2484,6 @@
             return finalValues;
         }
         
-        // OFFLINE MODE: Test every single step value (no sampling needed!)
-        if (isOfflineMode && numSteps <= 100) {
-            // For ranges with ≤100 steps, test EVERY value
-            for (let value = min + step; value < max; value += step) {
-                testValues.push(type === 'integer' ? Math.round(value) : value);
-            }
-            
-            const finalValues = [...new Set(testValues)].sort((a, b) => a - b);
-            
-            if (paramName === 'Min AG Score') {
-                const stringValues = finalValues.map(v => String(v));
-                console.log(`📊 🗄️ OFFLINE: Generated ${stringValues.length} test values for ${paramName} (testing ALL steps)`);
-                return stringValues;
-            }
-            
-            console.log(`📊 🗄️ OFFLINE: Generated ${finalValues.length} test values for ${paramName} (testing ALL steps)`);
-            return finalValues;
-        }
-        
         // For larger ranges, generate strategic test points
         if (numSteps <= 5) {
             // Small number of steps - test all values
@@ -2539,8 +2492,7 @@
             }
         } else {
             // Larger ranges - use strategic sampling
-            // In offline mode, use MUCH denser sampling
-            const samplingDensity = isOfflineMode ? 0.05 : 0.25; // 5% intervals offline, 25% online
+            const samplingDensity = 0.1; // 10% intervals for comprehensive testing
             
             // Generate percentile points
             const percentiles = [];
@@ -2560,8 +2512,8 @@
         // Remove duplicates and sort
         const uniqueValues = [...new Set(testValues)].sort((a, b) => a - b);
         
-        // Limit to maximum values - MUCH higher limit in offline mode
-        const maxValues = isOfflineMode ? 100 : 8; // 100 values offline, 8 online
+        // Limit to maximum values for local backtester
+        const maxValues = 100; // Test up to 100 values for comprehensive optimization
         let finalValues;
         if (uniqueValues.length > maxValues) {
             // Keep min, max, and evenly spaced intermediate values
@@ -2581,8 +2533,7 @@
             finalValues = finalValues.map(v => String(v));
         }
         
-        const modeLabel = isOfflineMode ? '🗄️ OFFLINE' : '🌐 API';
-        console.log(`📊 ${modeLabel}: Generated ${finalValues.length} test values for ${paramName}: [${finalValues.join(', ')}]`);
+        console.log(`📊 Generated ${finalValues.length} test values for ${paramName}: [${finalValues.join(', ')}]`);
         return finalValues;
     }
     
@@ -2966,14 +2917,8 @@
             // Clean the configuration before testing
             const cleanedConfig = cleanConfiguration(config);
             
-            // Use the new API to get results directly
-            // (Offline mode is automatically handled inside backtesterAPI.fetchResults)
+            // Use the API to get results directly
             const result = await backtesterAPI.fetchResults(cleanedConfig);
-            
-            // Log offline mode indicator if applicable
-            if (result.isOffline) {
-                console.log(`🗄️ ${testName} (OFFLINE MODE)`);
-            }
             
             if (!result.success) {
                 console.warn(`❌ ${testName} failed: ${result.error}`);
@@ -6271,52 +6216,7 @@
         }
     }
     
-    // ========================================
-    // 🗄️ OFFLINE BACKTESTER MODULE LOADER
-    // ========================================
-    let offlineBacktesterLoaded = false;
-    
-    async function loadOfflineBacktesterModule() {
-        // Don't reload if already loaded
-        if (offlineBacktesterLoaded) {
-            console.log('✅ Offline backtester already loaded');
-            return;
-        }
-        
-        try {
-            console.log('🌐 Fetching AGOfflineBacktester.js from GitHub...');
-            
-            // Load Offline Backtester script from GitHub
-            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGOfflineBacktester.js';
-            const response = await fetch(scriptUrl);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load Offline Backtester: HTTP ${response.status}`);
-            }
-            
-            const scriptContent = await response.text();
-            console.log(`📜 Loaded ${scriptContent.length} characters from GitHub`);
-            
-            // Execute the script - it will inject itself into the optimization tab
-            console.log('⚙️ Executing AGOfflineBacktester.js...');
-            eval(scriptContent);
-            
-            offlineBacktesterLoaded = true;
-            console.log('✅ Offline Backtester module loaded successfully!');
-            console.log('💡 Use window.offlineBacktester to access offline backtesting features');
-            
-        } catch (error) {
-            console.error('❌ Offline Backtester loading error:', error);
-            console.warn('⚠️ Offline backtesting will not be available. Continuing with online mode only.');
-            // Don't show error to user - offline mode is optional
-        }
-    }
-    
-    // Global retry function for Offline Backtester error recovery
-    window.retryLoadOfflineBacktester = function() {
-        offlineBacktesterLoaded = false;
-        loadOfflineBacktesterModule();
-    };
+    // Offline backtester removed - now using local backtester API directly
     
     async function loadBaseConfigBuilderInTab() {
         // Don't reload if already loaded
@@ -6818,7 +6718,6 @@
         // Load optimization module immediately since config-tab is the default active tab
         setTimeout(() => {
             loadOptimizationInTab();
-            //loadOfflineBacktesterModule();
         }, 100);
         
         // Make functions globally available for onclick handlers
