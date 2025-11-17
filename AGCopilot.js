@@ -88,8 +88,8 @@
     // Parameter validation rules (same as original AGCopilot)
     const PARAM_RULES = {
         // Basic
-        'Min MCAP (USD)': { min: 0, max: 20000, step: 1000, type: 'integer'},
-        'Max MCAP (USD)': { min: 10000, max: 60000, step: 1000, type: 'integer' },
+        'Min MCAP (USD)': { min: 0, max: 20000, step: 500, type: 'integer'},
+        'Max MCAP (USD)': { min: 10000, max: 60000, step: 500, type: 'integer' },
         'Min Market Depth': { min: 0, max: 100000, step: 5000, type: 'integer' },
         'Max Market Depth': { min: 0, max: 5000000, step: 10000, type: 'integer' },
 
@@ -101,34 +101,31 @@
 
         // Wallets
         'Min Holders': { min: 1, max: 5, step: 1, type: 'integer' },
-        'Max Holders': { min: 1, max: 50, step: 5, type: 'integer' },
-        // Holder Growth Filter (new)
-        'Holders Growth %': { min: 0, max: 500, step: 10, type: 'integer' },
-        'Holders Growth Minutes': { min: 0, max: 1440, step: 10, type: 'integer' },
+        'Max Holders': { min: 1, max: 50, step: 1, type: 'integer' },
         'Min Unique Wallets': { min: 1, max: 3, step: 1, type: 'integer' },
         'Max Unique Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min KYC Wallets': { min: 0, max: 3, step: 1, type: 'integer' },
         'Max KYC Wallets': { min: 1, max: 8, step: 1, type: 'integer' },
         'Min Dormant Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
         'Max Dormant Wallets': { min: 1, max: 20, step: 1, type: 'integer' },
-        'Min Top Holders %': { min: 0, max: 100, step: 5, type: 'integer' },
-        'Max Top Holders %': { min: 0, max: 100, step: 5, type: 'integer' },
+        'Min Top Holders %': { min: 0, max: 100, step: 1, type: 'integer' },
+        'Max Top Holders %': { min: 0, max: 100, step: 1, type: 'integer' },
         'Min Convinced Wallets': { min: 0, max: 10, step: 1, type: 'integer' },
 
         // Risk
         'Min Bundled %': { min: 0, max: 50, step: 1 },
-        'Max Bundled %': { min: 0, max: 100, step: 5 },
-        'Min Deployer Balance (SOL)': { min: 0, max: 10, step: 0.5 },
-        'Max Deployer Balance (SOL)': { min: 0, max: 100, step: 5 },
-        'Min Buy Ratio %': { min: 0, max: 50, step: 10 },
-        'Max Buy Ratio %': { min: 50, max: 100, step: 5 },
-        'Min Vol MCAP %': { min: 0, max: 100, step: 10 },
-        'Max Vol MCAP %': { min: 33, max: 300, step: 20 },
-        'Max Drained %': { min: 0, max: 100, step: 5 },
+        'Max Bundled %': { min: 0, max: 100, step: 1 },
+        'Min Deployer Balance (SOL)': { min: 0, max: 10, step: 0.1 },
+        'Max Deployer Balance (SOL)': { min: 0, max: 100, step: 1 },
+        'Min Buy Ratio %': { min: 0, max: 50, step: 5 },
+        'Max Buy Ratio %': { min: 50, max: 100, step: 1 },
+        'Min Vol MCAP %': { min: 0, max: 100, step: 1 },
+        'Max Vol MCAP %': { min: 33, max: 300, step: 1 },
+        'Max Drained %': { min: 0, max: 100, step: 1 },
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 86400, step: 5, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 86400, step: 1, type: 'integer' },
         'Max TTC (sec)': { min: 10, max: 86400, step: 10, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
@@ -158,8 +155,6 @@
             "Max Unique Wallets": undefined,
             "Min Holders": undefined,
             "Max Holders": undefined,
-            "Holders Growth %": undefined,
-            "Holders Growth Minutes": undefined,
             "Min Dormant Wallets": undefined,
             "Max Dormant Wallets": undefined,
             "Min Top Holders %": undefined,
@@ -994,7 +989,7 @@
         const settingCategories = {
             'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)', 'Min Market Depth', 'Max Market Depth'],
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
+            'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
             'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
@@ -1908,9 +1903,6 @@
                 // Wallets
                 'Min Holders': 'minHoldersCount',
                 'Max Holders': 'maxHoldersCount',
-                // Holder Growth Filter (optional parameters - use empty string if not set)
-                'Holders Growth %': 'minHoldersDiffPct',
-                'Holders Growth Minutes': 'maxHoldersSinceMinutes',
                 'Min Unique Wallets': 'minUniqueWallets',
                 'Max Unique Wallets': 'maxUniqueWallets',
                 'Min KYC Wallets': 'minKycWallets',
@@ -2674,9 +2666,6 @@
                 { param: 'Min AG Score', section: 'tokenDetails' },
                 { param: 'Min Buy Ratio %', section: 'risk' },
                 { param: 'Max Bundled %', section: 'risk' },
-                // Holder Growth Filter (new)
-                { param: 'Holders Growth %', section: 'wallets' },
-                { param: 'Holders Growth Minutes', section: 'wallets' },
                 { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
@@ -4104,12 +4093,6 @@
             const max = config['Max Dormant Wallets'] || '∞';
             lines.push(`Dormant Wallets: ${min} - ${max}`);
         }
-        if (config['Holders Growth %'] !== undefined) {
-            lines.push(`Holders Growth %: ${config['Holders Growth %']}%`);
-        }
-        if (config['Holders Growth Minutes'] !== undefined) {
-            lines.push(`Holders Growth Since: ${config['Holders Growth Minutes']} min`);
-        }
         lines.push('');
         
         lines.push('💧 LIQUIDITY CRITERIA:');
@@ -4552,50 +4535,6 @@
     // Function to read current field value from the UI
     function getFieldValue(labelText) {
         try {
-            if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
-                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
-                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
-                if (!hgLabel) {
-                    return undefined;
-                }
-                
-                let container = hgLabel.parentElement;
-                let gridContainer = null;
-                let depth = 0;
-                
-                while (container && depth < 4) {
-                    const gridDiv = container.querySelector('.grid.grid-cols-2');
-                    if (gridDiv) {
-                        gridContainer = gridDiv;
-                        break;
-                    }
-                    container = container.parentElement;
-                    depth++;
-                }
-
-                if (!gridContainer) {
-                    return undefined;
-                }
-                
-                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
-                
-                if (!inputs || inputs.length < 2) {
-                    return undefined;
-                }
-                
-                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
-                const input = inputs[idx];
-                if (!input) {
-                    return undefined;
-                }
-
-                const value = input.value.trim();
-                if (value === '' || value === null) {
-                    return undefined;
-                }
-                return parseFloat(value);
-            }
-
             // Find the label using the same approach as setFieldValue
             const labels = Array.from(document.querySelectorAll('.sidebar-label'));
             const label = labels.find(el => el.textContent.trim() === labelText);
@@ -4702,7 +4641,7 @@
             },
             wallets: {
                 sectionTitle: 'Wallets',
-                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets']
+                params: ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets']
             },
             risk: {
                 sectionTitle: 'Risk',
@@ -4824,76 +4763,6 @@
     // UI interaction functions to apply configs to the backtester form (based on original AGCopilot)
     async function setFieldValue(labelText, value, maxRetries = 2) {
         const shouldClear = (value === undefined || value === null || value === "" || value === "clear");
-
-        // Special handling for Holders Growth Filter composite field
-        if (labelText === 'Holders Growth %' || labelText === 'Holders Growth Minutes') {
-            try {
-                // Find the "Holders Growth Filter" block which contains two numeric inputs
-                const labels = Array.from(document.querySelectorAll('.sidebar-label'));
-                const hgLabel = labels.find(el => el.textContent.trim() === 'Holders Growth Filter');
-                if (!hgLabel) {
-                    console.warn('Holders Growth Filter label not found');
-                    return false;
-                }
-                let container = hgLabel.parentElement;
-                let gridContainer = null;
-                let depth = 0;
-                
-                while (container && depth < 4) {
-                    const gridDiv = container.querySelector('.grid.grid-cols-2');
-                    if (gridDiv) {
-                        gridContainer = gridDiv;
-                        break;
-                    }
-                    container = container.parentElement;
-                    depth++;
-                }
-
-                if (!gridContainer) {
-                    console.warn('Holders Growth grid container not found');
-                    return false;
-                }
-                
-                const inputs = Array.from(gridContainer.querySelectorAll('input[type="number"]'));
-                
-                if (!inputs || inputs.length < 2) {
-                    console.warn('Holders Growth inputs not found, found:', inputs.length);
-                    return false;
-                }
-                
-                const idx = (labelText === 'Holders Growth %') ? 0 : 1;
-                const input = inputs[idx];
-                if (!input) {
-                    console.warn('Target Holders Growth input not found at expected index');
-                    return false;
-                }
-
-                let processedValue = value;
-                if (!shouldClear) {
-                    if (typeof value === 'string' && value.trim() !== '') {
-                        const parsed = parseFloat(value);
-                        if (!isNaN(parsed)) processedValue = parsed;
-                    }
-                    
-                    if (typeof processedValue === 'number' && !isNaN(processedValue)) {
-                        processedValue = Math.round(processedValue);
-                    }
-                }
-
-                input.focus();
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                nativeInputValueSetter.call(input, shouldClear ? '' : processedValue);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                input.blur();
-                
-                console.log(`✅ Set ${labelText} to ${shouldClear ? 'cleared' : processedValue}`);
-                return true;
-            } catch (err) {
-                console.warn('Error setting Holders Growth Filter:', err.message);
-                return false;
-            }
-        }
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -5103,23 +4972,6 @@
                         
                         // Delay between field updates to avoid issues
                         await sleep(150);
-                    }
-                    
-                    if (section === 'wallets') {
-                        const growthPct = sectionConfig['Holders Growth %'];
-                        const growthMin = sectionConfig['Holders Growth Minutes'];                        
-                        
-                        if (growthPct !== undefined && growthMin === undefined) {
-                            totalFields++;
-                            const success = await setFieldValue('Holders Growth %', 'clear');
-                            if (success) successCount++;
-                            await sleep(150);
-                        } else if (growthMin !== undefined && growthPct === undefined) {
-                            totalFields++;
-                            const success = await setFieldValue('Holders Growth Minutes', 'clear');
-                            if (success) successCount++;
-                            await sleep(150);
-                        }
                     }
                     
                     // Delay between sections
