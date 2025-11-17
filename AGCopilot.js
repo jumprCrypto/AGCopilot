@@ -1989,8 +1989,6 @@
                         apiParams[apiName] = String(numericValue);
                     }
                 }
-                // Note: Empty values are NOT added here - only fromDate, toDate, maxHoldersSinceMinutes
-                // are added as empty strings in prepareToken if needed
             });
             
             // Add default parameters that are usually present
@@ -2031,11 +2029,6 @@
             }
             if (dateRange.toDate) {
                 console.log(`📅 Including toDate parameter: ${dateRange.toDate}`);
-            }
-            
-            // maxHoldersSinceMinutes is always required (empty string if not set)
-            if (!apiParams.maxHoldersSinceMinutes) {
-                apiParams.maxHoldersSinceMinutes = '';
             }
 
             const configWeekdays = Array.isArray(config?.weekdays) ? config.weekdays : null;
@@ -2100,7 +2093,6 @@
                 ['minBuyRatio', 'maxBuyRatio'],
                 ['minVolMcapPercent', 'maxVolMcapPercent'],
                 ['minDrainedPercent', 'maxDrainedPercent']
-                // Note: Holder growth params have no min/max pairing per API; 0 is minimum and no upper bound specified
             ];
             
             minMaxPairs.forEach(([minKey, maxKey]) => {
@@ -6725,9 +6717,7 @@
             ['Min KYC Wallets', config['Min KYC Wallets']],
             ['Max KYC Wallets', config['Max KYC Wallets']],
             ['Min Holders', config['Min Holders']],
-            ['Max Holders', config['Max Holders']],
-            ['Holders Growth %', config['Holders Growth %']],
-            ['Holders Growth Minutes', config['Holders Growth Minutes']]
+            ['Max Holders', config['Max Holders']]
         ]);
         
         // Risk Section Fields (including booleans)
@@ -6857,7 +6847,7 @@
                 const sections = {
                     'Basic': ['Min MCAP (USD)', 'Max MCAP (USD)', 'Min Market Depth', 'Max Market Depth'],
                     'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
-                    'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Holders Growth %', 'Holders Growth Minutes', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
+                    'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
                     'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
                     'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
                     'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
