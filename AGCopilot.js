@@ -76,7 +76,7 @@
         
         // ⚡ BURST RATE LIMITING CONFIGURATION
         BURST_SIZE: 20,           // Requests per burst
-        BURST_RATE: 5,         
+        BURST_RATE: 10,         
         BURST_COOLDOWN_MS: 250, // Cooldown after burst
 
         // Backward compatibility - use burst rate as base rate
@@ -701,17 +701,10 @@
                 const normalized = WEEKDAY_FULL_NAMES.find(day => day.toLowerCase().startsWith(title.toLowerCase()));
                 if (!normalized) return null;
 
-                const isActive = btn.getAttribute('aria-pressed') === 'true' ||
-                    btn.getAttribute('data-selected') === 'true' ||
-                    btn.dataset?.selected === 'true' ||
-                    btn.classList.contains('bg-blue-500') ||
-                    btn.classList.contains('bg-blue-600') ||
-                    btn.classList.contains('bg-blue-700') ||
-                    btn.classList.contains('bg-indigo-500') ||
-                    btn.classList.contains('bg-indigo-600') ||
-                    (btn.classList.contains('text-white') && !btn.classList.contains('text-gray-300'));
+                // AG Backtester uses: selected = bg-[#85D028] + text-black, unselected = bg-gray-700 + text-gray-300
+                const isSelected = btn.classList.contains('text-black') && !btn.classList.contains('bg-gray-700');
 
-                return isActive ? normalized : null;
+                return isSelected ? normalized : null;
             })
             .filter(Boolean);
 
@@ -5490,13 +5483,16 @@
                     border-bottom: 1px solid #4a5568;
                 ">
                     <button class="tab-button active" onclick="switchTab('config-tab')" id="config-tab-btn">
-                        ⚙️ Configuration
+                        ⚙️ Optim
                     </button>
                     <button class="tab-button" onclick="switchTab('base-config-tab')" id="base-config-tab-btn">
-                        🏗️ Base Cfg Builder
+                        🏗️ Base Builder
                     </button>
                     <button class="tab-button" onclick="switchTab('signal-analysis-tab')" id="signal-analysis-tab-btn">
-                        🔍 Signal Analysis
+                        🔍 Analysis
+                    </button>
+                    <button class="tab-button" onclick="switchTab('data-sync-tab')" id="data-sync-tab-btn">
+                        📊 Sync
                     </button>
                 </div>
 
@@ -5551,6 +5547,25 @@
                         <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
                         <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Signal Analysis...</div>
                         <div style="color: #718096; font-size: 11px;">This tab will load AGSignalAnalysis.js from GitHub</div>
+                    </div>
+                </div>
+
+                <!-- Data Sync Tab -->
+                <div id="data-sync-tab" class="tab-content">
+                    <div id="data-sync-container">
+                        <div style="
+                            text-align: center; 
+                            padding: 40px 20px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 200px;
+                        ">
+                            <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+                            <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Data Sync...</div>
+                            <div style="color: #718096; font-size: 11px;">Sync AG API data to local database</div>
+                        </div>
                     </div>
                 </div>
 
@@ -5739,6 +5754,8 @@
                 loadSignalAnalysisInTab();
             } else if (activeTabId === 'config-tab') {
                 loadOptimizationInTab();
+            } else if (activeTabId === 'data-sync-tab') {
+                loadDataSyncInTab();
             }
         };
         
@@ -6146,6 +6163,7 @@
     let baseConfigBuilderLoaded = false;
     let signalAnalysisLoaded = false;
     let optimizationLoaded = false;
+    let dataSyncLoaded = false;
     
     async function loadSignalAnalysisInTab() {
         // Don't reload if already loaded
@@ -6221,6 +6239,96 @@
                             transition: all 0.2s;
                         " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
                            onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
+                            🔄 Retry Loading
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async function loadDataSyncInTab() {
+        console.log('🔄 loadDataSyncInTab called...');
+        
+        // Don't reload if already loaded
+        if (dataSyncLoaded) {
+            console.log('⏭️ Data Sync already loaded, skipping');
+            return;
+        }
+        
+        const tabContent = document.getElementById('data-sync-container');
+        console.log('📦 Found data-sync-container:', !!tabContent);
+        
+        try {
+            // Show loading state
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Data Sync...</div>
+                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                    </div>
+                `;
+            }
+            
+            console.log('🌐 Fetching AGDataSync.js from GitHub...');
+            
+            // Load Data Sync script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGDataSync.js';
+            const response = await fetch(scriptUrl);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load Data Sync: HTTP ${response.status}`);
+            }
+            
+            const scriptContent = await response.text();
+            console.log(`📜 Loaded ${scriptContent.length} characters from GitHub`);
+            
+            // Execute the script - it will automatically detect tab integration
+            console.log('⚙️ Executing AGDataSync.js...');
+            eval(scriptContent);
+            
+            dataSyncLoaded = true;
+            console.log('✅ Data Sync loaded successfully in tab!');
+            
+        } catch (error) {
+            console.error('❌ Data Sync loading error:', error);
+            
+            // Show error state in tab
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Data Sync</div>
+                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
+                        <button onclick="window.retryLoadDataSync()" style="
+                            padding: 8px 16px;
+                            background: rgba(66, 153, 225, 0.2);
+                            border: 1px solid rgba(66, 153, 225, 0.4);
+                            border-radius: 6px;
+                            color: #4299e1;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 600;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(66, 153, 225, 0.3)'" 
+                           onmouseout="this.style.background='rgba(66, 153, 225, 0.2)'">
                             🔄 Retry Loading
                         </button>
                     </div>
@@ -6509,6 +6617,29 @@
             `;
         }
         loadOptimizationInTab();
+    };
+
+    window.retryLoadDataSync = function() {
+        dataSyncLoaded = false;
+        const tabContent = document.getElementById('data-sync-container');
+        if (tabContent) {
+            tabContent.innerHTML = `
+                <div style="
+                    text-align: center; 
+                    padding: 40px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 200px;
+                ">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Data Sync...</div>
+                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                </div>
+            `;
+        }
+        loadDataSyncInTab();
     };
 
     // ========================================
