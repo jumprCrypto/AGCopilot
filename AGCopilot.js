@@ -2439,6 +2439,135 @@
                 };
             }
         }
+
+        // Batch fetch results for multiple configurations (uses batch endpoint if available)
+        async fetchResultsBatch(configs, batchSize = 20) {
+            const API_URL = CONFIG.API_BASE_URL;
+            const isBatchSupported = API_URL.includes('localhost') || API_URL.includes('127.0.0.1');
+            
+            if (!isBatchSupported || batchSize === 1) {
+                // Fall back to sequential processing for non-local APIs
+                console.log('📊 Processing configs sequentially (batch not supported)');
+                const results = [];
+                for (const config of configs) {
+                    const result = await this.fetchResults(config);
+                    results.push(result);
+                }
+                return results;
+            }
+            
+            console.log(`🚀 Batch processing ${configs.length} configs (batch size: ${batchSize})`);
+            
+            // Split into batches
+            const batches = [];
+            for (let i = 0; i < configs.length; i += batchSize) {
+                batches.push(configs.slice(i, i + batchSize));
+            }
+            
+            const allResults = [];
+            
+            for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+                const batch = batches[batchIdx];
+                
+                // Map configs to batch API format
+                const batchRequests = batch.map((config, idx) => {
+                    const apiParams = this.mapParametersToAPI(config);
+                    const tpSettings = apiParams.__takeProfits || [];
+                    delete apiParams.__takeProfits;
+                    
+                    return {
+                        requestId: `${batchIdx}_${idx}`,
+                        ...Object.fromEntries(
+                            Object.entries(apiParams)
+                                .filter(([k]) => k !== 'tpSettings' && k !== 'triggerMode')
+                                .map(([k, v]) => {
+                                    // Convert to appropriate types for C# backend
+                                    if (k.includes('Date')) return [k, v];
+                                    if (typeof v === 'boolean') return [k, v];
+                                    if (v === null || v === undefined || v === '') return [k, null];
+                                    // Parse numeric strings
+                                    const numVal = Number(v);
+                                    return [k, isNaN(numVal) ? v : numVal];
+                                })
+                        ),
+                        triggerMode: apiParams.triggerMode ? Number(apiParams.triggerMode) : null,
+                        tpSettings: tpSettings.length > 0 ? tpSettings.map(tp => ({
+                            sizePct: Number(tp.size),
+                            targetGainPct: Number(tp.gain)
+                        })) : null,
+                        buyingAmount: 0.25
+                    };
+                });
+                
+                try {
+                    await burstRateLimiter.throttle();
+                    
+                    const response = await fetch(`${API_URL}/batch-stats`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(batchRequests),
+                        credentials: 'include'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Batch API returned ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Map results back to our format
+                    const batchResults = data.results.map((r, idx) => {
+                        if (!r.success) {
+                            return {
+                                success: false,
+                                error: r.error || 'Unknown error',
+                                totalTokens: 0,
+                                tokensHitTp: 0,
+                                winRate: 0,
+                                averageTpGain: 0,
+                                tpPnlPercent: 0,
+                                cleanPnL: 0
+                            };
+                        }
+                        
+                        return {
+                            success: true,
+                            totalTokens: r.totalTokens || 0,
+                            tokensHitTp: r.tokensHitTp || 0,
+                            winRate: r.winRate || 0,
+                            averageTpGain: r.averageTpGain || 0,
+                            tpPnlPercent: r.averageTpGain || 0,
+                            cleanPnL: r.cleanPnL || 0,
+                            config: batch[idx]
+                        };
+                    });
+                    
+                    allResults.push(...batchResults);
+                    
+                    console.log(`✅ Batch ${batchIdx + 1}/${batches.length} completed: ${batchResults.length} results`);
+                    
+                } catch (error) {
+                    console.error(`❌ Batch ${batchIdx + 1} failed:`, error);
+                    // Add error results for this batch
+                    allResults.push(...batch.map(config => ({
+                        success: false,
+                        error: error.message,
+                        totalTokens: 0,
+                        tokensHitTp: 0,
+                        winRate: 0,
+                        averageTpGain: 0,
+                        tpPnlPercent: 0,
+                        cleanPnL: 0,
+                        config
+                    })));
+                }
+            }
+            
+            console.log(`🎯 Batch processing complete: ${allResults.length} total results`);
+            return allResults;
+        }
     }
 
     // Initialize the API client
@@ -5454,7 +5583,26 @@
                                     🔬 Parameter Discovery
                                 </button>
                                 
+                                <button id="interaction-discovery" style="
+                                    padding: 10px;
+                                    background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%);
+                                    border: none;
+                                    border-radius: 6px;
+                                    color: white;
+                                    font-weight: 500;
+                                    cursor: pointer;
+                                    font-size: 12px;
+                                    transition: all 0.2s;
+                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
+                                   title="Find parameter combinations that work better together (uses batch processing)">
+                                    🧬 Interactions
+                                </button>
+                            </div>
+                            
+                            <!-- Third Row for Rate Limit Button -->
+                            <div style="margin-bottom: 12px;">
                                 <button id="toggle-rate-limit-btn" style="
+                                    width: 100%;
                                     padding: 10px;
                                     background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
                                     border: none;
@@ -5471,6 +5619,17 @@
                                     ⏱️ Normal
                                 </button>
                             </div>
+                            
+                            <!-- Interaction Results Display -->
+                            <div id="interaction-results" style="
+                                margin-top: 12px;
+                                padding: 12px;
+                                background: rgba(138, 43, 226, 0.05);
+                                border: 1px solid rgba(138, 43, 226, 0.2);
+                                border-radius: 6px;
+                                font-size: 11px;
+                                display: none;
+                            "></div>
                             
                             <!-- Base Config Builder Action Buttons (shown when base config is active) -->
                             <div id="base-config-actions" style="display: none; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
@@ -6442,14 +6601,48 @@
         safeAddEventListener('toggle-rate-limit-btn', 'click', () => {
             toggleRateLimitingMode();
         });
-
-        // NOTE: Start optimization, Stop optimization, and Parameter Discovery button handlers
-        // are now registered by AGOptimization.js module via setupOptimizationEventHandlers()
-        // Removed from here to prevent duplicate event handler registration
         
-        // Base Config Builder tab loads automatically when clicked (handled in switchTab function)
-        
-
+        // Interaction Discovery button handler
+        safeAddEventListener('interaction-discovery', 'click', async () => {
+            try {
+                // Load interaction discovery script if not already loaded
+                if (!window.runInteractionDiscovery) {
+                    console.log('📦 Loading interaction discovery module...');
+                    updateStatus('📦 Loading interaction discovery...');
+                    
+                    // Use fetch + eval pattern (same as Signal Analysis - proven to work)
+                    const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGInteractionDiscovery.js';
+                    const response = await fetch(scriptUrl);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to load: HTTP ${response.status}`);
+                    }
+                    
+                    const scriptContent = await response.text();
+                    
+                    // Execute the script
+                    eval(scriptContent);
+                    
+                    console.log('✅ Interaction discovery module loaded');
+                    
+                    if (!window.runInteractionDiscovery) {
+                        throw new Error('Module loaded but function not available');
+                    }
+                }
+                
+                // Show results div
+                const resultsDiv = document.getElementById('interaction-results');
+                if (resultsDiv) {
+                    resultsDiv.style.display = 'block';
+                }
+                
+                // Run discovery
+                await window.runInteractionDiscovery();
+            } catch (error) {
+                console.error('❌ Interaction discovery error:', error);
+                updateStatus('❌ Interaction discovery failed: ' + error.message);
+            }
+        });      
         
         // Signal Analysis event handlers - load external script
         safeAddEventListener('analyze-signals-btn', 'click', async () => {
