@@ -189,7 +189,7 @@
                         hasMore = data.swaps.length === pageSize;
                         page++;
                         
-                        await this.delay(CONFIG.DELAY_BETWEEN_REQUESTS_MS);
+                        await this.delay(SYNC_CONFIG.DELAY_BETWEEN_REQUESTS_MS);
                     } else {
                         hasMore = false;
                     }
@@ -311,13 +311,13 @@
                 );
 
                 if (i < tokens.length - 1) {
-                    await this.delay(CONFIG.DELAY_BETWEEN_TOKENS_MS);
+                    await this.delay(SYNC_CONFIG.DELAY_BETWEEN_TOKENS_MS);
                 }
             }
 
             if (batchNumber > 1 && !this.stopped) {
                 this.log(`Batch ${batchNumber} complete. Pausing before next batch...`, 'info');
-                await this.delay(CONFIG.DELAY_BETWEEN_BATCHES_MS);
+                await this.delay(SYNC_CONFIG.DELAY_BETWEEN_BATCHES_MS);
             }
         }
 
@@ -328,7 +328,7 @@
             this.log('='.repeat(60), 'info');
             this.log('AG Data Sync Started', 'success');
             this.log(`Date Range: ${fromDate.toISOString()} to ${toDate.toISOString()}`, 'info');
-            this.log(`Local API: ${CONFIG.LOCAL_API_URL}`, 'info');
+            this.log(`Local API: ${SYNC_CONFIG.LOCAL_API_URL}`, 'info');
             this.log('='.repeat(60), 'info');
 
             try {
@@ -344,8 +344,8 @@
                 // Phase 2: Process tokens in batches
                 this.log('Phase 2: Processing Tokens', 'progress');
                 const batches = [];
-                for (let i = 0; i < tokens.length; i += CONFIG.BATCH_SIZE) {
-                    batches.push(tokens.slice(i, i + CONFIG.BATCH_SIZE));
+                for (let i = 0; i < tokens.length; i += SYNC_CONFIG.BATCH_SIZE) {
+                    batches.push(tokens.slice(i, i + SYNC_CONFIG.BATCH_SIZE));
                 }
 
                 this.log(`Processing ${tokens.length} tokens in ${batches.length} batches...`, 'info');
