@@ -523,8 +523,8 @@
                 'Mint Authority': 'risk',
                 
                 // Advanced
-                'Min TTC (sec)': 'advanced',
-                'Max TTC (sec)': 'advanced',
+                // 'Min TTC (sec)': 'advanced',
+                // 'Max TTC (sec)': 'advanced',
                 'Max Liquidity %': 'advanced',
                 'Min Win Pred %': 'advanced',
                 'Has Buy Signal': 'advanced',
@@ -628,7 +628,7 @@
                 { min: 'Min Bundled %', max: 'Max Bundled %', section: 'risk' },
                 { min: 'Min Buy Ratio %', max: 'Max Buy Ratio %', section: 'risk' },
                 { min: 'Min Vol MCAP %', max: 'Max Vol MCAP %', section: 'risk' },
-                { min: 'Min TTC (sec)', max: 'Max TTC (sec)', section: 'advanced' }
+                // { min: 'Min TTC (sec)', max: 'Max TTC (sec)', section: 'advanced' }
             ];
 
             let fixed = false;
@@ -1169,8 +1169,8 @@
                 'Mint Authority': 'risk',
                 
                 // Advanced
-                'Min TTC (sec)': 'advanced',
-                'Max TTC (sec)': 'advanced',
+                // 'Min TTC (sec)': 'advanced',
+                // 'Max TTC (sec)': 'advanced',
                 'Max Liquidity %': 'advanced',
                 'Min Win Pred %': 'advanced',
                 'Has Buy Signal': 'advanced',
@@ -1512,7 +1512,7 @@
                 { param: 'Max Bundled %', section: 'risk' },
                 { param: 'Holders Growth %', section: 'wallets' },
                 { param: 'Holders Growth Minutes', section: 'wallets' },
-                { param: 'Min TTC (sec)', section: 'advanced' },
+                // { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
                 { param: 'Max Drained Count', section: 'risk' },
@@ -2088,7 +2088,7 @@
                                     display: block;
                                     margin-bottom: 2px;
                                 ">Runtime (min)</label>
-                                <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
+                                <input type="number" id="runtime-min" value="5" min="5" max="120" step="5" style="
                                     width: 100%;
                                     padding: 3px 4px;
                                     background: #2d3748;
@@ -2134,7 +2134,7 @@
                                     display: block;
                                     margin-bottom: 3px;
                                 ">Chain Runs</label>
-                                <input type="number" id="chain-run-count" value="5" min="1" max="10" step="1" style="
+                                <input type="number" id="chain-run-count" value="8" min="1" max="10" step="1" style="
                                     width: 100%;
                                     padding: 5px 6px;
                                     background: #2d3748;

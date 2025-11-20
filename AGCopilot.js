@@ -20,13 +20,13 @@
     // ========================================
     const CONFIG = {
         // Original AGCopilot Optimization Settings (no API nQeeded)
-        MAX_RUNTIME_MIN: 30,
+        MAX_RUNTIME_MIN: 5, // Optimized for local API (10-20 req/s vs 0.05 remote)
         BACKTEST_WAIT: 20000, // Based on rate limit recovery test (20s)
         MIN_TOKENS: 10, // Minimum tokens per day (scaled by date range)
         TARGET_PNL: 100.0,
         
         // NEW: Chained runs settings
-        CHAIN_RUN_COUNT: 3,
+        CHAIN_RUN_COUNT: 8, // More runs with local API's higher throughput
         
         // Feature flags (keeping all original features)
         USE_CONFIG_CACHING: true,
@@ -125,8 +125,8 @@
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        'Min TTC (sec)': { min: 0, max: 86400, step: 1, type: 'integer' },
-        'Max TTC (sec)': { min: 10, max: 86400, step: 10, type: 'integer' },
+        // 'Min TTC (sec)': { min: 0, max: 86400, step: 1, type: 'integer' },
+        // 'Max TTC (sec)': { min: 10, max: 86400, step: 10, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
@@ -177,8 +177,8 @@
             "Skip If No KYC/CEX Funding": undefined
         },
         advanced: {
-            "Min TTC (sec)": undefined,
-            "Max TTC (sec)": undefined,
+            // "Min TTC (sec)": undefined,
+            // "Max TTC (sec)": undefined,
             "Max Liquidity %": undefined,
             "Min Win Pred %": undefined,
             "Has Buy Signal": undefined
@@ -298,7 +298,7 @@
                     this.stats.proactiveBackoffs++;
                     const waitTime = (secondsUntilReset + 5) * 1000; // Wait until reset + 5 seconds buffer
                     console.warn(
-                        `⚠️ Rate limit low (${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining). ` +
+                        `Rate limit low (${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining). ` +
                         `Proactively waiting ${Math.ceil(waitTime / 1000)}s until reset...`
                     );
                     await sleep(waitTime);
@@ -991,7 +991,7 @@
             'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
             'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
             'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
-            'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
+            'Advanced': [/* 'Min TTC (sec)', 'Max TTC (sec)', */ 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
             'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
         };
 
@@ -1930,8 +1930,8 @@
                 'Max Drained Count': 'maxDrainedCount',
                 
                 // Advanced
-                'Min TTC (sec)': 'minTtc',
-                'Max TTC (sec)': 'maxTtc',
+                // 'Min TTC (sec)': 'minTtc',
+                // 'Max TTC (sec)': 'maxTtc',
                 'Max Liquidity %': 'maxLiquidityPct',
                 'Min Win Pred %': 'minWinPredPercent',
                 
@@ -2441,7 +2441,7 @@
         }
 
         // Batch fetch results for multiple configurations (uses batch endpoint if available)
-        async fetchResultsBatch(configs, batchSize = 20) {
+        async fetchResultsBatch(configs, batchSize = 10) {
             const API_URL = CONFIG.API_BASE_URL;
             const isBatchSupported = API_URL.includes('localhost') || API_URL.includes('127.0.0.1');
             
@@ -2738,7 +2738,7 @@
                 { param: 'Min AG Score', section: 'tokenDetails' },
                 { param: 'Min Buy Ratio %', section: 'risk' },
                 { param: 'Max Bundled %', section: 'risk' },
-                { param: 'Min TTC (sec)', section: 'advanced' },
+                // { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
                 { param: 'Max Drained Count', section: 'risk' },
@@ -4715,7 +4715,7 @@
             },
             advanced: {
                 sectionTitle: 'Advanced',
-                params: ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
+                params: [/* 'Min TTC (sec)', 'Max TTC (sec)', */ 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal']
             },
             time: {
                 sectionTitle: 'Time',
@@ -6840,8 +6840,8 @@
 
         const advancedFields = [
             ['Max Liquidity %', config['Max Liquidity %']],
-            ['Min TTC (sec)', config['Min TTC (sec)']],
-            ['Max TTC (sec)', config['Max TTC (sec)']],
+            // ['Min TTC (sec)', config['Min TTC (sec)']],
+            // ['Max TTC (sec)', config['Max TTC (sec)']],
             ['Min Win Pred %', config['Min Win Pred %']]
             ];
 
@@ -6941,7 +6941,7 @@
                     'Token Details': ['Min AG Score', 'Min Token Age (sec)', 'Max Token Age (sec)', 'Min Deployer Age (min)'],
                     'Wallets': ['Min Unique Wallets', 'Max Unique Wallets', 'Min KYC Wallets', 'Max KYC Wallets', 'Min Dormant Wallets', 'Max Dormant Wallets', 'Min Holders', 'Max Holders', 'Min Top Holders %', 'Max Top Holders %', 'Min Convinced Wallets'],
                     'Risk': ['Min Bundled %', 'Max Bundled %', 'Min Deployer Balance (SOL)', 'Max Deployer Balance (SOL)', 'Min Buy Ratio %', 'Max Buy Ratio %', 'Min Vol MCAP %', 'Max Vol MCAP %', 'Max Drained %', 'Max Drained Count', 'Description', 'Fresh Deployer', 'Skip If No KYC/CEX Funding'],
-                    'Advanced': ['Min TTC (sec)', 'Max TTC (sec)', 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
+                    'Advanced': [/* 'Min TTC (sec)', 'Max TTC (sec)', */ 'Max Liquidity %', 'Min Win Pred %', 'Has Buy Signal'],
                     'Time': ['Start Hour', 'Start Minute', 'End Hour', 'End Minute']
                 };
                 

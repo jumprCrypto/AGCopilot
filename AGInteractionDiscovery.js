@@ -100,8 +100,14 @@
     }
 
     // Main interaction discovery function
-    async function runInteractionDiscovery() {
+    async function runInteractionDiscovery(options = {}) {
+        const {
+            maxParameters = 8,  // Reduced from 12 (8 choose 2 = 28 pairs instead of 66)
+            gridSize = 4        // Reduced from 5 (4×4 = 16 configs vs 25)
+        } = options;
+        
         console.log('%c🧬 Parameter Interaction Discovery Started', 'color: purple; font-weight: bold;');
+        console.log(`Settings: ${maxParameters} parameters, ${gridSize}×${gridSize} grid per pair`);
         
         if (typeof window.updateStatus === 'function') {
             window.updateStatus('🧬 Discovering parameter interactions...');
@@ -109,10 +115,8 @@
         
         const baseConfig = await window.getCurrentConfiguration();
         const PARAM_RULES = window.PARAM_RULES || {};
-        const parameters = Object.keys(PARAM_RULES).slice(0, 12); // Test top 12 parameters
+        const parameters = Object.keys(PARAM_RULES).slice(0, maxParameters);
         const interactions = [];
-        
-        console.log(`Testing ${parameters.length} parameters for interactions...`);
         
         let totalTests = 0;
         for (let i = 0; i < parameters.length; i++) {
@@ -121,31 +125,45 @@
             }
         }
         
-        console.log(`Total interaction pairs to test: ${totalTests}`);
+        const totalConfigs = totalTests * (gridSize * gridSize);
+        console.log(`Testing ${parameters.length} parameters for interactions...`);
+        console.log(`Total interaction pairs: ${totalTests}, Total configs: ${totalConfigs}`);
         
         let currentTest = 0;
+        const startTime = Date.now();
         
         for (let i = 0; i < parameters.length; i++) {
-            if (window.STOPPED) break;
+            if (window.STOPPED) {
+                console.log('🛑 Interaction discovery stopped by user');
+                break;
+            }
             
             const param1 = parameters[i];
             const section1 = findParameterSection(param1);
             
             for (let j = i + 1; j < parameters.length; j++) {
-                if (window.STOPPED) break;
+                if (window.STOPPED) {
+                    console.log('🛑 Interaction discovery stopped by user');
+                    break;
+                }
                 
                 currentTest++;
                 const param2 = parameters[j];
                 const section2 = findParameterSection(param2);
                 
-                if (typeof window.updateStatus === 'function') {
-                    window.updateStatus(`🧬 Testing interaction ${currentTest}/${totalTests}: ${param1} × ${param2}`);
-                }
-                console.log(`\n🔍 Testing ${param1} × ${param2}`);
+                const progress = ((currentTest / totalTests) * 100).toFixed(1);
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+                const estimatedTotal = (elapsed / currentTest) * totalTests;
+                const remaining = Math.max(0, estimatedTotal - elapsed);
                 
-                // Generate test grid (5x5 = 25 configs per pair)
-                const values1 = window.generateTestValuesFromRules(param1).slice(0, 5);
-                const values2 = window.generateTestValuesFromRules(param2).slice(0, 5);
+                if (typeof window.updateStatus === 'function') {
+                    window.updateStatus(`🧬 Testing ${currentTest}/${totalTests} (${progress}%) - ${remaining.toFixed(0)}s remaining`);
+                }
+                console.log(`\n🔍 [${currentTest}/${totalTests}] ${param1} × ${param2}`);
+                
+                // Generate test grid (configurable size)
+                const values1 = window.generateTestValuesFromRules(param1).slice(0, gridSize);
+                const values2 = window.generateTestValuesFromRules(param2).slice(0, gridSize);
                 
                 const configs = [];
                 for (const v1 of values1) {
@@ -160,7 +178,7 @@
                 console.log(`  Generated ${configs.length} test configurations`);
                 
                 // Batch test all combinations
-                const results = await window.backtesterAPI.fetchResultsBatch(configs, 25);
+                const results = await window.backtesterAPI.fetchResultsBatch(configs, gridSize * gridSize);
                 
                 // Calculate interaction strength
                 const interactionStrength = calculateInteractionStrength(results, values1, values2);
@@ -176,6 +194,8 @@
                     });
                     
                     console.log(`  ✨ Strong interaction detected! Strength: ${interactionStrength.toFixed(3)}`);
+                } else {
+                    console.log(`  No significant interaction (${interactionStrength.toFixed(3)})`);
                 }
             }
         }
@@ -183,7 +203,9 @@
         // Sort by interaction strength
         interactions.sort((a, b) => b.strength - a.strength);
         
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
         console.log('\n' + '%c🎯 Interaction Discovery Complete', 'color: green; font-weight: bold;');
+        console.log(`Completed in ${totalTime}s`);
         console.log(`Found ${interactions.length} significant parameter interactions:`);
         
         interactions.forEach((int, idx) => {
