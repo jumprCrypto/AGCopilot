@@ -23,6 +23,8 @@
         BATCH_SIZE: 50,                   
         DELAY_BETWEEN_BATCHES_MS: 5000,
         RATE_LIMIT_BACKOFF_MS: 300000,      // 5 minute backoff on 429 errors
+        USE_BATCH_IMPORT: true,            // Use batch import to local API (10-50x faster)
+        DISCOVERY_PAGE_SIZE: 5000,        // Larger pages for faster token discovery
     };
 
     // ========================================
@@ -36,7 +38,7 @@
                 tokensDiscovered: 0,
                 tokensProcessed: 0,
                 signalsImported: 0,
-                tokensSkipped: 0,
+                signalsSkipped: 0,
                 errors: 0,
                 rateLimitHits: 0,
                 proactiveBackoffs: 0,
@@ -155,6 +157,24 @@
             return await response.json();
         }
 
+        async postBatchToLocalAPI(endpoint, dataArray) {
+            const apiUrl = document.getElementById('sync-api-url')?.value || SYNC_CONFIG.LOCAL_API_URL;
+            const response = await fetch(`${apiUrl}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(dataArray),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Local API error: ${response.status} - ${errorText}`);
+            }
+
+            return await response.json();
+        }
+
         async discoverTokens(fromDate, toDate) {
             this.log(`Discovering tokens from ${fromDate.toISOString()} to ${toDate.toISOString()}...`, 'progress');
             
@@ -162,8 +182,9 @@
             const toTimestamp = Math.floor(toDate.getTime() / 1000);
             
             let page = 1;
-            const pageSize = 5000;  // AG API supports up to 5000 results per page
+            const pageSize = SYNC_CONFIG.DISCOVERY_PAGE_SIZE;
             let hasMore = true;
+            let totalSwapsProcessed = 0;
 
             while (hasMore && !this.stopped) {
                 try {
@@ -177,14 +198,16 @@
                     });
 
                     if (data.swaps && data.swaps.length > 0) {
+                        // Process all swaps at once with Set for O(1) lookups
                         data.swaps.forEach(swap => {
                             if (swap.tokenAddress) {
                                 this.uniqueTokens.add(swap.tokenAddress);
                             }
                         });
-
+                        
+                        totalSwapsProcessed += data.swaps.length;
                         this.stats.tokensDiscovered = this.uniqueTokens.size;
-                        this.log(`Discovered ${this.uniqueTokens.size} unique tokens so far...`, 'info');
+                        this.log(`Page ${page}: ${data.swaps.length} swaps, ${this.uniqueTokens.size} unique tokens found (${totalSwapsProcessed} swaps processed)`, 'info');
 
                         hasMore = data.swaps.length === pageSize;
                         page++;
@@ -200,7 +223,7 @@
                 }
             }
 
-            this.log(`Token discovery complete! Found ${this.uniqueTokens.size} unique tokens`, 'success');
+            this.log(`Token discovery complete! Found ${this.uniqueTokens.size} unique tokens from ${totalSwapsProcessed} swaps`, 'success');
             return Array.from(this.uniqueTokens);
         }
 
@@ -243,33 +266,54 @@
                     return 0;
                 }
 
+                // Prepare all signals as a batch
+                const signalBatch = filteredSwaps.map(swap => ({
+                    tokenAddress: tokenAddress,
+                    symbol: swap.symbol || 'UNKNOWN',
+                    name: swap.token || swap.name || null,
+                    timestamp: swap.timestamp,
+                    triggerMode: swap.triggerMode || 0,
+                    signalMcap: swap.signalMcap,
+                    currentMcap: swap.currentMcap,
+                    athMcap: swap.athMcap,
+                    athTime: swap.athTime,
+                    winPredPercent: swap.winPredPercent,
+                    criteria: swap.criteria || {},
+                    sourceFile: 'AG_API_Sync_Browser',
+                }));
+
+                // Use batch import if enabled (10-50x faster)
+                if (SYNC_CONFIG.USE_BATCH_IMPORT) {
+                    try {
+                        // Send entire batch in ONE request to local API
+                        const result = await this.postBatchToLocalAPI('/api/signals/import-batch', signalBatch);
+                        const imported = result.imported || 0;
+                        const skipped = result.skipped || 0;
+                        
+                        this.stats.signalsImported += imported;
+                        this.stats.signalsSkipped += skipped;
+                        
+                        return imported;
+                    } catch (error) {
+                        if (error.message.includes('404')) {
+                            // Batch endpoint doesn't exist yet, fall back to individual imports
+                            this.log(`⚠️ Batch import not available, using individual imports (slower)...`, 'warning');
+                        } else {
+                            throw error;
+                        }
+                    }
+                }
+
+                // Fallback: Import signals individually (slower)
                 let imported = 0;
                 let skipped = 0;
-
-                // Send each swap to local API
-                for (const swap of filteredSwaps) {
+                
+                for (const signalData of signalBatch) {
                     try {
-                        // Prepare signal data in the format expected by local API
-                        const signalData = {
-                            tokenAddress: tokenAddress,
-                            symbol: swap.symbol || 'UNKNOWN',
-                            name: swap.token || swap.name || null,  // AG API uses 'token' field, fallback to 'name'
-                            timestamp: swap.timestamp,
-                            triggerMode: swap.triggerMode || 0,
-                            signalMcap: swap.signalMcap,
-                            currentMcap: swap.currentMcap,
-                            athMcap: swap.athMcap,
-                            athTime: swap.athTime,
-                            winPredPercent: swap.winPredPercent,
-                            criteria: swap.criteria || {},
-                            sourceFile: 'AG_API_Sync_Browser',
-                        };
-
                         await this.postToLocalAPI('/api/signals/import', signalData);
                         imported++;
                     } catch (error) {
                         if (error.message.includes('409')) {
-                            // Duplicate - already exists
                             skipped++;
                         } else {
                             this.log(`Error importing signal: ${error.message}`, 'error');
@@ -291,22 +335,32 @@
 
         async processTokenBatch(tokens, fromDate, toDate, batchNumber) {
             this.stats.currentBatch = batchNumber;
+            const batchStartTime = Date.now();
             this.log(`Processing batch ${batchNumber} (${tokens.length} tokens)...`, 'progress');
 
             for (let i = 0; i < tokens.length && !this.stopped; i++) {
                 const token = tokens[i];
+                const tokenStartTime = Date.now();
                 this.stats.tokensProcessed++;
 
                 const imported = await this.syncTokenData(token, fromDate, toDate);
+                
+                const tokenTime = Date.now() - tokenStartTime;
+                const avgTimePerToken = (Date.now() - this.stats.startTime) / this.stats.tokensProcessed;
+                const remainingTokens = this.stats.tokensDiscovered - this.stats.tokensProcessed;
+                const estimatedTimeRemaining = remainingTokens * avgTimePerToken;
                 
                 const rateLimitStatus = this.rateLimitInfo.remaining !== null 
                     ? ` | RL: ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}`
                     : '';
                 
+                const etaMinutes = Math.ceil(estimatedTimeRemaining / 60000);
+                
                 this.log(
                     `[${this.stats.tokensProcessed}/${this.stats.tokensDiscovered}] ` +
-                    `Token ${token.slice(0, 8)}... - Imported ${imported} signals ` +
-                    `(Total: ${this.stats.signalsImported} imported, ${this.stats.signalsSkipped} skipped, ${this.stats.errors} errors${rateLimitStatus})`,
+                    `Token ${token.slice(0, 8)}... - ${imported} signals (${tokenTime}ms) ` +
+                    `| Total: ${this.stats.signalsImported} imported, ${this.stats.signalsSkipped} skipped` +
+                    `${rateLimitStatus} | ETA: ${etaMinutes}min`,
                     'info'
                 );
 
@@ -315,8 +369,11 @@
                 }
             }
 
+            const batchTime = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+            this.log(`Batch ${batchNumber} complete in ${batchTime}s. Avg: ${(batchTime / tokens.length).toFixed(2)}s/token`, 'info');
+
             if (batchNumber > 1 && !this.stopped) {
-                this.log(`Batch ${batchNumber} complete. Pausing before next batch...`, 'info');
+                this.log(`Pausing before next batch...`, 'info');
                 await this.delay(SYNC_CONFIG.DELAY_BETWEEN_BATCHES_MS);
             }
         }
