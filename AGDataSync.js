@@ -97,7 +97,7 @@
                 this.rateLimitInfo.reset = parseInt(rateLimitHeaders.reset);
 
                 // Proactive backoff if we're running low on requests
-                if (this.rateLimitInfo.remaining <= 5 && this.rateLimitInfo.remaining > 0) {
+                if (this.rateLimitInfo.remaining <= 7 && this.rateLimitInfo.remaining >= 0) {
                     const now = Math.floor(Date.now() / 1000);
                     const secondsUntilReset = this.rateLimitInfo.reset - now;
                     
