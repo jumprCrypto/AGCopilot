@@ -4449,6 +4449,37 @@
     // Latin Hypercube Sampling and Simulated Annealing
     // ========================================
     
+    // Helper function to apply bundled constraints if enabled
+    function applyBundledConstraints(param, originalRules) {
+        if (!originalRules) return originalRules;
+        
+        // Check if low bundled constraint is enabled
+        const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
+        if (!lowBundledCheckbox || !lowBundledCheckbox.checked) {
+            return originalRules;
+        }
+        
+        // Apply constraints to bundled parameters
+        if (param === 'Min Bundled %') {
+            return {
+                ...originalRules,
+                min: 0,
+                max: Math.min(5, originalRules.max)
+            };
+        } else if (param === 'Max Bundled %') {
+            return {
+                ...originalRules,
+                min: originalRules.min,
+                max: Math.min(35, originalRules.max)
+            };
+        }
+        
+        return originalRules;
+    }
+    
+    // Make applyBundledConstraints globally available
+    window.applyBundledConstraints = applyBundledConstraints;
+    
     // Latin Hypercube Sampler for better parameter space exploration
     class LatinHypercubeSampler {
         constructor() {
@@ -4464,26 +4495,8 @@
                 for (const param of parameters) {
                     const originalRules = PARAM_RULES[param];
                     if (originalRules) {
-                        // Check if this is being called from an optimizer context that has bundled constraints
-                        let rules = originalRules;
-                        
-                        // Apply bundled constraints if the UI checkbox is checked
-                        const lowBundledCheckbox = document.getElementById('low-bundled-constraint');
-                        if (lowBundledCheckbox && lowBundledCheckbox.checked) {
-                            if (param === 'Min Bundled %') {
-                                rules = {
-                                    ...originalRules,
-                                    min: 0,
-                                    max: Math.min(5, originalRules.max)
-                                };
-                            } else if (param === 'Max Bundled %') {
-                                rules = {
-                                    ...originalRules,
-                                    min: originalRules.min,
-                                    max: Math.min(35, originalRules.max)
-                                };
-                            }
-                        }
+                        // Apply bundled constraints if enabled
+                        const rules = applyBundledConstraints(param, originalRules);
                         
                         if (rules.type === 'string') {
                             sample[param] = Math.floor(Math.random() * 10 + 1).toString();
@@ -4518,6 +4531,18 @@
             this.initialTemperature = 100;
             this.finalTemperature = 0.1;
             this.coolingRate = 0.95;
+        }
+        
+        getSection(param) {
+            // Determine which section a parameter belongs to
+            if (param.includes('MCAP') || param.includes('Market Depth')) return 'basic';
+            if (param.includes('Token Age') || param.includes('Deployer Age') || param.includes('AG Score')) return 'tokenDetails';
+            if (param.includes('Wallet') || param.includes('Holder') || param.includes('Convinced')) return 'wallets';
+            if (param.includes('Bundled') || param.includes('Deployer Balance') || param.includes('Buy Ratio') || 
+                param.includes('Vol MCAP') || param.includes('Drained') || param.includes('Description') || 
+                param.includes('Fresh Deployer') || param.includes('Skip If')) return 'risk';
+            if (param.includes('TTC') || param.includes('Liquidity') || param.includes('Win Pred') || param.includes('Buy Signal')) return 'advanced';
+            return 'basic';
         }
         
         async runSimulatedAnnealing() {
@@ -4570,11 +4595,11 @@
             
             for (let i = 0; i < numModifications; i++) {
                 const param = paramList[Math.floor(Math.random() * paramList.length)];
-                const section = this.optimizer.getSection(param);
+                const section = this.getSection(param);
                 const originalRules = PARAM_RULES[param];
                 
                 // Apply bundled constraints if enabled
-                const rules = this.optimizer.applyBundledConstraints(param, originalRules);
+                const rules = applyBundledConstraints(param, originalRules);
                 
                 if (rules && neighbor[section]) {
                     if (rules.type === 'string') {
