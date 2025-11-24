@@ -70,6 +70,62 @@
         }
 
         async fetchFromAG(endpoint, params = {}) {
+            // Track if we did a proactive backoff (to skip stale rate limit headers after wait)
+            let didProactiveBackoff = false;
+            
+            // Proactive backoff BEFORE making request if we know rate limit is low or exhausted
+            if (this.rateLimitInfo.remaining !== null && this.rateLimitInfo.remaining <= 3 && this.rateLimitInfo.reset) {
+                const now = Math.floor(Date.now() / 1000);
+                const secondsUntilReset = this.rateLimitInfo.reset - now;
+                
+                this.log(
+                    `🔍 Rate limit check: remaining=${this.rateLimitInfo.remaining}, ` +
+                    `reset=${this.rateLimitInfo.reset}, now=${now}, secondsUntilReset=${secondsUntilReset}`,
+                    'info'
+                );
+                
+                // If reset time is in the past, wait a bit longer to be safe
+                // AG API reset might not be instant, so add buffer
+                if (secondsUntilReset <= 10) {
+                    const bufferWait = Math.max(15 - secondsUntilReset, 5); // At least 5s buffer after reset
+                    this.stats.proactiveBackoffs++;
+                    const waitTime = bufferWait * 1000;
+                    
+                    if (secondsUntilReset <= 0) {
+                        this.log(
+                            `⚠️ Rate limit reset was ${-secondsUntilReset}s ago. ` +
+                            `Waiting ${bufferWait}s buffer for API to fully reset...`,
+                            'warning'
+                        );
+                    } else {
+                        this.log(
+                            `⚠️ Rate limit at ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}. ` +
+                            `Waiting ${secondsUntilReset + bufferWait}s (reset + buffer)...`,
+                            'warning'
+                        );
+                    }
+                    
+                    await this.delay(waitTime);
+                    this.log('✅ Resuming after rate limit wait...', 'info');
+                    didProactiveBackoff = true;
+                    this.rateLimitInfo.remaining = this.rateLimitInfo.limit;
+                } else if (secondsUntilReset > 0 && secondsUntilReset < 3600) {
+                    this.stats.proactiveBackoffs++;
+                    const waitTime = (secondsUntilReset + 10) * 1000; // Wait until reset + 10 second buffer
+                    this.log(
+                        `⚠️  Rate limit at ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}. ` +
+                        `Proactively waiting ${Math.ceil(waitTime / 1000)}s before next request...`,
+                        'warning'
+                    );
+                    await this.delay(waitTime);
+                    this.log('✅ Resuming after proactive rate limit wait...', 'info');
+                    didProactiveBackoff = true;
+                    this.rateLimitInfo.remaining = this.rateLimitInfo.limit;
+                } else {
+                    this.log(`❌ Rate limit reset is ${secondsUntilReset}s away (>1 hour). Skipping proactive backoff!`, 'error');
+                }
+            }
+            
             const url = new URL(`${SYNC_CONFIG.AG_API_URL}${endpoint}`);
             Object.entries(params).forEach(([key, value]) => {
                 if (value !== null && value !== undefined) {
@@ -91,28 +147,12 @@
                 reset: response.headers.get('x-ratelimit-reset')
             };
 
-            if (rateLimitHeaders.limit) {
+            // Only update rate limit tracking if we didn't just do a proactive backoff
+            // (headers after backoff are stale and show pre-reset values)
+            if (rateLimitHeaders.limit && !didProactiveBackoff) {
                 this.rateLimitInfo.limit = parseInt(rateLimitHeaders.limit);
                 this.rateLimitInfo.remaining = parseInt(rateLimitHeaders.remaining);
                 this.rateLimitInfo.reset = parseInt(rateLimitHeaders.reset);
-
-                // Proactive backoff if we're running low on requests
-                if (this.rateLimitInfo.remaining <= 7 && this.rateLimitInfo.remaining >= 0) {
-                    const now = Math.floor(Date.now() / 1000);
-                    const secondsUntilReset = this.rateLimitInfo.reset - now;
-                    
-                    if (secondsUntilReset > 0 && secondsUntilReset < 300) { // Only if reset is within 5 minutes
-                        this.stats.proactiveBackoffs++;
-                        const waitTime = (secondsUntilReset + 5) * 1000; // Wait until reset + 5 seconds buffer
-                        this.log(
-                            `⚠️  Rate limit low (${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit} remaining). ` +
-                            `Proactively waiting ${Math.ceil(waitTime / 1000)}s until reset...`,
-                            'warning'
-                        );
-                        await this.delay(waitTime);
-                        this.log('Resuming after proactive rate limit wait...', 'info');
-                    }
-                }
             }
 
             if (!response.ok) {
