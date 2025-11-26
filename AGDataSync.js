@@ -78,12 +78,6 @@
                 const now = Math.floor(Date.now() / 1000);
                 const secondsUntilReset = this.rateLimitInfo.reset - now;
                 
-                this.log(
-                    `🔍 Rate limit check: remaining=${this.rateLimitInfo.remaining}, ` +
-                    `reset=${this.rateLimitInfo.reset}, now=${now}, secondsUntilReset=${secondsUntilReset}`,
-                    'info'
-                );
-                
                 // If reset time is in the past, wait a bit longer to be safe
                 // AG API reset might not be instant, so add buffer
                 if (secondsUntilReset <= 10) {
@@ -218,9 +212,6 @@
         async discoverTokens(fromDate, toDate) {
             this.log(`Discovering tokens from ${fromDate.toISOString()} to ${toDate.toISOString()}...`, 'progress');
             
-            const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
-            const toTimestamp = Math.floor(toDate.getTime() / 1000);
-            
             let page = 1;
             const pageSize = SYNC_CONFIG.DISCOVERY_PAGE_SIZE;
             let hasMore = true;
@@ -273,36 +264,19 @@
                 const data = await this.fetchFromAG(`/swaps/by-token/${tokenAddress}`);
 
                 if (!data.swaps || data.swaps.length === 0) {
-                    this.log(`No swaps found for token ${tokenAddress.slice(0, 8)}...`, 'warning');
                     return 0;
-                }
-
-                // DEBUG: Log first swap to see structure
-                if (data.swaps.length > 0 && this.stats.tokensProcessed === 1) {
-                    this.log(`DEBUG - First swap structure: ${JSON.stringify(Object.keys(data.swaps[0]))}`, 'info');
-                    this.log(`DEBUG - Sample timestamp value: ${data.swaps[0].timestamp}`, 'info');
                 }
 
                 // Filter swaps by date range (API returns all swaps, we filter client-side)
                 const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
                 const toTimestamp = Math.floor(toDate.getTime() / 1000);
                 
-                // Log before filtering
-                this.log(`DEBUG - Token ${tokenAddress.slice(0, 8)}: ${data.swaps.length} swaps before filter (range: ${fromTimestamp} to ${toTimestamp})`, 'info');
-                
                 const filteredSwaps = data.swaps.filter(swap => {
                     const swapTime = swap.timestamp;
-                    const inRange = swapTime >= fromTimestamp && swapTime <= toTimestamp;
-                    if (!inRange && this.stats.tokensProcessed <= 2) {
-                        this.log(`DEBUG - Swap ${swapTime} outside range [${fromTimestamp}, ${toTimestamp}]`, 'info');
-                    }
-                    return inRange;
+                    return swapTime >= fromTimestamp && swapTime <= toTimestamp;
                 });
-                
-                this.log(`DEBUG - Token ${tokenAddress.slice(0, 8)}: ${filteredSwaps.length} swaps after filter`, 'info');
 
                 if (filteredSwaps.length === 0) {
-                    this.log(`No swaps in date range for token ${tokenAddress.slice(0, 8)}...`, 'warning');
                     return 0;
                 }
 
