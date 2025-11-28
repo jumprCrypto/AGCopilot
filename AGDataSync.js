@@ -78,46 +78,45 @@
                 const now = Math.floor(Date.now() / 1000);
                 const secondsUntilReset = this.rateLimitInfo.reset - now;
                 
-                // If reset time is in the past, wait a bit longer to be safe
-                // AG API reset might not be instant, so add buffer
-                if (secondsUntilReset <= 10) {
-                    const bufferWait = Math.max(15 - secondsUntilReset, 5); // At least 5s buffer after reset
-                    this.stats.proactiveBackoffs++;
-                    const waitTime = bufferWait * 1000;
-                    
-                    if (secondsUntilReset <= 0) {
-                        this.log(
-                            `⚠️ Rate limit reset was ${-secondsUntilReset}s ago. ` +
-                            `Waiting ${bufferWait}s buffer for API to fully reset...`,
-                            'warning'
-                        );
-                    } else {
-                        this.log(
-                            `⚠️ Rate limit at ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}. ` +
-                            `Waiting ${secondsUntilReset + bufferWait}s (reset + buffer)...`,
-                            'warning'
-                        );
-                    }
-                    
-                    await this.delay(waitTime);
-                    this.log('✅ Resuming after rate limit wait...', 'info');
-                    didProactiveBackoff = true;
-                    this.rateLimitInfo.remaining = this.rateLimitInfo.limit;
-                } else if (secondsUntilReset > 0 && secondsUntilReset < 3600) {
-                    this.stats.proactiveBackoffs++;
-                    const waitTime = (secondsUntilReset + 10) * 1000; // Wait until reset + 10 second buffer
-                    this.log(
-                        `⚠️  Rate limit at ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}. ` +
-                        `Proactively waiting ${Math.ceil(waitTime / 1000)}s before next request...`,
-                        'warning'
-                    );
-                    await this.delay(waitTime);
-                    this.log('✅ Resuming after proactive rate limit wait...', 'info');
-                    didProactiveBackoff = true;
-                    this.rateLimitInfo.remaining = this.rateLimitInfo.limit;
+                // ALWAYS wait at least 30 seconds minimum for safety
+                const MINIMUM_WAIT_SECONDS = 30;
+                const BUFFER_SECONDS = 10;
+                
+                let waitSeconds;
+                let waitReason;
+                
+                if (secondsUntilReset <= 0) {
+                    // Reset time is in the past - wait minimum time + buffer
+                    waitSeconds = MINIMUM_WAIT_SECONDS + BUFFER_SECONDS;
+                    waitReason = `Reset was ${-secondsUntilReset}s ago. Waiting ${waitSeconds}s (minimum + buffer) for safe API reset`;
+                } else if (secondsUntilReset < MINIMUM_WAIT_SECONDS) {
+                    // Reset is soon but less than minimum - wait minimum time + buffer
+                    waitSeconds = MINIMUM_WAIT_SECONDS + BUFFER_SECONDS;
+                    waitReason = `Reset in ${secondsUntilReset}s. Waiting ${waitSeconds}s (minimum + buffer) to be extra safe`;
+                } else if (secondsUntilReset < 3600) {
+                    // Reset is further out - respect the reset time + buffer
+                    waitSeconds = secondsUntilReset + BUFFER_SECONDS;
+                    waitReason = `Reset in ${secondsUntilReset}s. Waiting until reset + ${BUFFER_SECONDS}s buffer`;
                 } else {
-                    this.log(`❌ Rate limit reset is ${secondsUntilReset}s away (>1 hour). Skipping proactive backoff!`, 'error');
+                    // Reset is more than 1 hour away - something is wrong, use minimum wait
+                    waitSeconds = MINIMUM_WAIT_SECONDS + BUFFER_SECONDS;
+                    waitReason = `Reset is ${secondsUntilReset}s away (>1 hour). Using minimum ${waitSeconds}s wait`;
+                    this.log(`⚠️ Unusual reset time detected (>1 hour in future)`, 'warning');
                 }
+                
+                this.stats.proactiveBackoffs++;
+                const waitTime = waitSeconds * 1000;
+                
+                this.log(
+                    `⚠️ Rate limit at ${this.rateLimitInfo.remaining}/${this.rateLimitInfo.limit}. ` +
+                    `${waitReason}...`,
+                    'warning'
+                );
+                
+                await this.delay(waitTime);
+                this.log('✅ Resuming after rate limit wait...', 'info');
+                didProactiveBackoff = true;
+                this.rateLimitInfo.remaining = this.rateLimitInfo.limit;
             }
             
             const url = new URL(`${SYNC_CONFIG.AG_API_URL}${endpoint}`);
