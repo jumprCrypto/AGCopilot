@@ -2674,6 +2674,19 @@
         
         try {
             console.log('%c🔬 Starting Parameter Impact Discovery', 'color: purple; font-size: 16px; font-weight: bold;');
+            
+            // Send cookie to AGCopilotAPI for auto-import service
+            try {
+                const apiUrl = document.getElementById('sync-api-url')?.value || 'http://localhost:5000';
+                const cookie = document.cookie;
+                if (cookie) {
+                    const encodedCookie = encodeURIComponent(cookie);
+                    await fetch(`${apiUrl}/api/cleanup/set-cookie?cookie=${encodedCookie}`, { method: 'POST' });
+                    console.log('🔑 Cookie sent to AGCopilotAPI for auto-import');
+                }
+            } catch (e) {
+                // Silently ignore - AGCopilotAPI may not be running
+            }
             // Only initialize tracker if not already running (avoid resetting chained runs)
             if (!window.optimizationTracker.isRunning) {
                 window.optimizationTracker.startOptimization(1); // Single run for parameter discovery

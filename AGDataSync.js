@@ -16,7 +16,7 @@
     // 🎯 DATA SYNC CONFIGURATION
     // ========================================
     const SYNC_CONFIG = {
-        LOCAL_API_URL: 'http://localhost:5000',
+        LOCAL_API_URL: 'http://192.168.50.141:5000',
         AG_API_URL: 'https://backtester.alphagardeners.xyz/api',
         DELAY_BETWEEN_REQUESTS_MS: 500,
         DELAY_BETWEEN_TOKENS_MS: 350,      // Increased from 250ms to avoid 429s
@@ -400,6 +400,20 @@
             this.log(`Date Range: ${fromDate.toISOString()} to ${toDate.toISOString()}`, 'info');
             this.log(`Local API: ${SYNC_CONFIG.LOCAL_API_URL}`, 'info');
             this.log('='.repeat(60), 'info');
+
+            // Send cookie to AGCopilotAPI for auto-import service
+            try {
+                const apiUrl = document.getElementById('sync-api-url')?.value || SYNC_CONFIG.LOCAL_API_URL;
+                const cookie = document.cookie;
+                if (cookie) {
+                    const encodedCookie = encodeURIComponent(cookie);
+                    await fetch(`${apiUrl}/api/cleanup/set-cookie?cookie=${encodedCookie}`, { method: 'POST' });
+                    this.log('🔑 Cookie sent to AGCopilotAPI for auto-import', 'success');
+                }
+            } catch (e) {
+                // Silently ignore - AGCopilotAPI may not be running
+                this.log('⚠️ Could not send cookie to AGCopilotAPI (may not be running)', 'warning');
+            }
 
             try {
                 // Phase 1: Discover all unique tokens
