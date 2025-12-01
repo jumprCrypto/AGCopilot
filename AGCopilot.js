@@ -131,7 +131,7 @@
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
     
-    // Make PARAM_RULES globally available for Base Config Builder
+    // Make PARAM_RULES globally available for external modules
     window.PARAM_RULES = PARAM_RULES;
 
     // Complete config template for backward compatibility (with Description and Fresh Deployer)
@@ -2573,7 +2573,7 @@
     // Initialize the API client
     const backtesterAPI = new BacktesterAPI();
     
-    // Make backtesterAPI globally available for Base Config Builder
+    // Make backtesterAPI globally available for external modules
     window.backtesterAPI = backtesterAPI;
 
     // ========================================
@@ -5441,8 +5441,8 @@
                     <button class="tab-button active" onclick="switchTab('config-tab')" id="config-tab-btn">
                         ⚙️ Optim
                     </button>
-                    <button class="tab-button" onclick="switchTab('base-config-tab')" id="base-config-tab-btn">
-                        🏗️ Base Builder
+                    <button class="tab-button" onclick="switchTab('meta-finder-tab')" id="meta-finder-tab-btn">
+                        🎯 Meta
                     </button>
                     <button class="tab-button" onclick="switchTab('signal-analysis-tab')" id="signal-analysis-tab-btn">
                         🔍 Analysis
@@ -5472,9 +5472,9 @@
                     </div>
                 </div>
 
-                <!-- Base Config Builder Tab -->
-                <div id="base-config-tab" class="tab-content">
-                    <div id="base-config-loading" style="
+                <!-- Meta Finder Tab -->
+                <div id="meta-finder-tab" class="tab-content">
+                    <div id="meta-finder-loading" style="
                         text-align: center; 
                         padding: 40px 20px;
                         display: flex;
@@ -5484,8 +5484,8 @@
                         min-height: 200px;
                     ">
                         <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
-                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Base Config Builder...</div>
-                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Meta Finder...</div>
+                        <div style="color: #718096; font-size: 11px;">Discovering winning archetypes</div>
                     </div>
                 </div>
 
@@ -5621,20 +5621,6 @@
                                     🔬 Parameter Discovery
                                 </button>
                                 
-                                <button id="interaction-discovery" style="
-                                    padding: 10px;
-                                    background: linear-gradient(135deg, #dd6b20 0%, #c05621 100%);
-                                    border: none;
-                                    border-radius: 6px;
-                                    color: white;
-                                    font-weight: 500;
-                                    cursor: pointer;
-                                    font-size: 12px;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
-                                   title="Find parameter combinations that work better together (uses batch processing)">
-                                    🧬 Interactions
-                                </button>
                             </div>
                             
                             <!-- Third Row for Rate Limit Button -->
@@ -5658,20 +5644,9 @@
                                 </button>
                             </div>
                             
-                            <!-- Interaction Results Display -->
-                            <div id="interaction-results" style="
-                                margin-top: 12px;
-                                padding: 12px;
-                                background: rgba(138, 43, 226, 0.05);
-                                border: 1px solid rgba(138, 43, 226, 0.2);
-                                border-radius: 6px;
-                                font-size: 11px;
-                                display: none;
-                            "></div>
-                            
-                            <!-- Base Config Builder Action Buttons (shown when base config is active) -->
-                            <div id="base-config-actions" style="display: none; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
-                                <button id="apply-base-config" style="
+                            <!-- Meta Finder Action Buttons (shown when meta finder results are available) -->
+                            <div id="meta-finder-actions" style="display: none; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
+                                <button id="apply-meta-config" style="
                                     padding: 10px;
                                     background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
                                     border: none;
@@ -5682,11 +5657,11 @@
                                     font-size: 12px;
                                     transition: all 0.2s;
                                 " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
-                                   onclick="window.applyBaseConfig && window.applyBaseConfig()">
+                                   onclick="window.applyMetaConfig && window.applyMetaConfig()">
                                     ⚙️ Apply Config
                                 </button>
                                 
-                                <button id="copy-base-config" style="
+                                <button id="copy-meta-config" style="
                                     padding: 10px;
                                     background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
                                     border: none;
@@ -5697,7 +5672,7 @@
                                     font-size: 12px;
                                     transition: all 0.2s;
                                 " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'"
-                                   onclick="window.copyBaseConfig && window.copyBaseConfig()">
+                                   onclick="window.copyMetaConfig && window.copyMetaConfig()">
                                     📋 Copy Config
                                 </button>
                             </div>   
@@ -5734,8 +5709,8 @@
             }
             
             // Auto-load external scripts when tabs are clicked
-            if (activeTabId === 'base-config-tab') {
-                loadBaseConfigBuilderInTab();
+            if (activeTabId === 'meta-finder-tab') {
+                loadMetaFinderInTab();
             } else if (activeTabId === 'signal-analysis-tab') {
                 loadSignalAnalysisInTab();
             } else if (activeTabId === 'config-tab') {
@@ -6142,14 +6117,14 @@
     }
 
     // ========================================
-    // �️ BASE CONFIG BUILDER TAB HANDLER  
+    // 🎯 META FINDER TAB HANDLER  
     // ========================================
     
-    // Load Base Config Builder in the tab (with loading state management)
-    let baseConfigBuilderLoaded = false;
+    // Load tabs with loading state management
     let signalAnalysisLoaded = false;
     let optimizationLoaded = false;
     let dataSyncLoaded = false;
+    let metaFinderLoaded = false;
     
     async function loadSignalAnalysisInTab() {
         // Don't reload if already loaded
@@ -6415,31 +6390,31 @@
     
     // Offline backtester removed - now using local backtester API directly
     
-    async function loadBaseConfigBuilderInTab() {
+    async function loadMetaFinderInTab() {
         // Don't reload if already loaded
-        if (baseConfigBuilderLoaded) {
+        if (metaFinderLoaded) {
             return;
         }
         
-        const tabContent = document.getElementById('base-config-tab');
-        const loadingDiv = document.getElementById('base-config-loading');
+        const tabContent = document.getElementById('meta-finder-tab');
+        const loadingDiv = document.getElementById('meta-finder-loading');
         
         try {
             // Show loading state if not already shown
             if (loadingDiv) {
                 loadingDiv.innerHTML = `
                     <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
-                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Base Config Builder...</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Meta Finder...</div>
                     <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
                 `;
             }
             
-            // Load Base Config Builder script from GitHub
-            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGBaseConfigBuilder.js';
+            // Load Meta Finder script from GitHub
+            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGMetaFinder.js';
             const response = await fetch(scriptUrl);
             
             if (!response.ok) {
-                throw new Error(`Failed to load Base Config Builder: HTTP ${response.status}`);
+                throw new Error(`Failed to load Meta Finder: HTTP ${response.status}`);
             }
             
             const scriptContent = await response.text();
@@ -6447,11 +6422,11 @@
             // Execute the script - it will automatically detect tab integration
             eval(scriptContent);
             
-            baseConfigBuilderLoaded = true;
-            console.log('✅ Base Config Builder loaded successfully in tab!');
+            metaFinderLoaded = true;
+            console.log('✅ Meta Finder loaded successfully in tab!');
             
         } catch (error) {
-            console.error('Base Config Builder loading error:', error);
+            console.error('Meta Finder loading error:', error);
             
             // Show error state in tab
             if (tabContent) {
@@ -6466,9 +6441,9 @@
                         min-height: 200px;
                     ">
                         <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
-                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Base Config Builder</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Meta Finder</div>
                         <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
-                        <button onclick="window.retryLoadBaseConfig()" style="
+                        <button onclick="window.retryLoadMetaFinder()" style="
                             padding: 8px 16px;
                             background: rgba(139, 92, 246, 0.2);
                             border: 1px solid rgba(139, 92, 246, 0.4);
@@ -6489,12 +6464,12 @@
     }
     
     // Global retry function for error recovery
-    window.retryLoadBaseConfig = function() {
-        baseConfigBuilderLoaded = false;
-        const tabContent = document.getElementById('base-config-tab');
+    window.retryLoadMetaFinder = function() {
+        metaFinderLoaded = false;
+        const tabContent = document.getElementById('meta-finder-tab');
         if (tabContent) {
             tabContent.innerHTML = `
-                <div id="base-config-loading" style="
+                <div id="meta-finder-loading" style="
                     text-align: center; 
                     padding: 40px 20px;
                     display: flex;
@@ -6504,12 +6479,12 @@
                     min-height: 200px;
                 ">
                     <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
-                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Base Config Builder...</div>
+                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Meta Finder...</div>
                     <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
                 </div>
             `;
         }
-        loadBaseConfigBuilderInTab();
+        loadMetaFinderInTab();
     };
     
     // Global retry function for Signal Analysis error recovery
@@ -6639,48 +6614,6 @@
         safeAddEventListener('toggle-rate-limit-btn', 'click', () => {
             toggleRateLimitingMode();
         });
-        
-        // Interaction Discovery button handler
-        safeAddEventListener('interaction-discovery', 'click', async () => {
-            try {
-                // Load interaction discovery script if not already loaded
-                if (!window.runInteractionDiscovery) {
-                    console.log('📦 Loading interaction discovery module...');
-                    updateStatus('📦 Loading interaction discovery...');
-                    
-                    // Use fetch + eval pattern (same as Signal Analysis - proven to work)
-                    const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGInteractionDiscovery.js';
-                    const response = await fetch(scriptUrl);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Failed to load: HTTP ${response.status}`);
-                    }
-                    
-                    const scriptContent = await response.text();
-                    
-                    // Execute the script
-                    eval(scriptContent);
-                    
-                    console.log('✅ Interaction discovery module loaded');
-                    
-                    if (!window.runInteractionDiscovery) {
-                        throw new Error('Module loaded but function not available');
-                    }
-                }
-                
-                // Show results div
-                const resultsDiv = document.getElementById('interaction-results');
-                if (resultsDiv) {
-                    resultsDiv.style.display = 'block';
-                }
-                
-                // Run discovery
-                await window.runInteractionDiscovery();
-            } catch (error) {
-                console.error('❌ Interaction discovery error:', error);
-                updateStatus('❌ Interaction discovery failed: ' + error.message);
-            }
-        });      
         
         // Signal Analysis event handlers - load external script
         safeAddEventListener('analyze-signals-btn', 'click', async () => {
@@ -6907,7 +6840,7 @@
     // ========================================
     // 🌍 GLOBAL EXPORTS FOR EXTERNAL SCRIPTS
     // ========================================
-    // Export functions needed by Base Config Builder and other modules
+    // Export functions needed by external modules (Meta Finder, Signal Analysis, etc.)
     // These must be available before external scripts load
     // NOTE: Many utility functions are already exported where they're defined:
     //   - deepClone, formatTimestamp, formatMcap, formatPercent (near top of file)
