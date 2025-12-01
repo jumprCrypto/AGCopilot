@@ -82,21 +82,38 @@
         
         console.log(`🎯 Optimizing archetype with ${tokenAddresses.length} tokens, mode: ${mode}`);
         
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tokenAddresses,
-                mode,
-                days
-            })
-        });
+        // Set timeout based on mode: quick=30s, medium=60s, full=180s
+        const timeoutMs = mode === 'full' ? 180000 : mode === 'medium' ? 60000 : 30000;
         
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status} ${response.statusText}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tokenAddresses,
+                    mode,
+                    days
+                }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status} ${response.statusText}`);
+            }
+            
+            return await response.json();
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                throw new Error(`Optimization timed out after ${timeoutMs / 1000}s - try a shorter mode`);
+            }
+            throw error;
         }
-        
-        return await response.json();
     }
 
     // ========================================
@@ -137,13 +154,6 @@
         `;
 
         ui.innerHTML = `
-            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 11px;">
-                <strong>🎯 Goal:</strong> Find winning config archetypes from top-performing tokens
-                <br><strong>📊 Method:</strong> Analyze tokens with high ATH, cluster by characteristics
-                <br><strong>💡 Use:</strong> Get distinct configs that represent different winning strategies
-            </div>
-            
-            <!-- Time Range Selection -->
             <div style="margin-bottom: 16px;">
                 <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #63b3ed;">
                     📅 Time Range:
@@ -231,8 +241,8 @@
                     <option value="3">3 Archetypes</option>
                     <option value="5" selected>5 Archetypes</option>
                     <option value="7">7 Archetypes</option>
-                    <option value="10">10 Archetypes</option>
                 </select>
+                <div style="font-size: 9px; color: #718096; margin-top: 4px;">Each archetype requires at least 3 tokens</div>
             </div>
             
             <!-- Action Buttons -->
@@ -381,7 +391,7 @@
                         </div>
                         
                         <!-- Config Preview -->
-                        <div style="background: #1a202c; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
+                        <div id="config-preview-${index}" style="background: #1a202c; border-radius: 4px; padding: 8px; margin-bottom: 8px;">
                             <div style="color: #63b3ed; font-size: 10px; margin-bottom: 4px;">Config Ranges:</div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 9px; color: #a0aec0;">
                                 <div>MCAP: ${formatNumber(arch.config.basic.minMcap)}-${formatNumber(arch.config.basic.maxMcap)}</div>
@@ -418,7 +428,6 @@
                                 font-weight: 600;
                                 transition: all 0.2s;
                             ">🎯 Run Optimization</button>
-                            <div id="optimize-result-${index}" style="display: none; margin-top: 8px;"></div>
                         </div>
                         
                         <!-- Action Buttons -->
@@ -758,28 +767,33 @@
         const arch = currentArchetypes.archetypes[index];
         const modeSelect = document.getElementById(`optimize-mode-${index}`);
         const btn = document.getElementById(`optimize-btn-${index}`);
-        const resultDiv = document.getElementById(`optimize-result-${index}`);
+        const optimizeSection = document.getElementById(`optimize-section-${index}`);
         
         const mode = modeSelect?.value || 'medium';
         
         // Get all token addresses from the archetype
-        // API returns full tokenAddresses list
         const tokenAddresses = arch.tokenAddresses || arch.sampleTokens.map(t => t.tokenAddress);
         
         // Update button state
-        const originalBtnText = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '⏳ Optimizing...';
         btn.style.opacity = '0.7';
         
-        // Show loading in result area
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-            <div style="text-align: center; padding: 8px; color: #a0aec0;">
-                <div>🔄 Running ${mode} optimization...</div>
-                <div style="font-size: 9px; margin-top: 4px;">Testing filter combinations</div>
-            </div>
-        `;
+        // Update the MAIN best config section in AGCopilot
+        const bestConfigHeader = document.getElementById('best-config-header');
+        const bestConfigStats = document.getElementById('best-config-stats');
+        
+        if (bestConfigHeader) {
+            bestConfigHeader.innerHTML = `🔄 Optimizing Archetype #${index + 1}...`;
+            bestConfigHeader.style.color = '#4299e1';
+        }
+        if (bestConfigStats) {
+            bestConfigStats.innerHTML = `
+                <div style="text-align: center; padding: 8px;">
+                    <div style="font-size: 12px; color: #a0aec0;">Running ${mode} optimization for ${tokenAddresses.length} tokens...</div>
+                </div>
+            `;
+        }
         
         try {
             const result = await optimizeArchetype(tokenAddresses, mode, selectedDays);
@@ -796,68 +810,209 @@
             window.optimizedArchetypeConfigs = window.optimizedArchetypeConfigs || {};
             window.optimizedArchetypeConfigs[index] = config;
             
-            // Render results
-            resultDiv.innerHTML = `
-                <div style="border-top: 1px solid rgba(72, 187, 120, 0.2); padding-top: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="color: #48bb78; font-weight: 600; font-size: 10px;">✅ Optimization Complete</span>
-                        <span style="color: #718096; font-size: 9px;">${result.elapsedSeconds}s</span>
+            // Update the MAIN best config section with results
+            const roiColor = perf.roiPercent >= 0 ? '#48bb78' : '#f56565';
+            const tokenStatusColor = perf.allArchetypeTokensIncluded ? '#48bb78' : '#f59e0b';
+            
+            if (bestConfigHeader) {
+                bestConfigHeader.innerHTML = `🎯 Archetype #${index + 1} Optimized`;
+                bestConfigHeader.style.color = '#48bb78';
+            }
+            
+            if (bestConfigStats) {
+                bestConfigStats.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; text-align: center;">
+                        <div style="background: rgba(26, 32, 44, 0.5); padding: 8px; border-radius: 4px;">
+                            <div style="color: #718096; font-size: 9px; text-transform: uppercase;">Total Tokens</div>
+                            <div style="color: #e2e8f0; font-size: 18px; font-weight: 700;">${perf.totalTokens}</div>
+                        </div>
+                        <div style="background: rgba(26, 32, 44, 0.5); padding: 8px; border-radius: 4px;">
+                            <div style="color: #718096; font-size: 9px; text-transform: uppercase;">Win Rate</div>
+                            <div style="color: #48bb78; font-size: 18px; font-weight: 700;">${perf.winRate}%</div>
+                        </div>
+                        <div style="background: rgba(26, 32, 44, 0.5); padding: 8px; border-radius: 4px;">
+                            <div style="color: #718096; font-size: 9px; text-transform: uppercase;">ROI</div>
+                            <div style="color: ${roiColor}; font-size: 18px; font-weight: 700;">${perf.roiPercent > 0 ? '+' : ''}${perf.roiPercent}%</div>
+                        </div>
                     </div>
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 9px; margin-bottom: 6px;">
-                        <div style="color: #a0aec0;">Tokens: <span style="color: #e2e8f0; font-weight: 600;">${perf.totalTokens}</span></div>
-                        <div style="color: #a0aec0;">Win Rate: <span style="color: #48bb78; font-weight: 600;">${perf.winRate}%</span></div>
-                        <div style="color: #a0aec0;">ROI: <span style="color: ${perf.roiPercent >= 0 ? '#48bb78' : '#f56565'}; font-weight: 600;">${perf.roiPercent > 0 ? '+' : ''}${perf.roiPercent}%</span></div>
-                        <div style="color: #a0aec0;">Archetype: <span style="${perf.allArchetypeTokensIncluded ? 'color: #48bb78' : 'color: #f59e0b'};">${perf.archetypeTokensIncluded}/${perf.archetypeTokensTotal}</span></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 6px 8px; background: rgba(26, 32, 44, 0.3); border-radius: 4px;">
+                        <span style="color: ${tokenStatusColor}; font-size: 11px; font-weight: 600;">
+                            ✓ ${perf.archetypeTokensIncluded}/${perf.archetypeTokensTotal} archetype tokens included
+                        </span>
+                        <span style="color: #718096; font-size: 10px;">${result.elapsedSeconds}s | ${result.result.iterations} iterations</span>
                     </div>
                     
-                    ${improvement ? `
-                        <div style="background: rgba(72, 187, 120, 0.1); border-radius: 4px; padding: 4px 6px; margin-bottom: 6px; font-size: 9px;">
-                            <span style="color: #48bb78;">📈 ROI: ${improvement.baseRoi}% → ${improvement.optimizedRoi}%</span>
-                            ${improvement.roiGain > 0 ? `<span style="color: #48bb78; margin-left: 4px;">(+${improvement.roiGain}%)</span>` : ''}
-                            ${improvement.tokensReduced ? `<span style="color: #718096; margin-left: 8px;">(-${improvement.tokensReduced} tokens filtered)</span>` : ''}
+                    ${improvement && improvement.roiGain !== 0 ? `
+                        <div style="background: rgba(72, 187, 120, 0.15); border-radius: 4px; padding: 8px; margin-bottom: 12px; font-size: 11px; text-align: center;">
+                            <span style="color: #48bb78;">📈 Baseline: ${improvement.baseRoi}% → Optimized: ${improvement.optimizedRoi}%</span>
+                            ${improvement.roiGain > 0 ? `<span style="color: #48bb78; font-weight: 600; margin-left: 6px;">(+${improvement.roiGain}%)</span>` : ''}
                         </div>
                     ` : ''}
                     
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                        <button onclick="window.applyOptimizedConfig(${index})" style="
-                            padding: 4px;
-                            background: rgba(72, 187, 120, 0.2);
-                            border: 1px solid rgba(72, 187, 120, 0.4);
-                            border-radius: 4px;
-                            color: #48bb78;
-                            font-size: 9px;
-                            cursor: pointer;
-                            font-weight: 600;
-                        ">⚙️ Apply Optimized</button>
-                        <button onclick="window.copyOptimizedConfig(${index})" style="
-                            padding: 4px;
-                            background: rgba(139, 92, 246, 0.2);
-                            border: 1px solid rgba(139, 92, 246, 0.4);
-                            border-radius: 4px;
-                            color: #a78bfa;
-                            font-size: 9px;
-                            cursor: pointer;
-                            font-weight: 600;
-                        ">📋 Copy</button>
+                    <div style="background: rgba(26, 32, 44, 0.4); border-radius: 4px; padding: 8px; margin-bottom: 12px;">
+                        <div style="color: #63b3ed; font-size: 10px; margin-bottom: 6px; font-weight: 600;">Optimized Filter Bounds:</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px; color: #a0aec0;">
+                            <div>MCAP: ${formatNumber(config.minMcap)} - ${formatNumber(config.maxMcap)}</div>
+                            <div>Holders: ${config.minHolders} - ${config.maxHolders}</div>
+                            <div>Unique: ${config.minUniqueWallets} - ${config.maxUniqueWallets}</div>
+                            <div>KYC: ${config.minKycWallets} - ${config.maxKycWallets || '∞'}</div>
+                            <div>AG Score: ${config.minAgScore}+</div>
+                            <div>Token Age: ${config.minTokenAge} - ${config.maxTokenAge > 10000 ? '∞' : config.maxTokenAge}s</div>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
+            
+            // Show the meta finder action buttons
+            const metaFinderActions = document.getElementById('meta-finder-actions');
+            if (metaFinderActions) {
+                metaFinderActions.style.display = 'grid';
+            }
+            
+            // Store config for apply/copy functions
+            window.latestMetaConfig = convertToAGCopilotFormat(config);
+            
+            // Reset button state in archetype card
+            btn.disabled = false;
+            btn.innerHTML = '✅ Optimized';
+            btn.style.opacity = '1';
+            btn.style.background = 'linear-gradient(45deg, #48bb78, #38a169)';
             
             console.log(`✅ Optimization complete for archetype #${index + 1}:`, result);
             
         } catch (error) {
             console.error('Optimization failed:', error);
-            resultDiv.innerHTML = `
-                <div style="text-align: center; padding: 8px; color: #f56565;">
-                    <div>❌ Optimization failed</div>
-                    <div style="font-size: 9px; margin-top: 4px; color: #a0aec0;">${error.message}</div>
+            
+            if (bestConfigHeader) {
+                bestConfigHeader.innerHTML = `❌ Optimization Failed`;
+                bestConfigHeader.style.color = '#f56565';
+            }
+            if (bestConfigStats) {
+                bestConfigStats.innerHTML = `
+                    <div style="text-align: center; padding: 12px; color: #f56565;">
+                        <div style="font-size: 11px; margin-bottom: 8px;">${error.message}</div>
+                        <button onclick="window.runArchetypeOptimization(${index})" style="
+                            padding: 8px 16px;
+                            background: rgba(245, 101, 101, 0.2);
+                            border: 1px solid rgba(245, 101, 101, 0.4);
+                            border-radius: 4px;
+                            color: #f56565;
+                            font-size: 11px;
+                            cursor: pointer;
+                        ">🔄 Retry</button>
+                    </div>
+                `;
+            }
+            
+            // Reset button state
+            btn.disabled = false;
+            btn.innerHTML = '🎯 Run Optimization';
+            btn.style.opacity = '1';
+        }
+    };
+    
+    // Helper to convert TightBounds to AGCopilot config format
+    function convertToAGCopilotFormat(config) {
+        const addIfNotNull = (obj, key, value) => {
+            if (value !== null && value !== undefined) {
+                obj[key] = value;
+            }
+        };
+        
+        const agConfig = {
+            basic: {},
+            tokenDetails: {},
+            wallets: {},
+            risk: {},
+            advanced: {}
+        };
+        
+        addIfNotNull(agConfig.basic, "Min MCAP (USD)", config.minMcap);
+        addIfNotNull(agConfig.basic, "Max MCAP (USD)", config.maxMcap);
+        addIfNotNull(agConfig.tokenDetails, "Min AG Score", config.minAgScore != null ? String(config.minAgScore) : null);
+        addIfNotNull(agConfig.tokenDetails, "Max AG Score", config.maxAgScore != null ? String(config.maxAgScore) : null);
+        addIfNotNull(agConfig.tokenDetails, "Min Deployer Age (min)", config.minDeployerAge);
+        addIfNotNull(agConfig.tokenDetails, "Max Deployer Age (min)", config.maxDeployerAge);
+        addIfNotNull(agConfig.tokenDetails, "Min Token Age (sec)", config.minTokenAge);
+        addIfNotNull(agConfig.tokenDetails, "Max Token Age (sec)", config.maxTokenAge);
+        addIfNotNull(agConfig.wallets, "Min Unique Wallets", config.minUniqueWallets);
+        addIfNotNull(agConfig.wallets, "Max Unique Wallets", config.maxUniqueWallets);
+        addIfNotNull(agConfig.wallets, "Min KYC Wallets", config.minKycWallets);
+        addIfNotNull(agConfig.wallets, "Max KYC Wallets", config.maxKycWallets);
+        addIfNotNull(agConfig.wallets, "Min Holders", config.minHolders);
+        addIfNotNull(agConfig.wallets, "Max Holders", config.maxHolders);
+        addIfNotNull(agConfig.wallets, "Min Top Holders %", config.minTopHoldersPct);
+        addIfNotNull(agConfig.wallets, "Max Top Holders %", config.maxTopHoldersPct);
+        addIfNotNull(agConfig.risk, "Max Bundled %", config.maxBundledPct);
+        addIfNotNull(agConfig.risk, "Max Deployer Balance (SOL)", config.maxDeployerBalance);
+        addIfNotNull(agConfig.advanced, "Min Buy Ratio %", config.minBuyRatio);
+        addIfNotNull(agConfig.advanced, "Min Win Pred %", config.minWinPredPct);
+        
+        return agConfig;
+    }
+    
+    // Reset optimization section to allow re-running
+    window.resetArchetypeOptimization = function(index) {
+        if (!currentArchetypes || !currentArchetypes.archetypes || !currentArchetypes.archetypes[index]) {
+            return;
+        }
+        
+        const arch = currentArchetypes.archetypes[index];
+        const optimizeSection = document.getElementById(`optimize-section-${index}`);
+        const configPreview = document.getElementById(`config-preview-${index}`);
+        
+        // Reset config preview to original
+        if (configPreview) {
+            configPreview.innerHTML = `
+                <div style="color: #63b3ed; font-size: 10px; margin-bottom: 4px;">Config Ranges:</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 9px; color: #a0aec0;">
+                    <div>MCAP: ${formatNumber(arch.config.basic.minMcap)}-${formatNumber(arch.config.basic.maxMcap)}</div>
+                    <div>Holders: ${arch.config.wallets.minHolders}-${arch.config.wallets.maxHolders}</div>
+                    <div>Unique: ${arch.config.wallets.minUniqueWallets}-${arch.config.wallets.maxUniqueWallets}</div>
+                    <div>KYC: ${arch.config.wallets.minKycWallets}-${arch.config.wallets.maxKycWallets || '∞'}</div>
+                    <div>AG Score: ${arch.config.tokenDetails.minAgScore}+</div>
+                    <div>Bundled: ${arch.config.risk.minBundledPct ?? 0}-${arch.config.risk.maxBundledPct}%</div>
                 </div>
             `;
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = originalBtnText;
-            btn.style.opacity = '1';
+            configPreview.style.background = '#1a202c';
+            configPreview.style.border = 'none';
+        }
+        
+        // Reset optimization section
+        if (optimizeSection) {
+            optimizeSection.style.background = 'rgba(72, 187, 120, 0.05)';
+            optimizeSection.style.border = '1px solid rgba(72, 187, 120, 0.2)';
+            optimizeSection.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span style="color: #48bb78; font-size: 10px; font-weight: 600;">🚀 Optimize Config</span>
+                    <select id="optimize-mode-${index}" style="padding: 2px 6px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; font-size: 9px;">
+                        <option value="quick">⚡ Quick (~1s)</option>
+                        <option value="medium" selected>🔍 Medium (~10s)</option>
+                        <option value="full">🚀 Full (~60s)</option>
+                    </select>
+                </div>
+                <div style="font-size: 9px; color: #718096; margin-bottom: 6px;">
+                    Find tightest filters that include all ${arch.tokenCount} tokens while maximizing ROI
+                </div>
+                <button onclick="window.runArchetypeOptimization(${index})" id="optimize-btn-${index}" style="
+                    width: 100%;
+                    padding: 6px;
+                    background: linear-gradient(45deg, #48bb78, #38a169);
+                    border: none;
+                    border-radius: 4px;
+                    color: white;
+                    font-size: 10px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    transition: all 0.2s;
+                ">🎯 Run Optimization</button>
+            `;
+        }
+        
+        // Clear stored optimized config
+        if (window.optimizedArchetypeConfigs) {
+            delete window.optimizedArchetypeConfigs[index];
         }
     };
 
