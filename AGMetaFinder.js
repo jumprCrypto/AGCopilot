@@ -126,29 +126,51 @@
                 <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #63b3ed;">
                     📅 Time Range:
                 </label>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
                     <button class="days-btn active" data-days="3" style="
-                        padding: 8px;
+                        padding: 8px 4px;
                         background: rgba(245, 158, 11, 0.2);
                         border: 1px solid rgba(245, 158, 11, 0.4);
                         border-radius: 6px;
                         color: #f59e0b;
-                        font-size: 12px;
+                        font-size: 11px;
                         cursor: pointer;
                         font-weight: 600;
                         transition: all 0.2s;
-                    ">3 Days</button>
+                    ">3D</button>
                     <button class="days-btn" data-days="7" style="
-                        padding: 8px;
+                        padding: 8px 4px;
                         background: rgba(100, 100, 100, 0.2);
                         border: 1px solid rgba(100, 100, 100, 0.4);
                         border-radius: 6px;
                         color: #a0aec0;
-                        font-size: 12px;
+                        font-size: 11px;
                         cursor: pointer;
                         font-weight: 600;
                         transition: all 0.2s;
-                    ">7 Days</button>
+                    ">7D</button>
+                    <button class="days-btn" data-days="14" style="
+                        padding: 8px 4px;
+                        background: rgba(100, 100, 100, 0.2);
+                        border: 1px solid rgba(100, 100, 100, 0.4);
+                        border-radius: 6px;
+                        color: #a0aec0;
+                        font-size: 11px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.2s;
+                    ">14D</button>
+                    <button class="days-btn" data-days="30" style="
+                        padding: 8px 4px;
+                        background: rgba(100, 100, 100, 0.2);
+                        border: 1px solid rgba(100, 100, 100, 0.4);
+                        border-radius: 6px;
+                        color: #a0aec0;
+                        font-size: 11px;
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.2s;
+                    ">30D</button>
                 </div>
             </div>
             
