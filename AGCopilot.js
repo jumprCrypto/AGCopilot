@@ -214,46 +214,6 @@
     // Make sleep globally available for external scripts
     window.sleep = sleep;
     
-    // Rate limiting mode toggle function
-    function toggleRateLimitingMode() {
-        // Cycle through burst rate presets (optimized for local backtester)
-        const ratePresets = [
-            { rate: 5, burst: 25, cooldown: 200 },   // Conservative: 5 req/s
-            { rate: 10, burst: 50, cooldown: 100 },  // Standard: 10 req/s (default)
-            { rate: 20, burst: 100, cooldown: 50 }   // Aggressive: 20 req/s
-        ];
-        
-        const currentIndex = ratePresets.findIndex(p => 
-            p.rate === CONFIG.BURST_RATE && 
-            p.burst === CONFIG.BURST_SIZE
-        );
-        const nextIndex = (currentIndex + 1) % ratePresets.length;
-        const nextPreset = ratePresets[nextIndex];
-        
-        CONFIG.BURST_RATE = nextPreset.rate;
-        CONFIG.BURST_SIZE = nextPreset.burst;
-        CONFIG.BURST_COOLDOWN_MS = nextPreset.cooldown;
-        
-        // Recreate rate limiter with new settings
-        if (window.rateLimiter) {
-            window.rateLimiter = new SimpleRateLimiter();
-        }
-        
-        console.log(`🔄 Burst config: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS/1000}s cooldown`);
-        
-        // Update UI button text
-        const rateLimitBtn = document.getElementById('toggle-rate-limit-btn');
-        if (rateLimitBtn) {
-            const mode = nextIndex === 2 ? 'Aggressive (20/s)' : nextIndex === 1 ? 'Standard (10/s)' : 'Conservative (5/s)';
-            rateLimitBtn.innerHTML = `⏱️ ${mode}`;
-            rateLimitBtn.title = `Burst: ${CONFIG.BURST_SIZE} @ ${CONFIG.BURST_RATE} req/s, ${CONFIG.BURST_COOLDOWN_MS}ms cooldown. Click to cycle.`;
-        }
-        
-        updateStatus(`🔄 Burst mode: ${CONFIG.BURST_SIZE} requests @ ${CONFIG.BURST_RATE} req/s`);
-        
-        return CONFIG.BURST_RATE;
-    }
-    
     // Initialize window.STOPPED for global access
     window.STOPPED = false;
 
@@ -5444,9 +5404,6 @@
                     <button class="tab-button" onclick="switchTab('meta-finder-tab')" id="meta-finder-tab-btn">
                         🎯 Meta
                     </button>
-                    <button class="tab-button" onclick="switchTab('signal-analysis-tab')" id="signal-analysis-tab-btn">
-                        🔍 Analysis
-                    </button>
                     <button class="tab-button" onclick="switchTab('data-sync-tab')" id="data-sync-tab-btn">
                         📊 Sync
                     </button>
@@ -5486,23 +5443,6 @@
                         <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
                         <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Meta Finder...</div>
                         <div style="color: #718096; font-size: 11px;">Discovering winning archetypes</div>
-                    </div>
-                </div>
-
-                <!-- Signal Analysis Tab (External Script) -->
-                <div id="signal-analysis-tab" class="tab-content">
-                    <div style="
-                        text-align: center; 
-                        padding: 40px 20px;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        min-height: 200px;
-                    ">
-                        <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
-                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Signal Analysis...</div>
-                        <div style="color: #718096; font-size: 11px;">This tab will load AGSignalAnalysis.js from GitHub</div>
                     </div>
                 </div>
 
@@ -5607,41 +5547,6 @@
                             
                             <!-- Secondary Action Buttons Grid -->
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px;">
-                                <button id="parameter-discovery" style="
-                                    padding: 10px;
-                                    background: linear-gradient(135deg, #9f7aea 0%, #805ad5 100%);
-                                    border: none;
-                                    border-radius: 6px;
-                                    color: white;
-                                    font-weight: 500;
-                                    cursor: pointer;
-                                    font-size: 12px;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'">
-                                    🔬 Parameter Discovery
-                                </button>
-                                
-                            </div>
-                            
-                            <!-- Third Row for Rate Limit Button -->
-                            <div style="margin-bottom: 12px;">
-                                <button id="toggle-rate-limit-btn" style="
-                                    width: 100%;
-                                    padding: 10px;
-                                    background: linear-gradient(135deg, #38b2ac 0%, #319795 100%);
-                                    border: none;
-                                    border-radius: 6px;
-                                    color: white;
-                                    font-weight: 500;
-                                    cursor: pointer;
-                                    font-size: 12px;
-                                    transition: all 0.2s;
-                                " onmouseover="this.style.transform='translateY(-1px)'" 
-                                   onmouseout="this.style.transform='translateY(0)'"
-                                   onclick="toggleRateLimitingMode()"
-                                   title="Currently using normal rate limiting (20s wait). Click to switch to slower mode.">
-                                    ⏱️ Normal
-                                </button>
                             </div>
                             
                             <!-- Meta Finder Action Buttons (shown when meta finder results are available) -->
@@ -5711,8 +5616,6 @@
             // Auto-load external scripts when tabs are clicked
             if (activeTabId === 'meta-finder-tab') {
                 loadMetaFinderInTab();
-            } else if (activeTabId === 'signal-analysis-tab') {
-                loadSignalAnalysisInTab();
             } else if (activeTabId === 'config-tab') {
                 loadOptimizationInTab();
             } else if (activeTabId === 'data-sync-tab') {
@@ -5930,9 +5833,6 @@
             }
         };
         
-        // Make toggleRateLimitingMode globally available
-        window.toggleRateLimitingMode = toggleRateLimitingMode;
-        
         // Make split-screen functions globally available
         window.toggleSplitScreen = toggleSplitScreen;
         window.enableSplitScreen = enableSplitScreen;
@@ -6121,92 +6021,9 @@
     // ========================================
     
     // Load tabs with loading state management
-    let signalAnalysisLoaded = false;
     let optimizationLoaded = false;
     let dataSyncLoaded = false;
     let metaFinderLoaded = false;
-    
-    async function loadSignalAnalysisInTab() {
-        // Don't reload if already loaded
-        if (signalAnalysisLoaded) {
-            return;
-        }
-        
-        const tabContent = document.getElementById('signal-analysis-tab');
-        
-        try {
-            // Show loading state if not already shown
-            if (tabContent) {
-                tabContent.innerHTML = `
-                    <div style="
-                        text-align: center; 
-                        padding: 40px 20px;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        min-height: 200px;
-                    ">
-                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
-                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Signal Analysis...</div>
-                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
-                    </div>
-                `;
-            }
-            
-            // Load Signal Analysis script from GitHub
-            const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGSignalAnalysis.js';
-            const response = await fetch(scriptUrl);
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load Signal Analysis: HTTP ${response.status}`);
-            }
-            
-            const scriptContent = await response.text();
-            
-            // Execute the script - it will automatically detect tab integration
-            eval(scriptContent);
-            
-            signalAnalysisLoaded = true;
-            console.log('✅ Signal Analysis loaded successfully in tab!');
-            
-        } catch (error) {
-            console.error('Signal Analysis loading error:', error);
-            
-            // Show error state in tab
-            if (tabContent) {
-                tabContent.innerHTML = `
-                    <div style="
-                        text-align: center; 
-                        padding: 40px 20px;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        min-height: 200px;
-                    ">
-                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
-                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Signal Analysis</div>
-                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
-                        <button onclick="window.retryLoadSignalAnalysis()" style="
-                            padding: 8px 16px;
-                            background: rgba(139, 92, 246, 0.2);
-                            border: 1px solid rgba(139, 92, 246, 0.4);
-                            border-radius: 6px;
-                            color: #a78bfa;
-                            cursor: pointer;
-                            font-size: 12px;
-                            font-weight: 600;
-                            transition: all 0.2s;
-                        " onmouseover="this.style.background='rgba(139, 92, 246, 0.3)'" 
-                           onmouseout="this.style.background='rgba(139, 92, 246, 0.2)'">
-                            🔄 Retry Loading
-                        </button>
-                    </div>
-                `;
-            }
-        }
-    }
 
     async function loadDataSyncInTab() {
         console.log('🔄 loadDataSyncInTab called...');
@@ -6486,30 +6303,6 @@
         }
         loadMetaFinderInTab();
     };
-    
-    // Global retry function for Signal Analysis error recovery
-    window.retryLoadSignalAnalysis = function() {
-        signalAnalysisLoaded = false;
-        const tabContent = document.getElementById('signal-analysis-tab');
-        if (tabContent) {
-            tabContent.innerHTML = `
-                <div style="
-                    text-align: center; 
-                    padding: 40px 20px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: center;
-                    align-items: center;
-                    min-height: 200px;
-                ">
-                    <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
-                    <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Retrying Signal Analysis...</div>
-                    <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
-                </div>
-            `;
-        }
-        loadSignalAnalysisInTab();
-    };
 
     // Global retry function for Optimization Engine error recovery
     window.retryLoadOptimization = function() {
@@ -6610,24 +6403,6 @@
             console.log(`🎯 Large sample win rate updated: ${CONFIG.MIN_WIN_RATE_LARGE_SAMPLE}%`);
         });
 
-        // Toggle rate limiting mode
-        safeAddEventListener('toggle-rate-limit-btn', 'click', () => {
-            toggleRateLimitingMode();
-        });
-        
-        // Signal Analysis event handlers - load external script
-        safeAddEventListener('analyze-signals-btn', 'click', async () => {
-            // Ensure Signal Analysis script is loaded before calling
-            if (!window.AGSignalAnalysis) {
-                await loadSignalAnalysisInTab();
-            }
-            if (window.AGSignalAnalysis && typeof window.AGSignalAnalysis.handleSignalAnalysis === 'function') {
-                await window.AGSignalAnalysis.handleSignalAnalysis();
-            } else {
-                console.error('Signal analysis not available - external script may have failed to load');
-            }
-        });
-        
         safeAddEventListener('apply-generated-config-btn', 'click', async () => {
             if (window.lastGeneratedConfig) {
                 await applyConfigToBacktester(window.lastGeneratedConfig);
@@ -6962,7 +6737,6 @@
         };
         
         // Make other functions globally available
-        window.toggleRateLimitingMode = toggleRateLimitingMode;
         window.toggleSplitScreen = toggleSplitScreen;
         window.enableSplitScreen = enableSplitScreen;
         window.disableSplitScreen = disableSplitScreen;
