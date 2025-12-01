@@ -537,7 +537,7 @@
                     display: block;
                     margin-bottom: 8px;
                 ">Local API URL</label>
-                <input type="text" id="sync-api-url" value="http://localhost:5000" placeholder="http://localhost:5000" style="
+                <input type="text" id="sync-api-url" value="http://192.168.50.141:5000" placeholder="http://192.168.50.141:5000" style="
                     width: 100%;
                     padding: 8px 12px;
                     background: #2d3748;
