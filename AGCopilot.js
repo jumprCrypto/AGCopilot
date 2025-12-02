@@ -46,18 +46,8 @@
         RETURN_WEIGHT: 0.6,        // Weight for raw PnL (0.0-1.0)
         // Note: CONSISTENCY_WEIGHT + RETURN_WEIGHT should = 1.0
         
-        // Signal Analysis API Settings (from AGSignalExtractor)
-        // Use extension API URL if available, otherwise default to AG backtester
-        get API_BASE_URL() {
-            // Check if running in Chrome extension with custom API
-            if (window.USE_AGCOPILOT_API && window.AGCOPILOT_API_URL) {
-                const apiUrl = window.AGCOPILOT_API_URL;
-                console.log('🔧 Using extension API URL:', apiUrl);
-                return apiUrl.endsWith('/api') ? apiUrl : `${apiUrl}/api`;
-            }
-            // Default to AG backtester API
-            return 'https://backtester.alphagardeners.xyz/api';
-        },
+        // Local API URL (always use local AGCopilotAPI)
+        API_BASE_URL: 'http://192.168.50.141:5000/api',
         MAX_RETRIES: 3,
         RETRY_DELAY: 1000,
         REQUEST_DELAY: 9360, // For signal analysis API (60% of BACKTEST_WAIT)
@@ -2094,6 +2084,16 @@
                     value.forEach(day => {
                         if (day !== undefined && day !== null && day !== '') {
                             params.append('weekdays', day);
+                        }
+                    });
+                    return;
+                }
+                
+                // Handle tokenAddresses array (for targeted/archetype optimization)
+                if (key === 'tokenAddresses' && Array.isArray(value)) {
+                    value.forEach(addr => {
+                        if (addr !== undefined && addr !== null && addr !== '') {
+                            params.append('tokenAddresses', addr);
                         }
                     });
                     return;
@@ -5496,15 +5496,15 @@
                             <!-- Mode Indicator -->
                             <div id="optimization-mode-indicator" style="
                                 padding: 8px 12px;
-                                background: rgba(66, 153, 225, 0.1);
-                                border: 1px solid rgba(66, 153, 225, 0.3);
+                                background: rgba(72, 187, 120, 0.1);
+                                border: 1px solid rgba(72, 187, 120, 0.3);
                                 border-radius: 4px;
                                 font-size: 11px;
-                                color: #4299e1;
+                                color: #48bb78;
                                 text-align: center;
                                 margin-bottom: 12px;
                             ">
-                                📡 Mode: <span id="mode-status">Online (API)</span>
+                                🏠 Mode: <span id="mode-status">Local API (192.168.50.141:5000)</span>
                             </div>
                             
                             <!-- Main Action Buttons -->

@@ -860,7 +860,7 @@
                     await this.runLatinHypercubePhase();
                 }
                 
-                // Phase 4: Simulated Annealing
+                // Phase 4: Simulated Annealing with Early Termination
                 if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_SIMULATED_ANNEALING) {
                     console.log('🔥 Phase 4: Simulated Annealing...');
                     
@@ -870,8 +870,19 @@
                     let iterations = 0;
                     const maxIterations = 50;
                     
+                    // Early termination tracking
+                    let noImprovementCount = 0;
+                    const maxNoImprovement = 15; // Stop if no global improvement in 15 iterations
+                    let lastBestScore = this.bestScore;
+                    
                     while (!window.STOPPED && this.getRemainingTime() > 0 && annealing.cool() && iterations < maxIterations) {
                         iterations++;
+                        
+                        // Early termination check
+                        if (noImprovementCount >= maxNoImprovement) {
+                            console.log(`⏹️ Early termination: No improvement in ${maxNoImprovement} iterations`);
+                            break;
+                        }
                         
                         // Generate neighbor by modifying random parameter
                         const neighborConfig = window.deepClone(currentConfig);
@@ -882,7 +893,17 @@
                             break;
                         }
                         
-                        const param = params[Math.floor(Math.random() * params.length)];
+                        // Prefer high-impact parameters based on effectiveness tracking
+                        let param;
+                        if (this.parameterEffectiveness.length > 0 && Math.random() < 0.6) {
+                            // 60% chance to pick from top effective parameters
+                            const topParams = this.parameterEffectiveness.slice(0, Math.ceil(this.parameterEffectiveness.length / 3));
+                            const selected = topParams[Math.floor(Math.random() * topParams.length)];
+                            param = selected ? selected.param : params[Math.floor(Math.random() * params.length)];
+                        } else {
+                            param = params[Math.floor(Math.random() * params.length)];
+                        }
+                        
                         const section = this.getSection(param);
                         
                         if (!neighborConfig[section]) neighborConfig[section] = {};
@@ -898,11 +919,15 @@
                                 
                                 // Validate minimum token count
                                 if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) {
+                                    noImprovementCount++;
                                     continue;
                                 }
                                 
                                 const robust = window.calculateRobustScore(result.metrics);
-                                if (robust && robust.rejected) continue;
+                                if (robust && robust.rejected) {
+                                    noImprovementCount++;
+                                    continue;
+                                }
                                 
                                 const score = robust ? robust.score : result.metrics.tpPnlPercent;
                                 
@@ -928,16 +953,30 @@
                                         }
                                         
                                         this.updateBestConfigDisplay();
+                                        
+                                        // Reset no-improvement counter on global best improvement
+                                        noImprovementCount = 0;
+                                    } else {
+                                        noImprovementCount++;
                                     }
+                                } else {
+                                    noImprovementCount++;
                                 }
+                            } else {
+                                noImprovementCount++;
                             }
                         }
                     }
                     
-                    console.log(`🔥 Simulated annealing completed ${iterations} iterations`);
+                    console.log(`🔥 Simulated annealing completed ${iterations} iterations (best: ${this.bestScore.toFixed(1)}%)`);
                 }
                 
-                // Phase 5: Deep Dive (if enabled)
+                // Phase 5: Correlated Parameter Testing
+                if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_CORRELATED_PARAMS) {
+                    await this.runCorrelatedParameterPhase();
+                }
+                
+                // Phase 6: Deep Dive (if enabled)
                 if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_DEEP_DIVE) {
                     await this.runDeepDive();
                 }
@@ -1032,18 +1071,108 @@
         }
 
         async runCorrelatedParameterPhase() {
-            console.log('🔬 Phase 4: Correlated Parameter Testing...');
-            // Implement correlated parameter logic here
-            // This would test parameters that are known to work well together
+            console.log('🔗 Phase 5: Correlated Parameter Testing...');
+            
+            // Define parameter pairs that often work well together
+            const correlatedPairs = [
+                // MCAP range pairs
+                { params: ['Min MCAP (USD)', 'Max MCAP (USD)'], name: 'MCAP Range' },
+                // Wallet quality pairs
+                { params: ['Min Unique Wallets', 'Min KYC Wallets'], name: 'Wallet Quality' },
+                // Holder range pairs
+                { params: ['Min Holders', 'Max Holders'], name: 'Holder Range' },
+                // Token age with AG score (older tokens often need higher scores)
+                { params: ['Min Token Age (sec)', 'Min AG Score'], name: 'Age+Quality' },
+                // Risk management pairs
+                { params: ['Max Bundled %', 'Max Liquidity %'], name: 'Risk Limits' },
+            ];
+            
+            let noImprovementCount = 0;
+            const maxNoImprovement = 5; // Early termination threshold
+            
+            for (const pair of correlatedPairs) {
+                if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                if (noImprovementCount >= maxNoImprovement) {
+                    console.log('⏹️ Early termination: No improvement in last 5 pairs');
+                    break;
+                }
+                
+                const [param1, param2] = pair.params;
+                const values1 = window.generateTestValuesFromRules(param1);
+                const values2 = window.generateTestValuesFromRules(param2);
+                
+                if (!values1 || !values2 || values1.length === 0 || values2.length === 0) continue;
+                
+                let pairImproved = false;
+                
+                // Test combinations of the paired parameters
+                for (let i = 0; i < Math.min(3, values1.length); i++) {
+                    for (let j = 0; j < Math.min(3, values2.length); j++) {
+                        if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                        
+                        const testConfig = window.deepClone(this.bestConfig);
+                        const section1 = this.getSection(param1);
+                        const section2 = this.getSection(param2);
+                        
+                        if (!testConfig[section1]) testConfig[section1] = {};
+                        if (!testConfig[section2]) testConfig[section2] = {};
+                        
+                        testConfig[section1][param1] = values1[i];
+                        testConfig[section2][param2] = values2[j];
+                        
+                        const result = await this.testConfig(testConfig, `Corr-${pair.name}`);
+                        
+                        if (result.success && result.metrics) {
+                            const scaledThresholds = window.getScaledTokenThresholds();
+                            if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) continue;
+                            
+                            const robust = window.calculateRobustScore(result.metrics);
+                            if (robust && robust.rejected) continue;
+                            
+                            const score = robust ? robust.score : result.metrics.tpPnlPercent;
+                            
+                            if (score > this.bestScore) {
+                                console.log(`✅ Correlated pair ${pair.name}: ${score.toFixed(1)}%`);
+                                
+                                if (robust) result.metrics.robustScoring = robust;
+                                
+                                this.bestConfig = testConfig;
+                                this.bestScore = score;
+                                this.bestMetrics = result.metrics;
+                                pairImproved = true;
+                                
+                                if (window.bestConfigTracker) {
+                                    window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, `Correlated: ${pair.name}`);
+                                }
+                                
+                                this.updateBestConfigDisplay();
+                            }
+                        }
+                    }
+                }
+                
+                if (!pairImproved) {
+                    noImprovementCount++;
+                } else {
+                    noImprovementCount = 0;
+                }
+            }
         }
 
         async runDeepDive() {
-            console.log('🔬 Phase 5: Deep Dive Analysis...');
+            console.log('🔬 Phase 6: Deep Dive Analysis...');
             // Fine-tune the best configuration found so far
             const params = this.parameterEffectiveness.slice(0, 5).map(p => p.param);
             
+            let noImprovementCount = 0;
+            const maxNoImprovement = 10; // Early termination threshold
+            
             for (const param of params) {
                 if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                if (noImprovementCount >= maxNoImprovement) {
+                    console.log('⏹️ Early termination: No improvement in deep dive');
+                    break;
+                }
                 
                 const section = this.getSection(param);
                 
@@ -1060,6 +1189,8 @@
                 const nearbyValues = testValues.filter(v => 
                     Math.abs(v - currentValue) <= currentValue * 0.2
                 );
+                
+                let paramImproved = false;
                 
                 for (const value of nearbyValues.slice(0, 3)) {
                     if (window.STOPPED || this.getRemainingTime() <= 0) break;
@@ -1092,16 +1223,25 @@
                             this.bestConfig = testConfig;
                             this.bestScore = score;
                             this.bestMetrics = result.metrics;
+                            paramImproved = true;
                             
                             if (window.bestConfigTracker) {
                                 window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Deep Dive');
                             }
                             
                             this.updateBestConfigDisplay();
+                        } else {
+                            noImprovementCount++;
                         }
                     }
                 }
+                
+                if (paramImproved) {
+                    noImprovementCount = 0;
+                }
             }
+            
+            console.log(`🔬 Deep dive completed (best: ${this.bestScore.toFixed(1)}%)`);
         }
     }
 

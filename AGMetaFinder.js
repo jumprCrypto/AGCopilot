@@ -14,8 +14,8 @@
     // 🎯 META FINDER CONFIGURATION
     // ========================================
     const META_CONFIG = {
-        // API endpoint (uses local AGCopilotAPI)
-        API_BASE_URL: localStorage.getItem('agcopilot_api_url') || 'http://192.168.50.141:5000',
+        // API endpoint (local AGCopilotAPI)
+        API_BASE_URL: 'http://192.168.50.141:5000',
         
         // Default analysis parameters
         DEFAULT_DAYS: 7,
@@ -77,43 +77,316 @@
         return await response.json();
     }
 
+    // ========================================
+    // 🎯 TARGETED OPTIMIZATION (Frontend-based)
+    // Uses AGCopilot's optimization algorithms with token filtering
+    // ========================================
+    
+    /**
+     * Optimize configuration for a specific set of tokens using frontend algorithms.
+     * This uses the same Latin Hypercube and Simulated Annealing algorithms as the main optimizer.
+     * @param {string[]} tokenAddresses - Array of token addresses to optimize for
+     * @param {string} mode - 'quick', 'medium', or 'full'
+     * @param {number} days - Number of days for date range
+     * @returns {Object} Optimization result with config, performance metrics, and improvement data
+     */
     async function optimizeArchetype(tokenAddresses, mode = 'quick', days = 7) {
-        const url = `${META_CONFIG.API_BASE_URL}/api/meta/optimize`;
+        console.log(`🎯 Frontend optimization for ${tokenAddresses.length} tokens, mode: ${mode}`);
         
-        console.log(`🎯 Optimizing archetype with ${tokenAddresses.length} tokens, mode: ${mode}`);
+        const startTime = Date.now();
         
-        // Set timeout based on mode: quick=30s, medium=60s, full=180s
-        const timeoutMs = mode === 'full' ? 180000 : mode === 'medium' ? 60000 : 30000;
+        // Determine runtime based on mode
+        const maxRuntimeMs = mode === 'full' ? 60000 : mode === 'medium' ? 30000 : 10000;
+        const maxIterations = mode === 'full' ? 100 : mode === 'medium' ? 50 : 20;
         
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        // Store original stop state
+        const originalStopped = window.STOPPED;
+        window.STOPPED = false;
         
         try {
+            // Set up date range
+            const toDate = new Date();
+            const fromDate = new Date();
+            fromDate.setDate(fromDate.getDate() - days);
+            
+            // Create base config with token address filtering
+            const baseConfig = {
+                basic: {},
+                tokenDetails: {},
+                wallets: {},
+                risk: {},
+                advanced: {},
+                __targetTokens: tokenAddresses // Special flag for targeted optimization
+            };
+            
+            // Test baseline - all tokens with no filters
+            console.log('📊 Testing baseline (no filters)...');
+            const baselineResult = await testConfigWithTokens(baseConfig, tokenAddresses, fromDate, toDate);
+            
+            if (!baselineResult.success) {
+                throw new Error(`Baseline test failed: ${baselineResult.error || 'Unknown error'}`);
+            }
+            
+            const baselineMetrics = baselineResult.metrics;
+            console.log(`📊 Baseline: ${baselineMetrics.totalTokens} tokens, ${baselineMetrics.winRate?.toFixed(1)}% WR, ${baselineMetrics.roiPercent?.toFixed(1)}% ROI`);
+            
+            // Track best result
+            let bestConfig = { ...baseConfig };
+            let bestMetrics = baselineMetrics;
+            let bestScore = calculateOptimizationScore(baselineMetrics, tokenAddresses.length);
+            let iterations = 0;
+            let improvementFound = false;
+            
+            // Get parameters to optimize (subset for faster targeted optimization)
+            const paramsToOptimize = [
+                // Most impactful parameters for winning tokens
+                { name: 'Min MCAP (USD)', section: 'basic', values: [0, 5000, 10000, 15000, 20000] },
+                { name: 'Max MCAP (USD)', section: 'basic', values: [30000, 40000, 50000, 60000] },
+                { name: 'Min AG Score', section: 'tokenDetails', values: [0, 3, 4, 5, 6, 7] },
+                { name: 'Min Unique Wallets', section: 'wallets', values: [1, 2, 3] },
+                { name: 'Min KYC Wallets', section: 'wallets', values: [0, 1, 2] },
+                { name: 'Min Holders', section: 'wallets', values: [1, 2, 3, 5] },
+                { name: 'Max Holders', section: 'wallets', values: [20, 30, 50, 100] },
+                { name: 'Max Bundled %', section: 'risk', values: [30, 50, 70, 100] },
+                { name: 'Max Liquidity %', section: 'advanced', values: [20, 30, 50, 100] },
+            ];
+            
+            // Phase 1: Quick parameter sweep
+            console.log('🔍 Phase 1: Parameter impact testing...');
+            for (const param of paramsToOptimize) {
+                if (Date.now() - startTime > maxRuntimeMs * 0.5) break; // Reserve time for refinement
+                if (window.STOPPED) break;
+                
+                for (const value of param.values) {
+                    if (window.STOPPED) break;
+                    iterations++;
+                    
+                    const testConfig = JSON.parse(JSON.stringify(bestConfig));
+                    if (!testConfig[param.section]) testConfig[param.section] = {};
+                    testConfig[param.section][param.name] = value;
+                    
+                    const result = await testConfigWithTokens(testConfig, tokenAddresses, fromDate, toDate);
+                    
+                    if (result.success && result.metrics) {
+                        const score = calculateOptimizationScore(result.metrics, tokenAddresses.length);
+                        
+                        if (score > bestScore && result.metrics.totalTokens >= Math.min(3, tokenAddresses.length)) {
+                            console.log(`✅ Improvement: ${param.name}=${value} → Score ${score.toFixed(1)} (${result.metrics.totalTokens} tokens)`);
+                            bestConfig = testConfig;
+                            bestMetrics = result.metrics;
+                            bestScore = score;
+                            improvementFound = true;
+                        }
+                    }
+                }
+            }
+            
+            // Phase 2: Simulated Annealing refinement (if time permits)
+            if (!window.STOPPED && Date.now() - startTime < maxRuntimeMs * 0.9 && mode !== 'quick') {
+                console.log('🔥 Phase 2: Simulated Annealing refinement...');
+                
+                let temperature = 100;
+                const coolingRate = 0.95;
+                const minTemp = 1;
+                let currentConfig = JSON.parse(JSON.stringify(bestConfig));
+                let currentScore = bestScore;
+                
+                while (temperature > minTemp && 
+                       iterations < maxIterations && 
+                       Date.now() - startTime < maxRuntimeMs && 
+                       !window.STOPPED) {
+                    
+                    iterations++;
+                    
+                    // Generate neighbor by modifying random parameter
+                    const neighborConfig = JSON.parse(JSON.stringify(currentConfig));
+                    const param = paramsToOptimize[Math.floor(Math.random() * paramsToOptimize.length)];
+                    const value = param.values[Math.floor(Math.random() * param.values.length)];
+                    
+                    if (!neighborConfig[param.section]) neighborConfig[param.section] = {};
+                    neighborConfig[param.section][param.name] = value;
+                    
+                    const result = await testConfigWithTokens(neighborConfig, tokenAddresses, fromDate, toDate);
+                    
+                    if (result.success && result.metrics && result.metrics.totalTokens >= Math.min(3, tokenAddresses.length)) {
+                        const neighborScore = calculateOptimizationScore(result.metrics, tokenAddresses.length);
+                        const delta = neighborScore - currentScore;
+                        
+                        // Accept if better, or with probability based on temperature
+                        if (delta > 0 || Math.random() < Math.exp(delta / temperature)) {
+                            currentConfig = neighborConfig;
+                            currentScore = neighborScore;
+                            
+                            if (neighborScore > bestScore) {
+                                console.log(`🔥 SA improvement: Score ${neighborScore.toFixed(1)} (temp: ${temperature.toFixed(1)})`);
+                                bestConfig = neighborConfig;
+                                bestMetrics = result.metrics;
+                                bestScore = neighborScore;
+                                improvementFound = true;
+                            }
+                        }
+                    }
+                    
+                    temperature *= coolingRate;
+                }
+            }
+            
+            const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+            
+            // Build result in format expected by UI
+            const optimizedConfigFlat = flattenConfig(bestConfig);
+            
+            // Calculate which archetype tokens are included in the result
+            const archetypeTokensIncluded = bestMetrics.matchedTokenAddresses 
+                ? tokenAddresses.filter(t => 
+                    bestMetrics.matchedTokenAddresses.has(t.toLowerCase()) || 
+                    bestMetrics.matchedTokenAddresses.has(t)
+                  ).length
+                : bestMetrics.totalTokens;
+            
+            console.log(`✅ Optimization complete: ${iterations} iterations in ${elapsedSeconds}s`);
+            console.log(`   Best score: ${bestScore.toFixed(1)}, Tokens: ${bestMetrics.totalTokens}, ROI: ${bestMetrics.roiPercent?.toFixed(1)}%`);
+            
+            return {
+                success: true,
+                elapsedSeconds: parseFloat(elapsedSeconds),
+                result: {
+                    config: optimizedConfigFlat,
+                    performance: {
+                        totalTokens: bestMetrics.totalTokens,
+                        winRate: bestMetrics.winRate?.toFixed(1) || '0',
+                        roiPercent: bestMetrics.roiPercent?.toFixed(1) || '0',
+                        archetypeTokensIncluded: archetypeTokensIncluded,
+                        archetypeTokensTotal: tokenAddresses.length,
+                        allArchetypeTokensIncluded: archetypeTokensIncluded === tokenAddresses.length
+                    },
+                    improvement: improvementFound ? {
+                        baseRoi: baselineMetrics.roiPercent?.toFixed(1) || '0',
+                        optimizedRoi: bestMetrics.roiPercent?.toFixed(1) || '0',
+                        roiGain: ((bestMetrics.roiPercent || 0) - (baselineMetrics.roiPercent || 0)).toFixed(1)
+                    } : null,
+                    iterations: iterations
+                }
+            };
+            
+        } catch (error) {
+            console.error('❌ Optimization error:', error);
+            throw error;
+        } finally {
+            // Restore original stop state
+            window.STOPPED = originalStopped;
+        }
+    }
+    
+    /**
+     * Test a configuration with specific token addresses
+     */
+    async function testConfigWithTokens(config, tokenAddresses, fromDate, toDate) {
+        try {
+            // Use the global backtesterAPI if available
+            if (!window.backtesterAPI) {
+                throw new Error('AGCopilot backtesterAPI not available');
+            }
+            
+            // Map config to API parameters
+            const apiParams = window.backtesterAPI.mapParametersToAPI(config);
+            
+            // Add token addresses for filtering
+            apiParams.tokenAddresses = tokenAddresses;
+            
+            // Add date range
+            apiParams.fromDate = fromDate.toISOString().split('T')[0];
+            apiParams.toDate = toDate.toISOString().split('T')[0];
+            
+            // Build URL and fetch
+            const url = window.backtesterAPI.buildApiUrl(apiParams);
+            
             const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tokenAddresses,
-                    mode,
-                    days
-                }),
-                signal: controller.signal
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
             });
             
-            clearTimeout(timeoutId);
-            
             if (!response.ok) {
-                throw new Error(`API error: ${response.status} ${response.statusText}`);
+                return { success: false, error: `API error: ${response.status}` };
             }
             
-            return await response.json();
-        } catch (error) {
-            clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                throw new Error(`Optimization timed out after ${timeoutMs / 1000}s - try a shorter mode`);
+            const data = await response.json();
+            
+            // Build matched token addresses set from response if available
+            let matchedTokenAddresses = new Set();
+            if (data.matchedTokenAddresses) {
+                matchedTokenAddresses = new Set(data.matchedTokenAddresses.map(t => t.toLowerCase()));
             }
-            throw error;
+            
+            return {
+                success: true,
+                metrics: {
+                    totalTokens: data.totalTokens || 0,
+                    winRate: data.winRate || 0,
+                    roiPercent: data.tpPnlPercent || data.roiPercent || data.averageTpGain || 0,
+                    matchedTokenAddresses: matchedTokenAddresses
+                }
+            };
+        } catch (error) {
+            return { success: false, error: error.message };
         }
+    }
+    
+    /**
+     * Calculate optimization score favoring high ROI while keeping archetype tokens
+     */
+    function calculateOptimizationScore(metrics, targetTokenCount) {
+        const roi = metrics.roiPercent || 0;
+        const winRate = metrics.winRate || 0;
+        const tokenCount = metrics.totalTokens || 0;
+        
+        // Penalize if we lose too many tokens
+        const tokenRetention = tokenCount / Math.max(1, targetTokenCount);
+        const retentionPenalty = tokenRetention < 0.5 ? 0.5 : 1;
+        
+        // Score: weighted combination of ROI and win rate, with token retention
+        const score = (roi * 0.6 + winRate * 0.4) * retentionPenalty;
+        
+        return score;
+    }
+    
+    /**
+     * Flatten nested config to flat object for display
+     */
+    function flattenConfig(config) {
+        const flat = {};
+        
+        // Map section names to API parameter names
+        const sectionToApiMap = {
+            'Min MCAP (USD)': 'minMcap',
+            'Max MCAP (USD)': 'maxMcap',
+            'Min AG Score': 'minAgScore',
+            'Min Token Age (sec)': 'minTokenAge',
+            'Max Token Age (sec)': 'maxTokenAge',
+            'Min Holders': 'minHolders',
+            'Max Holders': 'maxHolders',
+            'Min Unique Wallets': 'minUniqueWallets',
+            'Max Unique Wallets': 'maxUniqueWallets',
+            'Min KYC Wallets': 'minKycWallets',
+            'Max KYC Wallets': 'maxKycWallets',
+            'Min Bundled %': 'minBundledPercent',
+            'Max Bundled %': 'maxBundledPercent',
+            'Max Liquidity %': 'maxLiquidityPct',
+        };
+        
+        for (const [section, values] of Object.entries(config)) {
+            if (section.startsWith('__')) continue; // Skip internal flags
+            if (typeof values !== 'object' || values === null) continue;
+            
+            for (const [key, value] of Object.entries(values)) {
+                if (value !== undefined && value !== null) {
+                    const apiKey = sectionToApiMap[key] || key;
+                    flat[apiKey] = value;
+                }
+            }
+        }
+        
+        return flat;
     }
 
     // ========================================
