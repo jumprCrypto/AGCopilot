@@ -406,9 +406,14 @@
                 const apiUrl = document.getElementById('sync-api-url')?.value || SYNC_CONFIG.LOCAL_API_URL;
                 const cookie = document.cookie;
                 if (cookie) {
-                    const encodedCookie = encodeURIComponent(cookie);
-                    await fetch(`${apiUrl}/api/cleanup/set-cookie?cookie=${encodedCookie}`, { method: 'POST' });
-                    this.log('🔑 Cookie sent to AGCopilotAPI for auto-import', 'success');
+                    const response = await fetch(`${apiUrl}/api/cookie`, { 
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cookie, source: 'AGDataSync' })
+                    });
+                    if (response.ok) {
+                        this.log('🔑 Cookie sent to AGCopilotAPI for auto-import', 'success');
+                    }
                 }
             } catch (e) {
                 // Silently ignore - AGCopilotAPI may not be running
