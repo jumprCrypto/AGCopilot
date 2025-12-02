@@ -2326,7 +2326,9 @@
                             tokensHitTp: data.tokensHitTp || 0,
                             realWinRate: data.tokensHitTp && data.totalTokens ? (data.tokensHitTp / data.totalTokens * 100) : 0,
                             cleanPnL: data.cleanPnL || 0,
-                            totalSignals: data.totalAvailableSignals || 0
+                            totalSignals: data.totalAvailableSignals || 0,
+                            // Include matched token addresses for required tokens checking
+                            matchedTokenAddresses: data.matchedTokenAddresses || []
                         };
                         
                         // Ensure valid numbers
@@ -2913,6 +2915,39 @@
             };
         }
         
+        // Check required tokens constraint from Meta Finder
+        let requiredTokensPenalty = 0;
+        let requiredTokensIncluded = 0;
+        let requiredTokensTotal = 0;
+        let requiredTokensInfo = null;
+        
+        if (window.REQUIRED_TOKENS && window.REQUIRED_TOKENS.addresses && window.REQUIRED_TOKENS.addresses.length > 0) {
+            requiredTokensTotal = window.REQUIRED_TOKENS.addresses.length;
+            const matchedAddresses = metrics.matchedTokenAddresses || [];
+            const matchedSet = new Set(matchedAddresses.map(a => a.toLowerCase()));
+            
+            // Count how many required tokens are included
+            requiredTokensIncluded = window.REQUIRED_TOKENS.addresses.filter(
+                addr => matchedSet.has(addr.toLowerCase())
+            ).length;
+            
+            // Calculate penalty: lose 20% of score per missing required token (harsh but not infinite)
+            const missingTokens = requiredTokensTotal - requiredTokensIncluded;
+            requiredTokensPenalty = missingTokens * 0.20; // 20% penalty per missing token
+            
+            requiredTokensInfo = {
+                name: window.REQUIRED_TOKENS.name,
+                required: requiredTokensTotal,
+                included: requiredTokensIncluded,
+                missing: missingTokens,
+                penalty: requiredTokensPenalty
+            };
+            
+            if (missingTokens > 0) {
+                console.log(`🔒 Required tokens constraint: ${requiredTokensIncluded}/${requiredTokensTotal} included, ${(requiredTokensPenalty * 100).toFixed(0)}% penalty`);
+            }
+        }
+        
         // Apply scoring weights based on mode
         let returnWeight = CONFIG.RETURN_WEIGHT;
         let consistencyWeight = CONFIG.CONSISTENCY_WEIGHT;
@@ -2938,7 +2973,14 @@
         const consistencyComponent = winRate * consistencyWeight;
         const baseScore = returnComponent + consistencyComponent;
         const reliabilityAdjustedScore = baseScore * (1 - reliabilityWeight) + baseScore * reliabilityWeight * reliabilityFactor;
-        const finalScore = reliabilityAdjustedScore;
+        
+        // Apply required tokens penalty (reduces score proportionally to missing tokens)
+        const finalScore = reliabilityAdjustedScore * (1 - requiredTokensPenalty);
+        
+        // Update scoring method description if constraint is active
+        if (requiredTokensInfo && requiredTokensInfo.missing > 0) {
+            scoringMethodDesc += ` | 🔒 ${requiredTokensInfo.included}/${requiredTokensInfo.required} required tokens (-${(requiredTokensPenalty * 100).toFixed(0)}%)`;
+        }
         
         return {
             score: finalScore,
@@ -2956,6 +2998,8 @@
                 consistencyComponent: consistencyComponent,
                 baseScore: baseScore,
                 reliabilityAdjustedScore: reliabilityAdjustedScore,
+                requiredTokensPenalty: requiredTokensPenalty,
+                requiredTokensInfo: requiredTokensInfo,
                 finalScore: finalScore,
                 scoringMode: mode
             },
@@ -5505,6 +5549,31 @@
                                 margin-bottom: 12px;
                             ">
                                 🏠 Mode: <span id="mode-status">Local API (192.168.50.141:5000)</span>
+                            </div>
+                            
+                            <!-- Required Tokens Constraint Indicator -->
+                            <div id="required-tokens-indicator" style="
+                                display: none;
+                                padding: 8px 12px;
+                                background: rgba(72, 187, 120, 0.15);
+                                border: 1px solid rgba(72, 187, 120, 0.4);
+                                border-radius: 4px;
+                                font-size: 11px;
+                                color: #48bb78;
+                                margin-bottom: 12px;
+                            ">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span id="required-tokens-text">🔒 Required: None</span>
+                                    <button onclick="window.clearRequiredTokens()" style="
+                                        padding: 2px 8px;
+                                        background: rgba(245, 101, 101, 0.2);
+                                        border: 1px solid rgba(245, 101, 101, 0.4);
+                                        border-radius: 4px;
+                                        color: #f56565;
+                                        font-size: 9px;
+                                        cursor: pointer;
+                                    ">✕ Clear</button>
+                                </div>
                             </div>
                             
                             <!-- Main Action Buttons -->
