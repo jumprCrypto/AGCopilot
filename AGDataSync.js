@@ -563,6 +563,47 @@
                 ">💡 Make sure your AGCopilotAPI is running</div>
             </div>
 
+            <!-- AG Cookie for Auto-Import -->
+            <div style="margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label style="
+                        font-size: 12px;
+                        font-weight: 500;
+                        color: #a0aec0;
+                    ">AG Cookie (for auto-import)</label>
+                    <button id="send-cookie-btn" style="
+                        padding: 4px 10px;
+                        background: rgba(99, 179, 237, 0.2);
+                        border: 1px solid rgba(99, 179, 237, 0.4);
+                        border-radius: 4px;
+                        color: #63b3ed;
+                        font-size: 10px;
+                        cursor: pointer;
+                    ">📤 Send to API</button>
+                </div>
+                <textarea id="sync-ag-cookie" placeholder="Paste your AG cookie here (from browser dev tools → Application → Cookies)" style="
+                    width: 100%;
+                    height: 60px;
+                    padding: 8px 12px;
+                    background: #2d3748;
+                    border: 1px solid #4a5568;
+                    border-radius: 4px;
+                    color: #e2e8f0;
+                    font-size: 10px;
+                    font-family: 'Courier New', monospace;
+                    outline: none;
+                    resize: vertical;
+                    transition: border-color 0.2s;
+                    box-sizing: border-box;
+                " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'"></textarea>
+                <div id="cookie-status" style="
+                    font-size: 10px;
+                    color: #718096;
+                    margin-top: 6px;
+                    font-style: italic;
+                ">💡 Get cookie from DevTools → Application → Cookies → backtester.alphagardeners.xyz</div>
+            </div>
+
             <!-- Action Buttons -->
             <div style="display: flex; gap: 8px; margin-bottom: 20px;">
                 <button id="start-sync-btn" style="
@@ -788,6 +829,62 @@
                 currentSync.stop();
             }
         });
+
+        // Cookie send button handler
+        const sendCookieBtn = document.getElementById('send-cookie-btn');
+        if (sendCookieBtn) {
+            sendCookieBtn.addEventListener('click', async () => {
+                const cookieInput = document.getElementById('sync-ag-cookie');
+                const apiUrlInput = document.getElementById('sync-api-url');
+                const statusDiv = document.getElementById('cookie-status');
+                
+                if (!cookieInput || !cookieInput.value.trim()) {
+                    if (statusDiv) {
+                        statusDiv.textContent = '⚠️ Please paste a cookie first';
+                        statusDiv.style.color = '#fbd38d';
+                    }
+                    return;
+                }
+                
+                const apiUrl = apiUrlInput?.value?.trim() || SYNC_CONFIG.LOCAL_API_URL;
+                const cookie = cookieInput.value.trim();
+                
+                try {
+                    sendCookieBtn.disabled = true;
+                    sendCookieBtn.textContent = '⏳ Sending...';
+                    
+                    const response = await fetch(`${apiUrl}/api/cookie`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cookie: cookie })
+                    });
+                    
+                    if (response.ok) {
+                        if (statusDiv) {
+                            statusDiv.textContent = '✅ Cookie saved successfully! Auto-import will use this cookie.';
+                            statusDiv.style.color = '#48bb78';
+                        }
+                        console.log('✅ Cookie sent to AGCopilotAPI successfully');
+                    } else {
+                        const errorText = await response.text();
+                        if (statusDiv) {
+                            statusDiv.textContent = `❌ Failed to save cookie: ${response.status}`;
+                            statusDiv.style.color = '#fc8181';
+                        }
+                        console.error('❌ Cookie send failed:', errorText);
+                    }
+                } catch (error) {
+                    if (statusDiv) {
+                        statusDiv.textContent = `❌ Error: ${error.message}`;
+                        statusDiv.style.color = '#fc8181';
+                    }
+                    console.error('❌ Cookie send error:', error);
+                } finally {
+                    sendCookieBtn.disabled = false;
+                    sendCookieBtn.textContent = '📤 Send to API';
+                }
+            });
+        }
 
         console.log('✅ Data Sync event handlers attached');
         return true;
