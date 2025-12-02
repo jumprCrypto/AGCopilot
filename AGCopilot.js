@@ -33,14 +33,10 @@
         USE_SIMULATED_ANNEALING: true,
         USE_LATIN_HYPERCUBE_SAMPLING: true,
         
-        // Outlier-resistant scoring system (controlled via scoring mode below)
+        // Scoring system configuration
         // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only' | 'real_winrate_only'
         SCORING_MODE: 'robust',
-        MIN_WIN_RATE: 25.0,        // Win rate for small samples (<500 tokens)
-        MIN_WIN_RATE_MEDIUM_SAMPLE: 15.0, // Win rate for medium samples (500-999 tokens)
-        MIN_WIN_RATE_LARGE_SAMPLE: 10.0,  // Win rate for large samples (1000+ tokens)
-        MEDIUM_SAMPLE_THRESHOLD: 500,     // Token count threshold for medium sample tier
-        LARGE_SAMPLE_THRESHOLD: 1000,     // Token count threshold for large sample tier
+        MIN_TOKENS: 10,            // Default minimum tokens per day (user-configurable via UI)
         RELIABILITY_WEIGHT: 0.3,   // Weight for sample size and consistency (0.0-1.0)
         CONSISTENCY_WEIGHT: 0.4,   // Weight for win rate (0.0-1.0)
         RETURN_WEIGHT: 0.6,        // Weight for raw PnL (0.0-1.0)
@@ -817,45 +813,23 @@
     }
 
     // Get scaled token thresholds based on date range
+    // Simplified: Only MIN_TOKENS matters now (per-day * days)
     function getScaledTokenThresholds() {
         const scaling = getDateRangeScaling();
         
         // Get minimum tokens per day from UI, fallback to CONFIG if not available
         const minTokensPerDayFromUI = parseInt(document.getElementById('min-tokens')?.value) || CONFIG.MIN_TOKENS || 10;
         
-        // Base thresholds - MIN_TOKENS is now per day, others are for 7-day period
-        const BASE_THRESHOLDS = {
-            LARGE_SAMPLE_THRESHOLD: 1000,    // 143x days
-            MEDIUM_SAMPLE_THRESHOLD: 500,    // 71x days  
-            MIN_TOKENS_PER_DAY: minTokensPerDayFromUI  // Minimum tokens per day from UI or config
-        };
+        // Calculate minimum tokens based on date range
+        const minTokens = Math.max(10, Math.round(minTokensPerDayFromUI * scaling.days));
         
-        // Apply scaling
-        const scaled = {
-            LARGE_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.LARGE_SAMPLE_THRESHOLD * scaling.scalingFactor),
-            MEDIUM_SAMPLE_THRESHOLD: Math.round(BASE_THRESHOLDS.MEDIUM_SAMPLE_THRESHOLD * scaling.scalingFactor),
-            MIN_TOKENS: Math.round(BASE_THRESHOLDS.MIN_TOKENS_PER_DAY * scaling.days), // Scale by actual days
+        console.log(`📊 Token Threshold - Min/Day: ${minTokensPerDayFromUI}, Days: ${scaling.days}, Required: ${minTokens} tokens`);
+        
+        return {
+            MIN_TOKENS: minTokens,
+            minTokensPerDay: minTokensPerDayFromUI,
             scalingInfo: scaling
         };
-        
-        // Ensure minimum values
-        scaled.LARGE_SAMPLE_THRESHOLD = Math.max(100, scaled.LARGE_SAMPLE_THRESHOLD);
-        scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(50, scaled.MEDIUM_SAMPLE_THRESHOLD);
-        scaled.MIN_TOKENS = Math.max(10, scaled.MIN_TOKENS); // At least 10 tokens total
-        
-        // Ensure logical order: MIN_TOKENS < MEDIUM < LARGE
-        if (scaled.MEDIUM_SAMPLE_THRESHOLD >= scaled.LARGE_SAMPLE_THRESHOLD) {
-            scaled.MEDIUM_SAMPLE_THRESHOLD = Math.floor(scaled.LARGE_SAMPLE_THRESHOLD * 0.5);
-        }
-        if (scaled.MIN_TOKENS >= scaled.MEDIUM_SAMPLE_THRESHOLD) {
-            // Fix: Ensure MEDIUM is reasonable compared to MIN_TOKENS, don't reduce MIN_TOKENS
-            scaled.MEDIUM_SAMPLE_THRESHOLD = Math.max(scaled.MIN_TOKENS + 25, scaled.MEDIUM_SAMPLE_THRESHOLD);
-        }
-        
-        // Debug log to show calculated thresholds
-        console.log(`📊 Token Thresholds - Min Tokens/Day from UI: ${minTokensPerDayFromUI}, Days: ${scaling.days}, Total MIN_TOKENS: ${scaled.MIN_TOKENS}`);
-        
-        return scaled;
     }
 
     // Alias for parameter discovery compatibility
@@ -2880,38 +2854,24 @@
         const tokensCount = metrics.totalTokens || 1; // Default to 1 to avoid log(0)
         const reliabilityFactor = Math.min(1.0, Math.log(tokensCount) / Math.log(100));
         
-        // Adaptive win rate requirement based on sample size (three tiers)
-        // Get scaled thresholds based on date range
+        // Get minimum tokens threshold (based on Min Tokens/Day setting * days)
         const scaledThresholds = getScaledTokenThresholds();
-        let effectiveMinWinRate;
-        let sampleTier;
+        const minTokensRequired = scaledThresholds.MIN_TOKENS;
         
-        if (tokensCount >= scaledThresholds.LARGE_SAMPLE_THRESHOLD) {
-            effectiveMinWinRate = CONFIG.MIN_WIN_RATE_LARGE_SAMPLE;
-            sampleTier = 'Large';
-        } else if (tokensCount >= scaledThresholds.MEDIUM_SAMPLE_THRESHOLD) {
-            effectiveMinWinRate = CONFIG.MIN_WIN_RATE_MEDIUM_SAMPLE;
-            sampleTier = 'Medium';
-        } else {
-            effectiveMinWinRate = CONFIG.MIN_WIN_RATE;
-            sampleTier = 'Small';
-        }
-        
-        // Reject configurations that don't meet minimum win rate requirements (for robust and real win rate modes)
-        if ((mode === 'robust_real' || mode === 'legacy_resistant' || mode === 'real_winrate_only') && winRate < effectiveMinWinRate) {
+        // Reject configurations that don't meet minimum token count
+        if (tokensCount < minTokensRequired) {
             return {
-                score: -Infinity, // Ensure this config is never selected as best
+                score: -Infinity,
                 rejected: true,
-                rejectionReason: `Win rate ${winRate.toFixed(1)}% below required ${effectiveMinWinRate}% for ${sampleTier.toLowerCase()} samples`,
+                rejectionReason: `Only ${tokensCount} tokens, minimum required: ${minTokensRequired}`,
                 components: {
                     rawPnL: metrics.tpPnlPercent,
                     winRate: winRate,
                     reliabilityFactor: reliabilityFactor,
-                    effectiveMinWinRate: effectiveMinWinRate,
-                    sampleTier: sampleTier,
-                    tokensCount: tokensCount
+                    tokensCount: tokensCount,
+                    minTokensRequired: minTokensRequired
                 },
-                scoringMethod: `REJECTED - ${sampleTier} Sample: ${effectiveMinWinRate}% min win rate required`
+                scoringMethod: `REJECTED - Insufficient tokens (${tokensCount} < ${minTokensRequired})`
             };
         }
         
@@ -2965,7 +2925,7 @@
         } else {
             const winRateType = mode === 'robust_real' ? 'Real' : 'Legacy';
             const scoringType = mode === 'robust_real' ? 'Robust (Real Win Rate)' : 'Legacy Resistant';
-            scoringMethodDesc = `${scoringType} Multi-Factor (${sampleTier} Sample: ${effectiveMinWinRate}% min ${winRateType.toLowerCase()} win rate)`;
+            scoringMethodDesc = `${scoringType} Multi-Factor (${winRateType} WR)`;
         }
 
         // Composite score
@@ -2991,9 +2951,8 @@
                 realWinRate: realWinRate,
                 tokensHitTp: metrics.tokensHitTp,
                 reliabilityFactor: reliabilityFactor,
-                effectiveMinWinRate: effectiveMinWinRate,
-                sampleTier: sampleTier,
                 tokensCount: tokensCount,
+                minTokensRequired: minTokensRequired,
                 returnComponent: returnComponent,
                 consistencyComponent: consistencyComponent,
                 baseScore: baseScore,
