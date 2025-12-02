@@ -5005,6 +5005,19 @@
         let successCount = 0;
         let totalFields = 0;
 
+        // Skip sections and parameters that the user controls manually
+        const SKIP_SECTIONS = new Set(['tpSettings', 'takeProfits']);
+        
+        // Check if a parameter should be skipped (user-controlled settings)
+        const shouldSkipParam = (param) => {
+            return param.startsWith('TP ') ||           // All TP settings
+                   param.includes('Date') ||            // Start/End Date
+                   param.includes('Hour') ||            // Start/End Hour
+                   param.includes('Minute') ||          // Start/End Minute
+                   param === 'Buying Amount (SOL)' ||
+                   param === 'Entry Grace %';
+        };
+
     try {
             // Apply each section of the configuration
             for (const [section, sectionConfig] of Object.entries(config)) {
@@ -5012,6 +5025,11 @@
                 if (!skipStopCheck && window.STOPPED) {
                     console.log('⏹️ Optimization stopped during config application');
                     return false;
+                }
+                
+                // Skip user-controlled sections entirely
+                if (SKIP_SECTIONS.has(section)) {
+                    continue;
                 }
                 
                 if (sectionConfig && typeof sectionConfig === 'object') {
@@ -5030,6 +5048,11 @@
                             return false;
                         }
                         
+                        // Skip user-controlled parameters
+                        if (shouldSkipParam(param)) {
+                            continue;
+                        }
+                        
                         // Apply ALL fields, including undefined ones (for clearing)
                         totalFields++;
                         const success = await setFieldValue(param, value);
@@ -5046,49 +5069,7 @@
                 }
             }
 
-            // Date range and weekday filters remain under user control in the backtester UI.
-
-            // Apply TP fields if provided in config.tpSettings or config.takeProfits
-            try {
-                const tpSettings = config.tpSettings || {};
-                const takeProfits = Array.isArray(config.takeProfits) ? config.takeProfits : [];
-                // First apply explicit label-based values
-                for (let i = 1; i <= 6; i++) {
-                    const gainKey = `TP ${i} % Gain`;
-                    const sellKey = `TP ${i} % Sell`;
-                    if (gainKey in tpSettings) {
-                        totalFields++;
-                        if (await setFieldValue(gainKey, tpSettings[gainKey])) successCount++;
-                        await sleep(100);
-                    }
-                    if (sellKey in tpSettings) {
-                        totalFields++;
-                        if (await setFieldValue(sellKey, tpSettings[sellKey])) successCount++;
-                        await sleep(100);
-                    }
-                }
-                // Then map sequential takeProfits to the first N TP slots
-                if (takeProfits.length > 0) {
-                    for (let i = 0; i < Math.min(6, takeProfits.length); i++) {
-                        const tp = takeProfits[i];
-                        if (tp) {
-                            const idx = i + 1;
-                            if (tp.gain !== undefined) {
-                                totalFields++;
-                                if (await setFieldValue(`TP ${idx} % Gain`, tp.gain)) successCount++;
-                                await sleep(100);
-                            }
-                            if (tp.size !== undefined) {
-                                totalFields++;
-                                if (await setFieldValue(`TP ${idx} % Sell`, tp.size)) successCount++;
-                                await sleep(100);
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to apply TP fields:', e.message);
-            }
+            // Date range, TP settings, and weekday filters remain under user control in the backtester UI.
 
             const successRate = totalFields > 0 ? (successCount / totalFields * 100) : 0;
             updateStatus(`⚙️ Applied ${successCount}/${totalFields} fields (${successRate.toFixed(1)}% success rate)`);
