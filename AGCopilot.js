@@ -111,8 +111,8 @@
         'Max Drained Count': { min: 0, max: 11, step: 1, type: 'integer' },
 
         // Advanced
-        // 'Min TTC (sec)': { min: 0, max: 86400, step: 1, type: 'integer' },
-        // 'Max TTC (sec)': { min: 10, max: 86400, step: 10, type: 'integer' },
+        'Min TTC (sec)': { min: 0, max: 86400, step: 10, type: 'integer' },
+        'Max TTC (sec)': { min: 0, max: 86400, step: 30, type: 'integer' },
         'Max Liquidity %': { min: 10, max: 100, step: 10, type: 'integer' },
         'Min Win Pred %': { min: 0, max: 70, step: 5, type: 'integer' }
     };
@@ -163,8 +163,8 @@
             "Skip If No KYC/CEX Funding": undefined
         },
         advanced: {
-            // "Min TTC (sec)": undefined,
-            // "Max TTC (sec)": undefined,
+            "Min TTC (sec)": undefined,
+            "Max TTC (sec)": undefined,
             "Max Liquidity %": undefined,
             "Min Win Pred %": undefined,
             "Has Buy Signal": undefined
@@ -1854,8 +1854,8 @@
                 'Max Drained Count': 'maxDrainedCount',
                 
                 // Advanced
-                // 'Min TTC (sec)': 'minTtc',
-                // 'Max TTC (sec)': 'maxTtc',
+                'Min TTC (sec)': 'minTtc',
+                'Max TTC (sec)': 'maxTtc',
                 'Max Liquidity %': 'maxLiquidityPct',
                 'Min Win Pred %': 'minWinPredPercent',
                 
@@ -2687,7 +2687,7 @@
                 { param: 'Min AG Score', section: 'tokenDetails' },
                 { param: 'Min Buy Ratio %', section: 'risk' },
                 { param: 'Max Bundled %', section: 'risk' },
-                // { param: 'Min TTC (sec)', section: 'advanced' },
+                { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
                 { param: 'Max Drained Count', section: 'risk' },

@@ -523,8 +523,8 @@
                 'Mint Authority': 'risk',
                 
                 // Advanced
-                // 'Min TTC (sec)': 'advanced',
-                // 'Max TTC (sec)': 'advanced',
+                'Min TTC (sec)': 'advanced',
+                'Max TTC (sec)': 'advanced',
                 'Max Liquidity %': 'advanced',
                 'Min Win Pred %': 'advanced',
                 'Has Buy Signal': 'advanced',
@@ -628,7 +628,7 @@
                 { min: 'Min Bundled %', max: 'Max Bundled %', section: 'risk' },
                 { min: 'Min Buy Ratio %', max: 'Max Buy Ratio %', section: 'risk' },
                 { min: 'Min Vol MCAP %', max: 'Max Vol MCAP %', section: 'risk' },
-                // { min: 'Min TTC (sec)', max: 'Max TTC (sec)', section: 'advanced' }
+                { min: 'Min TTC (sec)', max: 'Max TTC (sec)', section: 'advanced' }
             ];
 
             let fixed = false;
@@ -1309,8 +1309,8 @@
                 'Mint Authority': 'risk',
                 
                 // Advanced
-                // 'Min TTC (sec)': 'advanced',
-                // 'Max TTC (sec)': 'advanced',
+                'Min TTC (sec)': 'advanced',
+                'Max TTC (sec)': 'advanced',
                 'Max Liquidity %': 'advanced',
                 'Min Win Pred %': 'advanced',
                 'Has Buy Signal': 'advanced',
@@ -1652,7 +1652,7 @@
                 { param: 'Max Bundled %', section: 'risk' },
                 { param: 'Holders Growth %', section: 'wallets' },
                 { param: 'Holders Growth Minutes', section: 'wallets' },
-                // { param: 'Min TTC (sec)', section: 'advanced' },
+                { param: 'Min TTC (sec)', section: 'advanced' },
                 { param: 'Max Drained %', section: 'risk' },
                 { param: 'Min Token Age (sec)', section: 'tokenDetails' },
                 { param: 'Max Drained Count', section: 'risk' },
