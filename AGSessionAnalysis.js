@@ -270,8 +270,6 @@
                         <th style="padding: 10px; text-align: left; border-bottom: 1px solid #4a5568; color: #a0aec0;">Session</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #a0aec0;">UTC Hours</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #a0aec0;">Tokens</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #a0aec0;">100k %</th>
-                        <th style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #a0aec0;">200k %</th>
                         <th style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #a0aec0;">Score</th>
                         <th style="padding: 10px; text-align: left; border-bottom: 1px solid #4a5568; color: #a0aec0;">Sentiment</th>
                     </tr>
@@ -292,12 +290,6 @@
                                 </td>
                                 <td style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #e2e8f0;">
                                     ${s.totalTokens.toLocaleString()}
-                                </td>
-                                <td style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #e2e8f0;">
-                                    ${s.mcapBreakdown.reached100kPct.toFixed(1)}%
-                                </td>
-                                <td style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #e2e8f0;">
-                                    ${s.mcapBreakdown.reached200kPct.toFixed(1)}%
                                 </td>
                                 <td style="padding: 10px; text-align: center; border-bottom: 1px solid #4a5568; color: #e2e8f0; font-weight: 600;">
                                     ${s.qualityScore.toFixed(2)}
