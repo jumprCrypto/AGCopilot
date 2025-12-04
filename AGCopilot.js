@@ -6094,19 +6094,17 @@
                 `;
             }
             
-            // Load AGSessionAnalysis.js from GitHub (same pattern as other modules)
+            // Load AGSessionAnalysis.js from GitHub (using fetch+eval pattern like other modules)
             if (!window.AGSessionAnalysis) {
                 const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGSessionAnalysis.js';
                 console.log('📥 Loading AGSessionAnalysis from:', scriptUrl);
                 
-                const script = document.createElement('script');
-                script.src = scriptUrl;
-                
-                await new Promise((resolve, reject) => {
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.head.appendChild(script);
-                });
+                const response = await fetch(scriptUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to load Session Analysis: HTTP ${response.status}`);
+                }
+                const scriptContent = await response.text();
+                eval(scriptContent);
                 
                 // Wait a moment for the script to initialize
                 await new Promise(resolve => setTimeout(resolve, 100));
@@ -6772,6 +6770,12 @@
     window.getTimeParameters = getTimeParameters;
     window.setTimeParameters = setTimeParameters;
     window.updateStatus = updateStatus;
+    
+    // Tab loader functions (called by switchTab)
+    window.loadSessionsInTab = loadSessionsInTab;
+    window.loadDataSyncInTab = loadDataSyncInTab;
+    window.loadOptimizationInTab = loadOptimizationInTab;
+    window.loadMetaFinderInTab = loadMetaFinderInTab;
     
     console.log('✅ Global functions exported for external scripts');
 
