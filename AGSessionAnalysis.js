@@ -68,9 +68,12 @@
                                 font-size: 12px;
                             ">
                                 <option value="">All Modes</option>
-                                <option value="1">Bullish Bonding (1)</option>
+                                <option value="0">Bullish Bonding (0)</option>
+                                <option value="1">Fomo</option>
                                 <option value="2">God Mode (2)</option>
-                                <option value="3">Mode 3</option>
+                                <option value="3">Moonfinder</option>
+                                <option value="4" selected>Launchpads</option>
+                                <option value="5">SmartTracker</option>
                             </select>
                         </div>
                         <div style="flex: 0 0 auto; align-self: flex-end;">
