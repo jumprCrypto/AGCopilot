@@ -5388,6 +5388,9 @@
                     <button class="tab-button" onclick="switchTab('meta-finder-tab')" id="meta-finder-tab-btn">
                         🎯 Meta
                     </button>
+                    <button class="tab-button" onclick="switchTab('sessions-tab')" id="sessions-tab-btn">
+                        🌍 Sessions
+                    </button>
                     <button class="tab-button" onclick="switchTab('data-sync-tab')" id="data-sync-tab-btn">
                         📊 Sync
                     </button>
@@ -5445,6 +5448,25 @@
                             <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
                             <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Data Sync...</div>
                             <div style="color: #718096; font-size: 11px;">Sync AG API data to local database</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sessions Analysis Tab -->
+                <div id="sessions-tab" class="tab-content">
+                    <div id="sessions-container">
+                        <div style="
+                            text-align: center; 
+                            padding: 40px 20px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 200px;
+                        ">
+                            <div style="font-size: 32px; margin-bottom: 12px;">🌍</div>
+                            <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Session Analysis...</div>
+                            <div style="color: #718096; font-size: 11px;">Analyze trading sessions by time zone</div>
                         </div>
                     </div>
                 </div>
@@ -5629,6 +5651,8 @@
                 loadOptimizationInTab();
             } else if (activeTabId === 'data-sync-tab') {
                 loadDataSyncInTab();
+            } else if (activeTabId === 'sessions-tab') {
+                loadSessionsInTab();
             }
         };
         
@@ -6033,6 +6057,108 @@
     let optimizationLoaded = false;
     let dataSyncLoaded = false;
     let metaFinderLoaded = false;
+    let sessionsLoaded = false;
+
+    // ========================================
+    // 🌍 SESSIONS ANALYSIS TAB
+    // ========================================
+    async function loadSessionsInTab() {
+        console.log('🔄 loadSessionsInTab called...');
+        
+        // Don't reload if already loaded
+        if (sessionsLoaded) {
+            console.log('⏭️ Sessions already loaded, skipping');
+            return;
+        }
+        
+        const tabContent = document.getElementById('sessions-container');
+        console.log('📦 Found sessions-container:', !!tabContent);
+        
+        try {
+            // Show loading state
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">🔄</div>
+                        <div style="color: #a0aec0; font-size: 14px; margin-bottom: 8px;">Loading Session Analysis...</div>
+                        <div style="color: #718096; font-size: 11px;">Fetching from GitHub</div>
+                    </div>
+                `;
+            }
+            
+            // Load AGSessionAnalysis.js from GitHub (same pattern as other modules)
+            if (!window.AGSessionAnalysis) {
+                const scriptUrl = 'https://raw.githubusercontent.com/jumprCrypto/AGCopilot/refs/heads/main/AGSessionAnalysis.js';
+                console.log('📥 Loading AGSessionAnalysis from:', scriptUrl);
+                
+                const script = document.createElement('script');
+                script.src = scriptUrl;
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                
+                // Wait a moment for the script to initialize
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Render the Sessions UI using the loaded module
+            if (window.AGSessionAnalysis && window.AGSessionAnalysis.renderSessionsUI) {
+                await window.AGSessionAnalysis.renderSessionsUI(tabContent);
+            } else {
+                throw new Error('AGSessionAnalysis module not loaded properly');
+            }
+            
+            sessionsLoaded = true;
+            console.log('✅ Sessions loaded successfully in tab!');
+            
+        } catch (error) {
+            console.error('❌ Sessions loading error:', error);
+            
+            // Show error state in tab
+            if (tabContent) {
+                tabContent.innerHTML = `
+                    <div style="
+                        text-align: center; 
+                        padding: 40px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        min-height: 200px;
+                    ">
+                        <div style="font-size: 32px; margin-bottom: 12px;">❌</div>
+                        <div style="color: #ff6b6b; font-size: 16px; font-weight: 600; margin-bottom: 8px;">Failed to Load Sessions</div>
+                        <div style="color: #a0aec0; font-size: 12px; margin-bottom: 16px; text-align: center;">${error.message}</div>
+                        <button onclick="sessionsLoaded = false; loadSessionsInTab();" style="
+                            padding: 8px 16px;
+                            background: rgba(66, 153, 225, 0.2);
+                            border: 1px solid rgba(66, 153, 225, 0.4);
+                            border-radius: 6px;
+                            color: #4299e1;
+                            cursor: pointer;
+                            font-size: 12px;
+                            font-weight: 600;
+                            transition: all 0.2s;
+                        " onmouseover="this.style.background='rgba(66, 153, 225, 0.3)'" 
+                           onmouseout="this.style.background='rgba(66, 153, 225, 0.2)'">
+                            🔄 Retry Loading
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
 
     async function loadDataSyncInTab() {
         console.log('🔄 loadDataSyncInTab called...');
