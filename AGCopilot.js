@@ -12,8 +12,8 @@
     }
     
     console.clear();
-    console.log('%c🤖 AG Copilot v2.1 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
-    console.log('%c🔍 Direct API Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
+    console.log('%c🤖 AG Copilot v2.2 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
+    console.log('%c🔍 Direct API Optimization + Signal Analysis + Simplicity Bias', 'color: green; font-size: 12px;');
 
     // ========================================
     // 🎯 CONFIGURATION
@@ -45,6 +45,12 @@
         CONSISTENCY_WEIGHT: 0.4,   // Weight for win rate (0.0-1.0)
         RETURN_WEIGHT: 0.6,        // Weight for raw PnL (0.0-1.0)
         // Note: CONSISTENCY_WEIGHT + RETURN_WEIGHT should = 1.0
+        
+        // Simplicity bias (Occam's Razor) - prevents overfitting to complex configs
+        USE_SIMPLICITY_BIAS: true,         // Enable simplicity bonus in scoring
+        SIMPLICITY_WEIGHT: 0.15,           // 15% bonus potential for simpler configs
+        OPTIMAL_PARAM_COUNT: 4,            // Configs with ~4 params get max bonus
+        MAX_PARAM_PENALTY_COUNT: 12,       // Configs with 12+ params get no bonus
         
         // Local API URL (always use local AGCopilotAPI)
         API_BASE_URL: 'http://192.168.50.141:5000/api',
@@ -2828,7 +2834,8 @@
     // ========================================
     // 📊 ROBUST SCORING SYSTEM (Outlier-Resistant)
     // ========================================
-    function calculateRobustScore(metrics) {
+    // config parameter is optional - when provided, applies simplicity bias
+    function calculateRobustScore(metrics, config = null) {
         if (!metrics) {
             console.warn('⚠️ calculateRobustScore: metrics is null/undefined');
             return null;
@@ -2939,11 +2946,44 @@
         const reliabilityAdjustedScore = baseScore * (1 - reliabilityWeight) + baseScore * reliabilityWeight * reliabilityFactor;
         
         // Apply required tokens penalty (reduces score proportionally to missing tokens)
-        const finalScore = reliabilityAdjustedScore * (1 - requiredTokensPenalty);
+        let penalizedScore = reliabilityAdjustedScore * (1 - requiredTokensPenalty);
+        
+        // ========================================
+        // 📏 SIMPLICITY BIAS (Occam's Razor)
+        // ========================================
+        // Simpler configs get a bonus - helps prevent overfitting to complex filters
+        let simplicityBonus = 0;
+        let simplicityInfo = null;
+        
+        if (config && CONFIG.USE_SIMPLICITY_BIAS) {
+            const { count: activeParamCount } = countActiveParams(config);
+            simplicityBonus = calculateSimplicityBonus(config);
+            
+            simplicityInfo = {
+                activeParams: activeParamCount,
+                optimalParams: CONFIG.OPTIMAL_PARAM_COUNT,
+                maxPenaltyParams: CONFIG.MAX_PARAM_PENALTY_COUNT,
+                bonusPercent: (simplicityBonus * 100).toFixed(1)
+            };
+            
+            // Apply bonus as a multiplier (e.g., 15% bonus = 1.15x)
+            penalizedScore = penalizedScore * (1 + simplicityBonus);
+            
+            if (simplicityBonus > 0.05) { // Only log significant bonuses
+                console.log(`📏 Simplicity bonus: ${activeParamCount} params → +${(simplicityBonus * 100).toFixed(1)}%`);
+            }
+        }
+        
+        const finalScore = penalizedScore;
         
         // Update scoring method description if constraint is active
         if (requiredTokensInfo && requiredTokensInfo.missing > 0) {
             scoringMethodDesc += ` | 🔒 ${requiredTokensInfo.included}/${requiredTokensInfo.required} required tokens (-${(requiredTokensPenalty * 100).toFixed(0)}%)`;
+        }
+        
+        // Add simplicity info to scoring method description
+        if (simplicityInfo && simplicityBonus > 0) {
+            scoringMethodDesc += ` | 📏 ${simplicityInfo.activeParams} params (+${simplicityInfo.bonusPercent}%)`;
         }
         
         return {
@@ -2963,6 +3003,8 @@
                 reliabilityAdjustedScore: reliabilityAdjustedScore,
                 requiredTokensPenalty: requiredTokensPenalty,
                 requiredTokensInfo: requiredTokensInfo,
+                simplicityBonus: simplicityBonus,
+                simplicityInfo: simplicityInfo,
                 finalScore: finalScore,
                 scoringMode: mode
             },
@@ -3018,6 +3060,68 @@
 
     // Make cleanConfiguration globally available for external scripts
     window.cleanConfiguration = cleanConfiguration;
+
+    // ========================================
+    // 📏 CONFIG COMPLEXITY ANALYSIS
+    // ========================================
+    // Count active (non-null, non-undefined) parameters in a config
+    // Used for simplicity bias - simpler configs are often more robust
+    function countActiveParams(config) {
+        let count = 0;
+        const activeParams = [];
+        
+        if (!config || typeof config !== 'object') return { count: 0, params: [] };
+        
+        // Sections to analyze (skip tpSettings, takeProfits, triggerMode)
+        const analyzableSections = ['basic', 'tokenDetails', 'wallets', 'risk', 'advanced'];
+        
+        for (const section of analyzableSections) {
+            if (config[section] && typeof config[section] === 'object') {
+                for (const [key, value] of Object.entries(config[section])) {
+                    // Check if parameter has an actual filter value set
+                    if (value !== null && value !== undefined && value !== '' && value !== false) {
+                        // For numeric values, check if they're meaningful (non-zero for mins, non-max for maxes)
+                        if (typeof value === 'number') {
+                            // Skip zero mins that don't filter anything
+                            if (key.startsWith('Min') && value === 0) continue;
+                        }
+                        count++;
+                        activeParams.push({ section, param: key, value });
+                    }
+                }
+            }
+        }
+        
+        return { count, params: activeParams };
+    }
+    
+    // Calculate simplicity bonus (Occam's Razor)
+    // Returns a multiplier between 0.0 and SIMPLICITY_WEIGHT
+    function calculateSimplicityBonus(config) {
+        if (!CONFIG.USE_SIMPLICITY_BIAS) return 0;
+        
+        const { count } = countActiveParams(config);
+        const optimal = CONFIG.OPTIMAL_PARAM_COUNT;
+        const maxPenalty = CONFIG.MAX_PARAM_PENALTY_COUNT;
+        
+        if (count <= optimal) {
+            // At or below optimal: full bonus
+            return CONFIG.SIMPLICITY_WEIGHT;
+        } else if (count >= maxPenalty) {
+            // At or above max: no bonus (but no penalty either)
+            return 0;
+        } else {
+            // Linear interpolation between optimal and max
+            const range = maxPenalty - optimal;
+            const excess = count - optimal;
+            const bonus = CONFIG.SIMPLICITY_WEIGHT * (1 - excess / range);
+            return Math.max(0, bonus);
+        }
+    }
+    
+    // Make functions globally available
+    window.countActiveParams = countActiveParams;
+    window.calculateSimplicityBonus = calculateSimplicityBonus;
 
     // Test configuration via API call (New: Direct API instead of UI scraping)
     async function testConfigurationAPI(config, testName = 'API Test') {

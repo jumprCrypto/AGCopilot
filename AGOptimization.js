@@ -987,6 +987,13 @@
                 // Fallback to inline display if tracker not available AND we have metrics
                 let scoreDisplay = this.bestScore.toFixed(1);
                 let methodDisplay = '';
+                let simplicityDisplay = '';
+                
+                // Count active parameters for display
+                if (this.bestConfig && typeof window.countActiveParams === 'function') {
+                    const { count } = window.countActiveParams(this.bestConfig);
+                    simplicityDisplay = `<div><span style="color: #aaa;">📏 Params:</span> <span style="color: ${count <= 6 ? '#48bb78' : count <= 10 ? '#ecc94b' : '#f56565'}; font-weight: bold;">${count}</span></div>`;
+                }
                 
                 // Check if we have robust scoring information
                 if (this.bestMetrics.robustScoring) {
@@ -1003,9 +1010,10 @@
                             <span style="color: #666; margin: 0 6px;">|</span>
                             <span style="color: #aaa;">Method:</span> <span style="color: #63b3ed;">${source}</span>
                         </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; margin-bottom: 6px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 10px; margin-bottom: 6px;">
                             <div><span style="color: #aaa;">Tokens:</span> <span style="color: #fff; font-weight: bold;">${this.bestMetrics.totalTokens || 0}</span></div>
                             <div><span style="color: #aaa;">Win Rate (2x):</span> <span style="color: #fff;">${this.bestMetrics.winRate?.toFixed(1) || 0}%</span></div>
+                            ${simplicityDisplay}
                             <div><span style="color: #aaa;">Real WR (TP):</span> <span style="color: #4CAF50; font-weight: bold;">${this.bestMetrics.realWinRate?.toFixed(1) || 0}%</span></div>
                             <div><span style="color: #aaa;">TP PnL:</span> <span style="color: ${(this.bestMetrics.tpPnlPercent || 0) >= 0 ? '#4CAF50' : '#f44336'};">${(this.bestMetrics.tpPnlPercent || 0).toFixed(1)}%</span></div>
                         </div>
@@ -1130,7 +1138,8 @@
                 throw new Error(`Baseline has insufficient tokens: ${result.metrics.totalTokens} < ${scaledThresholds.MIN_TOKENS}`);
             }
             
-            const robust = window.calculateRobustScore(result.metrics);
+            // Pass config for simplicity bias calculation
+            const robust = window.calculateRobustScore(result.metrics, currentConfig);
             const score = robust && !robust.rejected ? robust.score : result.metrics.tpPnlPercent;
             
             // Add robust scoring to metrics (like legacy version)
@@ -1202,7 +1211,8 @@
                             continue;
                         }
                         
-                        const robust = window.calculateRobustScore(result.metrics);
+                        // Pass testConfig for simplicity bias
+                        const robust = window.calculateRobustScore(result.metrics, testConfig);
                         if (robust && robust.rejected) continue;
                         
                         const score = robust ? robust.score : result.metrics.tpPnlPercent;
@@ -1327,7 +1337,8 @@
                                     continue;
                                 }
                                 
-                                const robust = window.calculateRobustScore(result.metrics);
+                                // Pass neighborConfig for simplicity bias
+                                const robust = window.calculateRobustScore(result.metrics, neighborConfig);
                                 if (robust && robust.rejected) {
                                     noImprovementCount++;
                                     continue;
@@ -1457,7 +1468,8 @@
                 }
                 
                 if (result.success && result.metrics) {
-                    const robust = window.calculateRobustScore(result.metrics);
+                    // Pass testConfig for simplicity bias
+                    const robust = window.calculateRobustScore(result.metrics, testConfig);
                     if (robust && robust.rejected) continue;
                     
                     const score = robust ? robust.score : result.metrics.tpPnlPercent;
@@ -1540,7 +1552,8 @@
                             const scaledThresholds = window.getScaledTokenThresholds();
                             if (result.metrics.totalTokens < scaledThresholds.MIN_TOKENS) continue;
                             
-                            const robust = window.calculateRobustScore(result.metrics);
+                            // Pass testConfig for simplicity bias
+                            const robust = window.calculateRobustScore(result.metrics, testConfig);
                             if (robust && robust.rejected) continue;
                             
                             const score = robust ? robust.score : result.metrics.tpPnlPercent;
@@ -1621,7 +1634,8 @@
                     const result = await this.testConfig(testConfig, `DeepDive-${param}=${value}`);
                     
                     if (result.success && result.metrics) {
-                        const robust = window.calculateRobustScore(result.metrics);
+                        // Pass testConfig for simplicity bias
+                        const robust = window.calculateRobustScore(result.metrics, testConfig);
                         if (robust && robust.rejected) continue;
                         
                         const score = robust ? robust.score : result.metrics.tpPnlPercent;
@@ -1681,7 +1695,8 @@
                 
                 const result = await this.testConfig(config, `GA-Gen0`);
                 if (result.success && result.metrics) {
-                    const robust = window.calculateRobustScore(result.metrics);
+                    // Pass config for simplicity bias
+                    const robust = window.calculateRobustScore(result.metrics, config);
                     const score = (robust && !robust.rejected) ? robust.score : 
                                   result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
                     initialScores.push(score);
@@ -1725,7 +1740,8 @@
                     
                     const result = await this.testConfig(config, `GA-Gen${generation}`);
                     if (result.success && result.metrics) {
-                        const robust = window.calculateRobustScore(result.metrics);
+                        // Pass config for simplicity bias
+                        const robust = window.calculateRobustScore(result.metrics, config);
                         const score = (robust && !robust.rejected) ? robust.score : 
                                       result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
                         scores.push(score);
@@ -1785,7 +1801,8 @@
                 
                 const result = await this.testConfig(config, `PSO-Init`);
                 if (result.success && result.metrics) {
-                    const robust = window.calculateRobustScore(result.metrics);
+                    // Pass config for simplicity bias
+                    const robust = window.calculateRobustScore(result.metrics, config);
                     const score = (robust && !robust.rejected) ? robust.score : 
                                   result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
                     initialScores.push(score);
@@ -1829,7 +1846,8 @@
                     
                     const result = await this.testConfig(config, `PSO-Iter${iteration}`);
                     if (result.success && result.metrics) {
-                        const robust = window.calculateRobustScore(result.metrics);
+                        // Pass config for simplicity bias
+                        const robust = window.calculateRobustScore(result.metrics, config);
                         const score = (robust && !robust.rejected) ? robust.score : 
                                       result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
                         scores.push(score);
@@ -2243,6 +2261,7 @@
             const deepDive = document.getElementById('deep-dive')?.checked || false;
             const geneticAlgorithm = document.getElementById('genetic-algorithm')?.checked || false;
             const particleSwarm = document.getElementById('particle-swarm')?.checked || false;
+            const simplicityBias = document.getElementById('simplicity-bias')?.checked ?? true; // Default on
             
             // Read win rate configuration
             const minWinRateSmall = parseFloat(document.getElementById('min-win-rate-small')?.value) || 35;
@@ -2279,6 +2298,7 @@
             window.CONFIG.USE_DEEP_DIVE = deepDive;
             window.CONFIG.USE_GENETIC_ALGORITHM = geneticAlgorithm;
             window.CONFIG.USE_PARTICLE_SWARM = particleSwarm;
+            window.CONFIG.USE_SIMPLICITY_BIAS = simplicityBias;
             window.CONFIG.CHAIN_RUN_COUNT = chainRunCount;
             
             const features = [];
@@ -2294,6 +2314,7 @@
             if (deepDive) features.push('deep dive analysis');
             if (geneticAlgorithm) features.push('genetic algorithm');
             if (particleSwarm) features.push('particle swarm');
+            if (simplicityBias) features.push('simplicity bias');
             
             const featuresStr = features.length > 0 ? ` with ${features.join(', ')}` : '';
             const useChainedRuns = chainRunCount > 1;
@@ -2791,6 +2812,30 @@
                                         accent-color: #63b3ed;
                                     ">
                                     <span style="font-weight: 500;">🐝 Particle Swarm</span>
+                                </label>
+                                
+                                <!-- Simplicity Bias Toggle -->
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                    grid-column: 1 / -1;
+                                    background: linear-gradient(90deg, rgba(72,187,120,0.1), transparent);
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='linear-gradient(90deg, rgba(72,187,120,0.1), transparent)'"
+                                  title="Rewards simpler configs with fewer parameters (Occam's Razor). Helps prevent overfitting to complex filter combinations.">
+                                    <input type="checkbox" id="simplicity-bias" checked style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #48bb78;
+                                    ">
+                                    <span style="font-weight: 500;">📏 Simplicity Bias</span>
+                                    <span style="margin-left: 8px; color: #a0aec0; font-size: 9px;">(fewer params = bonus)</span>
                                 </label>
                                 
                                 <!-- Scoring Mode Selector -->
