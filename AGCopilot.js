@@ -2613,7 +2613,7 @@
             
             // Send cookie to AGCopilotAPI for auto-import service
             try {
-                const apiUrl = document.getElementById('sync-api-url')?.value || 'http://localhost:5000';
+                const apiUrl = document.getElementById('sync-api-url')?.value || 'http://192.168.50.141:5000';
                 const cookie = document.cookie;
                 if (cookie) {
                     const encodedCookie = encodeURIComponent(cookie);

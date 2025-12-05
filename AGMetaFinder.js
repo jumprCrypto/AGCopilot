@@ -19,8 +19,7 @@
         
         // Default analysis parameters
         DEFAULT_DAYS: 7,
-        DEFAULT_MIN_ATH_MCAP: 100000,       // $100k minimum ATH
-        DEFAULT_MIN_ATH_GAIN_PCT: 900,      // 10x = 900% gain
+        DEFAULT_MIN_ATH_MCAP: 100000,       // $100k minimum ATH (primary filter)
         DEFAULT_NUM_ARCHETYPES: 5,
         DEFAULT_TOP_TOKENS: 100,
         
@@ -53,8 +52,8 @@
     // 📡 API FUNCTIONS
     // ========================================
     
-    async function fetchArchetypes(days, minAthMcap, minAthGainPct, numArchetypes) {
-        const url = `${META_CONFIG.API_BASE_URL}/api/meta/archetypes?days=${days}&minAthMcap=${minAthMcap}&minAthGainPct=${minAthGainPct}&numArchetypes=${numArchetypes}`;
+    async function fetchArchetypes(days, minAthMcap, numArchetypes) {
+        const url = `${META_CONFIG.API_BASE_URL}/api/meta/archetypes?days=${days}&minAthMcap=${minAthMcap}&numArchetypes=${numArchetypes}`;
         
         console.log(`📡 Fetching archetypes from: ${url}`);
         
@@ -66,8 +65,8 @@
         return await response.json();
     }
 
-    async function fetchTopPerformers(days, minAthMcap, minAthGainPct, limit = 20) {
-        const url = `${META_CONFIG.API_BASE_URL}/api/meta/top-performers?days=${days}&minAthMcap=${minAthMcap}&minAthGainPct=${minAthGainPct}&limit=${limit}`;
+    async function fetchTopPerformers(days, minAthMcap, limit = 20) {
+        const url = `${META_CONFIG.API_BASE_URL}/api/meta/top-performers?days=${days}&minAthMcap=${minAthMcap}&limit=${limit}`;
         
         console.log(`📡 Fetching top performers from: ${url}`);
         
@@ -169,31 +168,19 @@
                 </div>
             </div>
             
-            <!-- ATH Filters -->
+            <!-- ATH Filter - Single filter is enough -->
             <div style="margin-bottom: 16px;">
                 <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #63b3ed;">
                     📈 Minimum ATH Market Cap:
                 </label>
                 <select id="min-ath-mcap" style="width: 100%; padding: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; color: #e2e8f0; font-size: 12px;">
-                    <option value="50000">$50K</option>
+                    <option value="50000">$50K (more tokens)</option>
                     <option value="100000" selected>$100K</option>
-                    <option value="250000">$250K</option>
+                    <option value="200000">$200K</option>
                     <option value="500000">$500K</option>
-                    <option value="1000000">$1M</option>
+                    <option value="1000000">$1M (fewer tokens)</option>
                 </select>
-            </div>
-            
-            <div style="margin-bottom: 16px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 12px; color: #63b3ed;">
-                    🚀 Minimum ATH Gain (from signal):
-                </label>
-                <select id="min-ath-gain" style="width: 100%; padding: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 6px; color: #e2e8f0; font-size: 12px;">
-                    <option value="400">5x (400%)</option>
-                    <option value="900" selected>10x (900%)</option>
-                    <option value="1900">20x (1900%)</option>
-                    <option value="4900">50x (4900%)</option>
-                    <option value="9900">100x (9900%)</option>
-                </select>
+                <div style="font-size: 9px; color: #718096; margin-top: 4px;">Tokens that reached this MCAP are considered winners</div>
             </div>
             
             <div style="margin-bottom: 16px;">
@@ -547,12 +534,11 @@
         // Find Archetypes button
         document.getElementById('find-archetypes-btn').addEventListener('click', async () => {
             const minAthMcap = parseInt(document.getElementById('min-ath-mcap').value);
-            const minAthGain = parseInt(document.getElementById('min-ath-gain').value);
             const numArchetypes = parseInt(document.getElementById('num-archetypes').value);
             
             try {
                 showLoading('Discovering archetypes...');
-                const data = await fetchArchetypes(selectedDays, minAthMcap, minAthGain, numArchetypes);
+                const data = await fetchArchetypes(selectedDays, minAthMcap, numArchetypes);
                 currentArchetypes = data;
                 renderArchetypeResults(data);
             } catch (error) {
@@ -564,11 +550,10 @@
         // Top Performers button
         document.getElementById('show-top-performers-btn').addEventListener('click', async () => {
             const minAthMcap = parseInt(document.getElementById('min-ath-mcap').value);
-            const minAthGain = parseInt(document.getElementById('min-ath-gain').value);
             
             try {
                 showLoading('Fetching top performers...');
-                const data = await fetchTopPerformers(selectedDays, minAthMcap, minAthGain, 20);
+                const data = await fetchTopPerformers(selectedDays, minAthMcap, 20);
                 renderTopPerformers(data);
             } catch (error) {
                 console.error('Failed to fetch top performers:', error);
