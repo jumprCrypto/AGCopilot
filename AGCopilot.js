@@ -12,7 +12,7 @@
     }
     
     console.clear();
-    console.log('%c🤖 AG Copilot v2.0 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
+    console.log('%c🤖 AG Copilot v2.1 🤖', 'color: blue; font-size: 16px; font-weight: bold;');
     console.log('%c🔍 Direct API Optimization + Signal Analysis + Config Generation', 'color: green; font-size: 12px;');
 
     // ========================================
@@ -32,6 +32,10 @@
         USE_CONFIG_CACHING: true,
         USE_SIMULATED_ANNEALING: true,
         USE_LATIN_HYPERCUBE_SAMPLING: true,
+        USE_CORRELATED_PARAMS: true,
+        USE_DEEP_DIVE: true,
+        USE_GENETIC_ALGORITHM: true,   // Genetic Algorithm - evolves population of configs
+        USE_PARTICLE_SWARM: true,      // Particle Swarm Optimization - swarm-based search
         
         // Scoring system configuration
         // Scoring mode: 'robust_real' | 'legacy_resistant' | 'tp_only' | 'winrate_only' | 'real_winrate_only'

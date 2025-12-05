@@ -369,6 +369,410 @@
         }
     }
 
+    // Genetic Algorithm Optimizer
+    class GeneticAlgorithm {
+        constructor(populationSize = 20, mutationRate = 0.1, crossoverRate = 0.7, eliteCount = 2) {
+            this.populationSize = populationSize;
+            this.mutationRate = mutationRate;
+            this.crossoverRate = crossoverRate;
+            this.eliteCount = eliteCount;
+            this.population = [];
+            this.generation = 0;
+        }
+
+        // Initialize population with random configs based on PARAM_RULES
+        initializePopulation(baseConfig, paramRules) {
+            this.population = [];
+            this.paramRules = paramRules;
+            const params = Object.keys(paramRules);
+            
+            // First individual is the base config
+            this.population.push({ config: window.deepClone(baseConfig), score: -Infinity });
+            
+            // Generate random individuals
+            for (let i = 1; i < this.populationSize; i++) {
+                const config = window.deepClone(baseConfig);
+                
+                // Randomly mutate 3-6 parameters
+                const numMutations = 3 + Math.floor(Math.random() * 4);
+                const shuffledParams = [...params].sort(() => Math.random() - 0.5);
+                
+                for (let j = 0; j < Math.min(numMutations, shuffledParams.length); j++) {
+                    const param = shuffledParams[j];
+                    const rule = paramRules[param];
+                    if (rule) {
+                        const section = this.getSection(param);
+                        if (!config[section]) config[section] = {};
+                        config[section][param] = this.randomValue(rule);
+                    }
+                }
+                
+                this.population.push({ config, score: -Infinity });
+            }
+            
+            return this.population.map(ind => ind.config);
+        }
+
+        // Get section for a parameter
+        getSection(param) {
+            const paramMap = {
+                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+                'Min Deployer Age (min)': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails',
+                'Max Token Age (sec)': 'tokenDetails', 'Min AG Score': 'tokenDetails',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets',
+                'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets', 'Max Dormant Wallets': 'wallets',
+                'Min Top Holders %': 'wallets', 'Max Top Holders %': 'wallets',
+                'Max Bundled %': 'risk', 'Max Deployer Balance (SOL)': 'risk',
+                'Min Buy Ratio %': 'risk', 'Max Vol MCAP %': 'risk',
+                'Max Liquidity %': 'advanced', 'Min Win Pred %': 'advanced',
+            };
+            return paramMap[param] || 'basic';
+        }
+
+        // Generate random value based on rule
+        randomValue(rule) {
+            if (rule.type === 'number') {
+                const min = rule.min || 0;
+                const max = rule.max || 100;
+                const step = rule.step || 1;
+                const range = Math.floor((max - min) / step);
+                return min + (Math.floor(Math.random() * (range + 1)) * step);
+            } else if (rule.type === 'boolean') {
+                return Math.random() > 0.5;
+            }
+            return rule.default;
+        }
+
+        // Update scores for population
+        updateScores(scores) {
+            for (let i = 0; i < this.population.length && i < scores.length; i++) {
+                this.population[i].score = scores[i];
+            }
+            // Sort by score (highest first)
+            this.population.sort((a, b) => b.score - a.score);
+        }
+
+        // Create next generation
+        evolve() {
+            this.generation++;
+            const newPopulation = [];
+            
+            // Keep elite individuals
+            for (let i = 0; i < this.eliteCount && i < this.population.length; i++) {
+                newPopulation.push({ 
+                    config: window.deepClone(this.population[i].config), 
+                    score: this.population[i].score 
+                });
+            }
+            
+            // Fill rest with crossover and mutation
+            while (newPopulation.length < this.populationSize) {
+                const parent1 = this.tournamentSelect();
+                const parent2 = this.tournamentSelect();
+                
+                let childConfig;
+                if (Math.random() < this.crossoverRate) {
+                    childConfig = this.crossover(parent1.config, parent2.config);
+                } else {
+                    childConfig = window.deepClone(parent1.config);
+                }
+                
+                if (Math.random() < this.mutationRate) {
+                    this.mutate(childConfig);
+                }
+                
+                newPopulation.push({ config: childConfig, score: -Infinity });
+            }
+            
+            this.population = newPopulation;
+            return this.population.map(ind => ind.config);
+        }
+
+        // Tournament selection (pick best of 3 random)
+        tournamentSelect() {
+            const tournamentSize = 3;
+            let best = null;
+            
+            for (let i = 0; i < tournamentSize; i++) {
+                const idx = Math.floor(Math.random() * this.population.length);
+                if (!best || this.population[idx].score > best.score) {
+                    best = this.population[idx];
+                }
+            }
+            
+            return best;
+        }
+
+        // Crossover two configs
+        crossover(config1, config2) {
+            const child = window.deepClone(config1);
+            const sections = ['basic', 'tokenDetails', 'wallets', 'risk', 'advanced'];
+            
+            for (const section of sections) {
+                if (config2[section]) {
+                    for (const param of Object.keys(config2[section])) {
+                        // 50% chance to take from parent2
+                        if (Math.random() > 0.5) {
+                            if (!child[section]) child[section] = {};
+                            child[section][param] = config2[section][param];
+                        }
+                    }
+                }
+            }
+            
+            return child;
+        }
+
+        // Mutate a config
+        mutate(config) {
+            if (!this.paramRules) return;
+            
+            const params = Object.keys(this.paramRules);
+            const param = params[Math.floor(Math.random() * params.length)];
+            const rule = this.paramRules[param];
+            const section = this.getSection(param);
+            
+            if (!config[section]) config[section] = {};
+            config[section][param] = this.randomValue(rule);
+        }
+
+        getBestConfig() {
+            return this.population.length > 0 ? this.population[0].config : null;
+        }
+
+        getBestScore() {
+            return this.population.length > 0 ? this.population[0].score : -Infinity;
+        }
+
+        getStats() {
+            const scores = this.population.map(p => p.score).filter(s => s > -Infinity);
+            return {
+                generation: this.generation,
+                populationSize: this.population.length,
+                bestScore: this.getBestScore(),
+                avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+                diversity: this.calculateDiversity()
+            };
+        }
+
+        calculateDiversity() {
+            // Simple diversity metric based on unique score values
+            const uniqueScores = new Set(this.population.map(p => Math.round(p.score * 10)));
+            return uniqueScores.size / this.population.length;
+        }
+    }
+
+    // Particle Swarm Optimization
+    class ParticleSwarm {
+        constructor(swarmSize = 15, inertia = 0.7, cognitive = 1.5, social = 1.5) {
+            this.swarmSize = swarmSize;
+            this.inertia = inertia;      // How much to keep current velocity
+            this.cognitive = cognitive;   // Pull toward personal best
+            this.social = social;         // Pull toward global best
+            this.particles = [];
+            this.globalBest = null;
+            this.globalBestScore = -Infinity;
+            this.iteration = 0;
+        }
+
+        // Initialize swarm
+        initializeSwarm(baseConfig, paramRules) {
+            this.particles = [];
+            this.paramRules = paramRules;
+            this.paramList = Object.keys(paramRules);
+            
+            for (let i = 0; i < this.swarmSize; i++) {
+                const config = i === 0 ? window.deepClone(baseConfig) : this.randomConfig(baseConfig);
+                
+                this.particles.push({
+                    config: config,
+                    velocity: this.initVelocity(),
+                    score: -Infinity,
+                    personalBest: window.deepClone(config),
+                    personalBestScore: -Infinity
+                });
+            }
+            
+            return this.particles.map(p => p.config);
+        }
+
+        // Create random config
+        randomConfig(baseConfig) {
+            const config = window.deepClone(baseConfig);
+            const numChanges = 3 + Math.floor(Math.random() * 4);
+            const params = [...this.paramList].sort(() => Math.random() - 0.5).slice(0, numChanges);
+            
+            for (const param of params) {
+                const rule = this.paramRules[param];
+                const section = this.getSection(param);
+                if (!config[section]) config[section] = {};
+                config[section][param] = this.randomValue(rule);
+            }
+            
+            return config;
+        }
+
+        getSection(param) {
+            const paramMap = {
+                'Min MCAP (USD)': 'basic', 'Max MCAP (USD)': 'basic',
+                'Min Deployer Age (min)': 'tokenDetails', 'Min Token Age (sec)': 'tokenDetails',
+                'Max Token Age (sec)': 'tokenDetails', 'Min AG Score': 'tokenDetails',
+                'Min Holders': 'wallets', 'Max Holders': 'wallets',
+                'Min Unique Wallets': 'wallets', 'Max Unique Wallets': 'wallets',
+                'Min KYC Wallets': 'wallets', 'Max KYC Wallets': 'wallets',
+                'Min Dormant Wallets': 'wallets', 'Max Dormant Wallets': 'wallets',
+                'Min Top Holders %': 'wallets', 'Max Top Holders %': 'wallets',
+                'Max Bundled %': 'risk', 'Max Deployer Balance (SOL)': 'risk',
+                'Min Buy Ratio %': 'risk', 'Max Vol MCAP %': 'risk',
+                'Max Liquidity %': 'advanced', 'Min Win Pred %': 'advanced',
+            };
+            return paramMap[param] || 'basic';
+        }
+
+        randomValue(rule) {
+            if (rule.type === 'number') {
+                const min = rule.min || 0;
+                const max = rule.max || 100;
+                return min + Math.random() * (max - min);
+            } else if (rule.type === 'boolean') {
+                return Math.random() > 0.5;
+            }
+            return rule.default;
+        }
+
+        // Initialize velocity (random small values)
+        initVelocity() {
+            const velocity = {};
+            for (const param of this.paramList) {
+                const rule = this.paramRules[param];
+                if (rule.type === 'number') {
+                    const range = (rule.max || 100) - (rule.min || 0);
+                    velocity[param] = (Math.random() - 0.5) * range * 0.2; // 20% of range
+                } else {
+                    velocity[param] = 0;
+                }
+            }
+            return velocity;
+        }
+
+        // Update scores
+        updateScores(scores) {
+            for (let i = 0; i < this.particles.length && i < scores.length; i++) {
+                const particle = this.particles[i];
+                particle.score = scores[i];
+                
+                // Update personal best
+                if (particle.score > particle.personalBestScore) {
+                    particle.personalBest = window.deepClone(particle.config);
+                    particle.personalBestScore = particle.score;
+                }
+                
+                // Update global best
+                if (particle.score > this.globalBestScore) {
+                    this.globalBest = window.deepClone(particle.config);
+                    this.globalBestScore = particle.score;
+                }
+            }
+        }
+
+        // Move particles
+        step() {
+            this.iteration++;
+            
+            for (const particle of this.particles) {
+                this.updateParticle(particle);
+            }
+            
+            return this.particles.map(p => p.config);
+        }
+
+        updateParticle(particle) {
+            for (const param of this.paramList) {
+                const rule = this.paramRules[param];
+                if (rule.type !== 'number') continue;
+                
+                const section = this.getSection(param);
+                const currentVal = particle.config[section]?.[param] ?? rule.default ?? 0;
+                const personalBestVal = particle.personalBest[section]?.[param] ?? currentVal;
+                const globalBestVal = this.globalBest?.[section]?.[param] ?? currentVal;
+                
+                // Update velocity
+                const r1 = Math.random();
+                const r2 = Math.random();
+                
+                particle.velocity[param] = 
+                    this.inertia * (particle.velocity[param] || 0) +
+                    this.cognitive * r1 * (personalBestVal - currentVal) +
+                    this.social * r2 * (globalBestVal - currentVal);
+                
+                // Clamp velocity
+                const range = (rule.max || 100) - (rule.min || 0);
+                particle.velocity[param] = Math.max(-range * 0.3, Math.min(range * 0.3, particle.velocity[param]));
+                
+                // Update position
+                let newVal = currentVal + particle.velocity[param];
+                
+                // Clamp to bounds and snap to step
+                const min = rule.min || 0;
+                const max = rule.max || 100;
+                const step = rule.step || 1;
+                newVal = Math.max(min, Math.min(max, newVal));
+                newVal = Math.round(newVal / step) * step;
+                
+                if (!particle.config[section]) particle.config[section] = {};
+                particle.config[section][param] = newVal;
+            }
+        }
+
+        getBestConfig() {
+            return this.globalBest;
+        }
+
+        getBestScore() {
+            return this.globalBestScore;
+        }
+
+        getStats() {
+            const scores = this.particles.map(p => p.score).filter(s => s > -Infinity);
+            return {
+                iteration: this.iteration,
+                swarmSize: this.particles.length,
+                globalBestScore: this.globalBestScore,
+                avgScore: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+                convergence: this.calculateConvergence()
+            };
+        }
+
+        calculateConvergence() {
+            // How close particles are to global best (0-1, higher = more converged)
+            if (!this.globalBest || this.particles.length === 0) return 0;
+            
+            let totalDist = 0;
+            let paramCount = 0;
+            
+            for (const particle of this.particles) {
+                for (const param of this.paramList) {
+                    const rule = this.paramRules[param];
+                    if (rule.type !== 'number') continue;
+                    
+                    const section = this.getSection(param);
+                    const pVal = particle.config[section]?.[param] ?? 0;
+                    const gVal = this.globalBest[section]?.[param] ?? 0;
+                    const range = (rule.max || 100) - (rule.min || 0);
+                    
+                    if (range > 0) {
+                        totalDist += Math.abs(pVal - gVal) / range;
+                        paramCount++;
+                    }
+                }
+            }
+            
+            return paramCount > 0 ? 1 - (totalDist / paramCount) : 0;
+        }
+    }
+
     // ========================================
     // 🎮 OPTIMIZATION TRACKER CLASS
     // ========================================
@@ -971,12 +1375,22 @@
                     console.log(`🔥 Simulated annealing completed ${iterations} iterations (best: ${this.bestScore.toFixed(1)}%)`);
                 }
                 
-                // Phase 5: Correlated Parameter Testing
+                // Phase 5: Genetic Algorithm (if enabled)
+                if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_GENETIC_ALGORITHM) {
+                    await this.runGeneticAlgorithmPhase();
+                }
+                
+                // Phase 6: Particle Swarm (if enabled)
+                if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_PARTICLE_SWARM) {
+                    await this.runParticleSwarmPhase();
+                }
+                
+                // Phase 7: Correlated Parameter Testing
                 if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_CORRELATED_PARAMS) {
                     await this.runCorrelatedParameterPhase();
                 }
                 
-                // Phase 6: Deep Dive (if enabled)
+                // Phase 8: Deep Dive (if enabled)
                 if (!window.STOPPED && this.getRemainingTime() > 0 && window.CONFIG.USE_DEEP_DIVE) {
                     await this.runDeepDive();
                 }
@@ -1242,6 +1656,214 @@
             }
             
             console.log(`🔬 Deep dive completed (best: ${this.bestScore.toFixed(1)}%)`);
+        }
+
+        async runGeneticAlgorithmPhase() {
+            console.log('🧬 Phase 5: Genetic Algorithm...');
+            
+            const paramRules = window.PARAM_RULES;
+            if (!paramRules) {
+                console.log('⚠️ No PARAM_RULES available for genetic algorithm');
+                return;
+            }
+            
+            const ga = new GeneticAlgorithm(15, 0.15, 0.7, 2); // 15 pop, 15% mutation, 70% crossover, keep 2 elite
+            const maxGenerations = 8;
+            let generation = 0;
+            
+            // Initialize population
+            const initialConfigs = ga.initializePopulation(this.bestConfig, paramRules);
+            
+            // Evaluate initial population
+            const initialScores = [];
+            for (const config of initialConfigs) {
+                if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                
+                const result = await this.testConfig(config, `GA-Gen0`);
+                if (result.success && result.metrics) {
+                    const robust = window.calculateRobustScore(result.metrics);
+                    const score = (robust && !robust.rejected) ? robust.score : 
+                                  result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
+                    initialScores.push(score);
+                    
+                    if (score > this.bestScore) {
+                        console.log(`✅ GA Gen 0 improved: ${score.toFixed(1)}%`);
+                        if (robust) result.metrics.robustScoring = robust;
+                        this.bestConfig = config;
+                        this.bestScore = score;
+                        this.bestMetrics = result.metrics;
+                        if (window.bestConfigTracker) {
+                            window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Genetic Algorithm');
+                        }
+                        this.updateBestConfigDisplay();
+                    }
+                } else {
+                    initialScores.push(-Infinity);
+                }
+            }
+            
+            ga.updateScores(initialScores);
+            
+            // Evolution loop
+            let noImprovementGens = 0;
+            const maxNoImprovement = 3;
+            
+            while (!window.STOPPED && this.getRemainingTime() > 0 && generation < maxGenerations) {
+                generation++;
+                
+                if (noImprovementGens >= maxNoImprovement) {
+                    console.log(`⏹️ GA early termination: No improvement in ${maxNoImprovement} generations`);
+                    break;
+                }
+                
+                const offspring = ga.evolve();
+                const scores = [];
+                let foundImprovement = false;
+                
+                for (const config of offspring) {
+                    if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                    
+                    const result = await this.testConfig(config, `GA-Gen${generation}`);
+                    if (result.success && result.metrics) {
+                        const robust = window.calculateRobustScore(result.metrics);
+                        const score = (robust && !robust.rejected) ? robust.score : 
+                                      result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
+                        scores.push(score);
+                        
+                        if (score > this.bestScore) {
+                            console.log(`✅ GA Gen ${generation} improved: ${score.toFixed(1)}%`);
+                            if (robust) result.metrics.robustScoring = robust;
+                            this.bestConfig = config;
+                            this.bestScore = score;
+                            this.bestMetrics = result.metrics;
+                            foundImprovement = true;
+                            if (window.bestConfigTracker) {
+                                window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Genetic Algorithm');
+                            }
+                            this.updateBestConfigDisplay();
+                        }
+                    } else {
+                        scores.push(-Infinity);
+                    }
+                }
+                
+                ga.updateScores(scores);
+                
+                if (foundImprovement) {
+                    noImprovementGens = 0;
+                } else {
+                    noImprovementGens++;
+                }
+                
+                const stats = ga.getStats();
+                console.log(`🧬 GA Gen ${generation}: Best=${stats.bestScore.toFixed(1)}%, Avg=${stats.avgScore.toFixed(1)}%, Diversity=${(stats.diversity*100).toFixed(0)}%`);
+            }
+            
+            console.log(`🧬 Genetic algorithm completed ${generation} generations (best: ${this.bestScore.toFixed(1)}%)`);
+        }
+
+        async runParticleSwarmPhase() {
+            console.log('🐝 Phase 6: Particle Swarm Optimization...');
+            
+            const paramRules = window.PARAM_RULES;
+            if (!paramRules) {
+                console.log('⚠️ No PARAM_RULES available for particle swarm');
+                return;
+            }
+            
+            const pso = new ParticleSwarm(12, 0.7, 1.5, 1.5); // 12 particles
+            const maxIterations = 10;
+            let iteration = 0;
+            
+            // Initialize swarm
+            const initialConfigs = pso.initializeSwarm(this.bestConfig, paramRules);
+            
+            // Evaluate initial positions
+            const initialScores = [];
+            for (const config of initialConfigs) {
+                if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                
+                const result = await this.testConfig(config, `PSO-Init`);
+                if (result.success && result.metrics) {
+                    const robust = window.calculateRobustScore(result.metrics);
+                    const score = (robust && !robust.rejected) ? robust.score : 
+                                  result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
+                    initialScores.push(score);
+                    
+                    if (score > this.bestScore) {
+                        console.log(`✅ PSO Init improved: ${score.toFixed(1)}%`);
+                        if (robust) result.metrics.robustScoring = robust;
+                        this.bestConfig = config;
+                        this.bestScore = score;
+                        this.bestMetrics = result.metrics;
+                        if (window.bestConfigTracker) {
+                            window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Particle Swarm');
+                        }
+                        this.updateBestConfigDisplay();
+                    }
+                } else {
+                    initialScores.push(-Infinity);
+                }
+            }
+            
+            pso.updateScores(initialScores);
+            
+            // Swarm iterations
+            let noImprovementIters = 0;
+            const maxNoImprovement = 4;
+            
+            while (!window.STOPPED && this.getRemainingTime() > 0 && iteration < maxIterations) {
+                iteration++;
+                
+                if (noImprovementIters >= maxNoImprovement) {
+                    console.log(`⏹️ PSO early termination: No improvement in ${maxNoImprovement} iterations`);
+                    break;
+                }
+                
+                const newPositions = pso.step();
+                const scores = [];
+                let foundImprovement = false;
+                
+                for (const config of newPositions) {
+                    if (window.STOPPED || this.getRemainingTime() <= 0) break;
+                    
+                    const result = await this.testConfig(config, `PSO-Iter${iteration}`);
+                    if (result.success && result.metrics) {
+                        const robust = window.calculateRobustScore(result.metrics);
+                        const score = (robust && !robust.rejected) ? robust.score : 
+                                      result.metrics.totalTokens >= 10 ? result.metrics.tpPnlPercent : -Infinity;
+                        scores.push(score);
+                        
+                        if (score > this.bestScore) {
+                            console.log(`✅ PSO Iter ${iteration} improved: ${score.toFixed(1)}%`);
+                            if (robust) result.metrics.robustScoring = robust;
+                            this.bestConfig = config;
+                            this.bestScore = score;
+                            this.bestMetrics = result.metrics;
+                            foundImprovement = true;
+                            if (window.bestConfigTracker) {
+                                window.bestConfigTracker.update(this.bestConfig, this.bestMetrics, this.bestScore, 'Particle Swarm');
+                            }
+                            this.updateBestConfigDisplay();
+                        }
+                    } else {
+                        scores.push(-Infinity);
+                    }
+                }
+                
+                pso.updateScores(scores);
+                
+                if (foundImprovement) {
+                    noImprovementIters = 0;
+                } else {
+                    noImprovementIters++;
+                }
+                
+                const stats = pso.getStats();
+                console.log(`🐝 PSO Iter ${iteration}: Best=${stats.globalBestScore.toFixed(1)}%, Avg=${stats.avgScore.toFixed(1)}%, Convergence=${(stats.convergence*100).toFixed(0)}%`);
+            }
+            
+            console.log(`🐝 Particle swarm completed ${iteration} iterations (best: ${this.bestScore.toFixed(1)}%)`);
         }
     }
 
@@ -1619,6 +2241,8 @@
             const latinHypercube = document.getElementById('latin-hypercube')?.checked || false;
             const correlatedParams = document.getElementById('correlated-params')?.checked || false;
             const deepDive = document.getElementById('deep-dive')?.checked || false;
+            const geneticAlgorithm = document.getElementById('genetic-algorithm')?.checked || false;
+            const particleSwarm = document.getElementById('particle-swarm')?.checked || false;
             
             // Read win rate configuration
             const minWinRateSmall = parseFloat(document.getElementById('min-win-rate-small')?.value) || 35;
@@ -1653,6 +2277,8 @@
             window.CONFIG.USE_LATIN_HYPERCUBE_SAMPLING = latinHypercube;
             window.CONFIG.USE_CORRELATED_PARAMS = correlatedParams;
             window.CONFIG.USE_DEEP_DIVE = deepDive;
+            window.CONFIG.USE_GENETIC_ALGORITHM = geneticAlgorithm;
+            window.CONFIG.USE_PARTICLE_SWARM = particleSwarm;
             window.CONFIG.CHAIN_RUN_COUNT = chainRunCount;
             
             const features = [];
@@ -1666,6 +2292,8 @@
             if (latinHypercube) features.push('Latin hypercube sampling');
             if (correlatedParams) features.push('correlated parameters');
             if (deepDive) features.push('deep dive analysis');
+            if (geneticAlgorithm) features.push('genetic algorithm');
+            if (particleSwarm) features.push('particle swarm');
             
             const featuresStr = features.length > 0 ? ` with ${features.join(', ')}` : '';
             const useChainedRuns = chainRunCount > 1;
@@ -1922,11 +2550,11 @@
                                     transition: border-color 0.2s;
                                 " onfocus="this.style.borderColor='#63b3ed'" onblur="this.style.borderColor='#4a5568'">
                                     <option value="0">Bullish Bonding</option>
-                                    <option value="1">God Mode</option>
-                                    <option value="2">Moon Finder</option>
-                                    <option value="3">Fomo</option>
+                                    <option value="1">Fomo</option>
+                                    <option value="2">God Mode</option>
+                                    <option value="3">Moonfinder</option>
                                     <option value="4" selected>Launchpads</option>
-                                    <option value="5">Smart Tracker</option>
+                                    <option value="5">SmartTracker</option>
                                 </select>
                             </div>
                         </div>
@@ -2123,6 +2751,46 @@
                                         accent-color: #63b3ed;
                                     ">
                                     <span style="font-weight: 500;">🔬 Deep Dive</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Evolves a population of configs, combining successful traits across generations">
+                                    <input type="checkbox" id="genetic-algorithm" style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🧬 Genetic Algorithm</span>
+                                </label>
+                                
+                                <label style="
+                                    display: flex;
+                                    align-items: center;
+                                    cursor: pointer;
+                                    font-size: 10px;
+                                    color: #e2e8f0;
+                                    padding: 2px;
+                                    border-radius: 3px;
+                                    transition: background 0.2s;
+                                " onmouseover="this.style.background='#4a5568'" 
+                                  onmouseout="this.style.background='transparent'"
+                                  title="Swarm of particles search parameter space, sharing best positions found">
+                                    <input type="checkbox" id="particle-swarm" style="
+                                        margin-right: 4px;
+                                        transform: scale(0.8);
+                                        accent-color: #63b3ed;
+                                    ">
+                                    <span style="font-weight: 500;">🐝 Particle Swarm</span>
                                 </label>
                                 
                                 <!-- Scoring Mode Selector -->
@@ -2331,6 +2999,8 @@
         ConfigCache,
         LatinHypercubeSampler,
         SimulatedAnnealing,
+        GeneticAlgorithm,
+        ParticleSwarm,
         OptimizationTracker,
         EnhancedOptimizer,
         ChainedOptimizer,
@@ -2347,7 +3017,7 @@
         isRunning: false,
         
         // Version
-        version: '1.0.0'
+        version: '2.0.0'
     };
 
     console.log('✅ AGOptimization namespace exported:', Object.keys(window.AGOptimization));
