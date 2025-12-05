@@ -2590,7 +2590,7 @@
                                     display: block;
                                     margin-bottom: 2px;
                                 ">Runtime (min)</label>
-                                <input type="number" id="runtime-min" value="5" min="5" max="120" step="5" style="
+                                <input type="number" id="runtime-min" value="10" min="5" max="120" step="5" style="
                                     width: 100%;
                                     padding: 3px 4px;
                                     background: #2d3748;
@@ -2636,7 +2636,7 @@
                                     display: block;
                                     margin-bottom: 3px;
                                 ">Chain Runs</label>
-                                <input type="number" id="chain-run-count" value="8" min="1" max="10" step="1" style="
+                                <input type="number" id="chain-run-count" value="3" min="1" max="10" step="1" style="
                                     width: 100%;
                                     padding: 5px 6px;
                                     background: #2d3748;
@@ -2765,7 +2765,7 @@
                                 " onmouseover="this.style.background='#4a5568'" 
                                   onmouseout="this.style.background='transparent'"
                                   title="Evolves a population of configs, combining successful traits across generations">
-                                    <input type="checkbox" id="genetic-algorithm" style="
+                                    <input type="checkbox" id="genetic-algorithm" checked style="
                                         margin-right: 4px;
                                         transform: scale(0.8);
                                         accent-color: #63b3ed;
@@ -2785,7 +2785,7 @@
                                 " onmouseover="this.style.background='#4a5568'" 
                                   onmouseout="this.style.background='transparent'"
                                   title="Swarm of particles search parameter space, sharing best positions found">
-                                    <input type="checkbox" id="particle-swarm" style="
+                                    <input type="checkbox" id="particle-swarm" checked style="
                                         margin-right: 4px;
                                         transform: scale(0.8);
                                         accent-color: #63b3ed;

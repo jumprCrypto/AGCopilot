@@ -20,13 +20,13 @@
     // ========================================
     const CONFIG = {
         // Original AGCopilot Optimization Settings (no API nQeeded)
-        MAX_RUNTIME_MIN: 5, // Optimized for local API (10-20 req/s vs 0.05 remote)
+        MAX_RUNTIME_MIN: 10, // 10 min per run (6 algorithms need more time)
         BACKTEST_WAIT: 20000, // Based on rate limit recovery test (20s)
         MIN_TOKENS: 10, // Minimum tokens per day (scaled by date range)
         TARGET_PNL: 100.0,
         
         // NEW: Chained runs settings
-        CHAIN_RUN_COUNT: 8, // More runs with local API's higher throughput
+        CHAIN_RUN_COUNT: 3, // 3 thorough runs (GA + PSO need ~400 API calls/run)
         
         // Feature flags (keeping all original features)
         USE_CONFIG_CACHING: true,
