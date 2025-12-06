@@ -2263,6 +2263,14 @@
             const particleSwarm = document.getElementById('particle-swarm')?.checked || false;
             const simplicityBias = document.getElementById('simplicity-bias')?.checked ?? true; // Default on
             
+            // Read funding blacklist checkboxes
+            const fundingBlacklist = [];
+            if (document.getElementById('blacklist-binance2')?.checked) fundingBlacklist.push('Binance 2');
+            if (document.getElementById('blacklist-kucoin2')?.checked) fundingBlacklist.push('Kucoin 2');
+            if (document.getElementById('blacklist-privacycash')?.checked) fundingBlacklist.push('Privacy Cash');
+            if (document.getElementById('blacklist-bybit2')?.checked) fundingBlacklist.push('Bybit 2');
+            if (document.getElementById('blacklist-changenow2')?.checked) fundingBlacklist.push('ChangeNOW 2');
+            
             // Read win rate configuration
             const minWinRateSmall = parseFloat(document.getElementById('min-win-rate-small')?.value) || 35;
             const minWinRateMedium = parseFloat(document.getElementById('min-win-rate-medium')?.value) || 33;
@@ -2300,6 +2308,12 @@
             window.CONFIG.USE_PARTICLE_SWARM = particleSwarm;
             window.CONFIG.USE_SIMPLICITY_BIAS = simplicityBias;
             window.CONFIG.CHAIN_RUN_COUNT = chainRunCount;
+            window.CONFIG.FUNDING_BLACKLIST = fundingBlacklist;
+            
+            // Log funding blacklist if active
+            if (fundingBlacklist.length > 0) {
+                console.log(`🚫 Funding blacklist active: ${fundingBlacklist.join(', ')}`);
+            }
             
             const features = [];
             const mode = window.CONFIG.SCORING_MODE;
@@ -2891,6 +2905,124 @@
                                     line-height: 1.2;
                                 ">
                                     Forces Min Bundled % &lt; 5% and Max Bundled % &lt; 35% during optimization
+                                </div>
+                            </div>
+                            
+                            <!-- Funding Blacklist -->
+                            <div style="
+                                margin-top: 4px;
+                                padding: 4px;
+                                background: rgba(239, 68, 68, 0.1);
+                                border: 1px solid rgba(239, 68, 68, 0.3);
+                                border-radius: 4px;
+                            ">
+                                <div style="
+                                    font-size: 10px;
+                                    font-weight: 600;
+                                    margin-bottom: 4px;
+                                    color: #ef4444;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 4px;
+                                ">
+                                    🚫 Funding Blacklist <span style="font-size: 8px; color: #a0aec0; font-weight: normal;">(Infamous Sources)</span>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px;">
+                                    <label style="
+                                        display: flex;
+                                        align-items: center;
+                                        cursor: pointer;
+                                        font-size: 9px;
+                                        color: #e2e8f0;
+                                        padding: 1px 2px;
+                                        border-radius: 2px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#4a5568'" 
+                                      onmouseout="this.style.background='transparent'"
+                                      title="Exclude tokens funded by Binance 2">
+                                        <input type="checkbox" id="blacklist-binance2" checked style="
+                                            margin-right: 4px;
+                                            transform: scale(0.75);
+                                            accent-color: #ef4444;
+                                        ">
+                                        <span>Binance 2</span>
+                                    </label>
+                                    <label style="
+                                        display: flex;
+                                        align-items: center;
+                                        cursor: pointer;
+                                        font-size: 9px;
+                                        color: #e2e8f0;
+                                        padding: 1px 2px;
+                                        border-radius: 2px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#4a5568'" 
+                                      onmouseout="this.style.background='transparent'"
+                                      title="Exclude tokens funded by Kucoin 2">
+                                        <input type="checkbox" id="blacklist-kucoin2" checked style="
+                                            margin-right: 4px;
+                                            transform: scale(0.75);
+                                            accent-color: #ef4444;
+                                        ">
+                                        <span>Kucoin 2</span>
+                                    </label>
+                                    <label style="
+                                        display: flex;
+                                        align-items: center;
+                                        cursor: pointer;
+                                        font-size: 9px;
+                                        color: #e2e8f0;
+                                        padding: 1px 2px;
+                                        border-radius: 2px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#4a5568'" 
+                                      onmouseout="this.style.background='transparent'"
+                                      title="Exclude tokens funded by Privacy Cash">
+                                        <input type="checkbox" id="blacklist-privacycash" checked style="
+                                            margin-right: 4px;
+                                            transform: scale(0.75);
+                                            accent-color: #ef4444;
+                                        ">
+                                        <span>Privacy Cash</span>
+                                    </label>
+                                    <label style="
+                                        display: flex;
+                                        align-items: center;
+                                        cursor: pointer;
+                                        font-size: 9px;
+                                        color: #e2e8f0;
+                                        padding: 1px 2px;
+                                        border-radius: 2px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#4a5568'" 
+                                      onmouseout="this.style.background='transparent'"
+                                      title="Exclude tokens funded by Bybit 2">
+                                        <input type="checkbox" id="blacklist-bybit2" checked style="
+                                            margin-right: 4px;
+                                            transform: scale(0.75);
+                                            accent-color: #ef4444;
+                                        ">
+                                        <span>Bybit 2</span>
+                                    </label>
+                                    <label style="
+                                        display: flex;
+                                        align-items: center;
+                                        cursor: pointer;
+                                        font-size: 9px;
+                                        color: #e2e8f0;
+                                        padding: 1px 2px;
+                                        border-radius: 2px;
+                                        transition: background 0.2s;
+                                    " onmouseover="this.style.background='#4a5568'" 
+                                      onmouseout="this.style.background='transparent'"
+                                      title="Exclude tokens funded by ChangeNOW 2">
+                                        <input type="checkbox" id="blacklist-changenow2" checked style="
+                                            margin-right: 4px;
+                                            transform: scale(0.75);
+                                            accent-color: #ef4444;
+                                        ">
+                                        <span>ChangeNOW 2</span>
+                                    </label>
                                 </div>
                             </div>
                         </div>

@@ -1985,6 +1985,12 @@
                 }
             }
             
+            // Add funding blacklist if configured
+            const fundingBlacklist = config?.fundingBlacklist || CONFIG.FUNDING_BLACKLIST || [];
+            if (Array.isArray(fundingBlacklist) && fundingBlacklist.length > 0) {
+                apiParams.fundingBlacklist = fundingBlacklist;
+            }
+            
             return apiParams;
         }        
         
@@ -2078,6 +2084,16 @@
                     value.forEach(addr => {
                         if (addr !== undefined && addr !== null && addr !== '') {
                             params.append('tokenAddresses', addr);
+                        }
+                    });
+                    return;
+                }
+                
+                // Handle fundingBlacklist array (exclude infamous funding sources)
+                if (key === 'fundingBlacklist' && Array.isArray(value)) {
+                    value.forEach(source => {
+                        if (source !== undefined && source !== null && source !== '') {
+                            params.append('fundingBlacklist', source);
                         }
                     });
                     return;
